@@ -24,6 +24,11 @@ const migrations = [
   `,
   },
   {
+    version: 3,
+    sql: `CREATE TABLE windows_identities(customer_id text NOT NULL, source_ref text NOT NULL,asset_id uuid NOT NULL,PRIMARY KEY(customer_id,source_ref),FOREIGN KEY(customer_id,asset_id) REFERENCES assets(customer_id,id));
+CREATE TABLE windows_snapshots(id uuid PRIMARY KEY,customer_id text NOT NULL,asset_id uuid NOT NULL,import_id uuid NOT NULL,snapshot jsonb NOT NULL,UNIQUE(customer_id,id),FOREIGN KEY(customer_id,asset_id) REFERENCES assets(customer_id,id),FOREIGN KEY(customer_id,import_id) REFERENCES import_materials(customer_id,id));`,
+  },
+  {
     version: 1,
     sql: `
   CREATE TABLE customers (id text PRIMARY KEY, name text NOT NULL);

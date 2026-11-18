@@ -28,7 +28,7 @@ export function ImportsPage({
   }
   function refresh() {
     api<{ items: ImportMaterial[] }>(base, token, {}, controller.current.signal)
-      .then((r) => setHistory(r.items))
+      .then((r) => setHistory(r.items.filter((item) => item.format === "csv")))
       .catch(fail);
   }
   useEffect(() => {

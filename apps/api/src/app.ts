@@ -11,6 +11,7 @@ import { AssetsService } from "./assets/assets.service";
 import { ImportsModule } from "./imports/imports.module";
 import { LifecycleModule } from "./lifecycle/lifecycle.module";
 import { SoftwareModule } from "./software/software.module";
+import { WindowsModule } from "./windows/windows.module";
 const CONFIG = Symbol("APP_CONFIG");
 Inject(CONFIG)(OperatorGuard, undefined, 0);
 Inject(CONFIG)(CustomersController, undefined, 0);
@@ -71,6 +72,7 @@ export async function createApp(
           ImportsModule,
           LifecycleModule,
           SoftwareModule,
+          WindowsModule,
           ...features,
         ],
         controllers: [CustomersController],

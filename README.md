@@ -66,3 +66,10 @@ API 测试通过真实 HTTP 边界使用临时 PGlite 数据目录，结束自�
 ## EOS/EOL 生命周期
 
 “EOS/EOL 生命周期”页面导入人工提供且带来源的生命周期CSV，选择客户资产或软件SBOM输入版本保存评估。日期、阶段、匹配及覆盖缺口独立于CVE；资料和评估历史不覆盖。契约和T12/T13读取边界见 [生命周期资料与评估](docs/lifecycle.md)。
+## 软件 SBOM
+
+“软件 SBOM”页面建立软件对象、上传 CycloneDX JSON 1.4–1.6、查看独立输入版本、组件及原始资料。未知版本/生态明确提示，未执行扫描。支持范围、身份与历史规则、API 和后续 Trivy/容器接缝见 [SBOM 导入契约](docs/sbom-import.md)。
+
+## Windows 采集 JSON
+
+客户空间的“Windows 采集导入”接收本地 BAT 资料，保留原文、软件/KB/Build/UBR、来源完整性及未知字段。新内容生成独立快照，同名身份冲突保留待确认。支持范围、API 和后续评估读取边界见 [Windows 输入契约](docs/windows-import.md)。
