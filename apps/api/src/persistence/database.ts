@@ -15,11 +15,14 @@ export interface Database extends Queryable {
 export const DATABASE = Symbol("DATABASE");
 // Numbered migrations are applied atomically; new features append migrations here.
 const migrations = [
-  {version:4,sql:`
+  {
+    version: 4,
+    sql: `
     CREATE TABLE software_objects(id uuid PRIMARY KEY, customer_id text NOT NULL REFERENCES customers(id), name text NOT NULL, created_at timestamptz NOT NULL DEFAULT now(), UNIQUE(customer_id,id));
     CREATE TABLE software_versions(id uuid PRIMARY KEY,customer_id text NOT NULL,software_id uuid NOT NULL,version text,import_id uuid NOT NULL,details jsonb NOT NULL,created_at timestamptz NOT NULL DEFAULT now(),UNIQUE(customer_id,id), UNIQUE(customer_id,import_id),FOREIGN KEY(customer_id,software_id) REFERENCES software_objects(customer_id,id),FOREIGN KEY(customer_id,import_id) REFERENCES import_materials(customer_id,id));
     CREATE INDEX software_versions_object ON software_versions(customer_id,software_id,created_at DESC);
-  `},
+  `,
+  },
   {
     version: 3,
     sql: `CREATE TABLE windows_identities(customer_id text NOT NULL, source_ref text NOT NULL,asset_id uuid NOT NULL,PRIMARY KEY(customer_id,source_ref),FOREIGN KEY(customer_id,asset_id) REFERENCES assets(customer_id,id));
@@ -51,6 +54,17 @@ CREATE TABLE windows_snapshots(id uuid PRIMARY KEY,customer_id text NOT NULL,ass
     ALTER TABLE assets ADD COLUMN collected_at timestamptz;
     ALTER TABLE assets ADD CONSTRAINT assets_import_customer FOREIGN KEY(customer_id,import_id) REFERENCES import_materials(customer_id,id);
     CREATE UNIQUE INDEX assets_import_identity ON assets(customer_id,source,kind,source_ref) WHERE import_id IS NOT NULL;
+  `,
+  },
+  {
+    version: 8,
+    sql: `
+    CREATE TABLE lifecycle_assessments (
+      id uuid PRIMARY KEY, customer_id text NOT NULL REFERENCES customers(id),
+      batch_id uuid NOT NULL, evaluated_at timestamptz NOT NULL DEFAULT now(), result jsonb NOT NULL,
+      FOREIGN KEY(customer_id,batch_id) REFERENCES import_materials(customer_id,id)
+    );
+    CREATE INDEX lifecycle_assessment_customer ON lifecycle_assessments(customer_id,evaluated_at DESC,id);
   `,
   },
 ];

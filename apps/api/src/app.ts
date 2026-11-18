@@ -9,6 +9,7 @@ import { CustomersController } from "./customers/customers.controller";
 import { AssetsController } from "./assets/assets.controller";
 import { AssetsService } from "./assets/assets.service";
 import { ImportsModule } from "./imports/imports.module";
+import { LifecycleModule } from "./lifecycle/lifecycle.module";
 import { SoftwareModule } from "./software/software.module";
 import { WindowsModule } from "./windows/windows.module";
 const CONFIG = Symbol("APP_CONFIG");
@@ -69,6 +70,7 @@ export async function createApp(
           CoreModule.register(config, database),
           AssetsModule,
           ImportsModule,
+          LifecycleModule,
           SoftwareModule,
           WindowsModule,
           ...features,
