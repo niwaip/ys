@@ -74,7 +74,9 @@ export async function createApp(
           ImportsModule,
           SoftwareModule,
           WindowsModule,
-          AssessmentsModule.register(runtime.trivyExecutor ?? new ProcessTrivyExecutor(config.trivy)),
+          AssessmentsModule.register(
+            runtime.trivyExecutor ?? new ProcessTrivyExecutor(config.trivy),
+          ),
           ...features,
         ],
         controllers: [CustomersController],

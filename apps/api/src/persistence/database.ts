@@ -15,12 +15,18 @@ export interface Database extends Queryable {
 export const DATABASE = Symbol("DATABASE");
 // Numbered migrations are applied atomically; new features append migrations here.
 const migrations = [
-  { version: 5, sql: `CREATE TABLE vulnerability_jobs(id uuid PRIMARY KEY,customer_id text NOT NULL REFERENCES customers(id),idempotency_key text NOT NULL,status text NOT NULL,details jsonb NOT NULL,created_at timestamptz NOT NULL DEFAULT now(),UNIQUE(customer_id,idempotency_key),UNIQUE(customer_id,id)); CREATE INDEX vulnerability_jobs_customer ON vulnerability_jobs(customer_id,created_at DESC,id);` },
-  {version:4,sql:`
+  {
+    version: 5,
+    sql: `CREATE TABLE vulnerability_jobs(id uuid PRIMARY KEY,customer_id text NOT NULL REFERENCES customers(id),idempotency_key text NOT NULL,status text NOT NULL,details jsonb NOT NULL,created_at timestamptz NOT NULL DEFAULT now(),UNIQUE(customer_id,idempotency_key),UNIQUE(customer_id,id)); CREATE INDEX vulnerability_jobs_customer ON vulnerability_jobs(customer_id,created_at DESC,id);`,
+  },
+  {
+    version: 4,
+    sql: `
     CREATE TABLE software_objects(id uuid PRIMARY KEY, customer_id text NOT NULL REFERENCES customers(id), name text NOT NULL, created_at timestamptz NOT NULL DEFAULT now(), UNIQUE(customer_id,id));
     CREATE TABLE software_versions(id uuid PRIMARY KEY,customer_id text NOT NULL,software_id uuid NOT NULL,version text,import_id uuid NOT NULL,details jsonb NOT NULL,created_at timestamptz NOT NULL DEFAULT now(),UNIQUE(customer_id,id), UNIQUE(customer_id,import_id),FOREIGN KEY(customer_id,software_id) REFERENCES software_objects(customer_id,id),FOREIGN KEY(customer_id,import_id) REFERENCES import_materials(customer_id,id));
     CREATE INDEX software_versions_object ON software_versions(customer_id,software_id,created_at DESC);
-  `},
+  `,
+  },
   {
     version: 3,
     sql: `CREATE TABLE windows_identities(customer_id text NOT NULL, source_ref text NOT NULL,asset_id uuid NOT NULL,PRIMARY KEY(customer_id,source_ref),FOREIGN KEY(customer_id,asset_id) REFERENCES assets(customer_id,id));
