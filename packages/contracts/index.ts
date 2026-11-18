@@ -37,11 +37,12 @@ export type ImportRow = {
     attributes: Record<string, string>;
   };
   assetId?: string;
+  componentId?: string;
 };
 export type ImportMaterial = {
   id: string;
   customerId: string;
-  format: "csv";
+  format: "csv" | "cyclonedx-json";
   fileName: string;
   contentHash: string;
   content?: string;
