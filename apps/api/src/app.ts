@@ -12,6 +12,8 @@ import { ImportsModule } from "./imports/imports.module";
 import { LifecycleModule } from "./lifecycle/lifecycle.module";
 import { SoftwareModule } from "./software/software.module";
 import { WindowsModule } from "./windows/windows.module";
+import { AssessmentsModule } from "./assessments/assessments.module";
+import { ProcessTrivyExecutor, type TrivyExecutor } from "./assessments/trivy";
 const CONFIG = Symbol("APP_CONFIG");
 Inject(CONFIG)(OperatorGuard, undefined, 0);
 Inject(CONFIG)(CustomersController, undefined, 0);
@@ -54,6 +56,7 @@ export class AssetsModule {}
 export async function createApp(
   input: AppConfig,
   features: DynamicModule["imports"] = [],
+  runtime: { trivyExecutor?: TrivyExecutor } = {},
 ) {
   const config = configSchema.parse(input);
   const database = await openDatabase(config.databaseUrl);
@@ -73,6 +76,9 @@ export async function createApp(
           LifecycleModule,
           SoftwareModule,
           WindowsModule,
+          AssessmentsModule.register(
+            runtime.trivyExecutor ?? new ProcessTrivyExecutor(config.trivy),
+          ),
           ...features,
         ],
         controllers: [CustomersController],
