@@ -1,0 +1,66 @@
+.software-page .panel,
+.software-page form {
+  background: #fff;
+  border: 1px solid #dce3d8;
+  border-radius: 14px;
+  padding: 24px;
+  margin: 20px 0;
+}
+.software-page button {
+  border: 1px solid #bacbb5;
+  border-radius: 8px;
+  background: #edf3e9;
+  color: #254435;
+  padding: 10px 14px;
+  margin: 8px 8px 8px 0;
+  font: inherit;
+  cursor: pointer;
+}
+.software-page button:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+.software-page form button,
+.software-page .panel > button {
+  background: #28523e;
+  color: white;
+}
+.software-page p {
+  margin: 12px 0;
+  overflow-wrap: anywhere;
+}
+.software-page table {
+  width: 100%;
+  table-layout: fixed;
+}
+.software-page td {
+  overflow-wrap: anywhere;
+  vertical-align: top;
+}
+.software-page pre {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  max-height: 420px;
+  overflow: auto;
+  background: #f4f7f2;
+  padding: 16px;
+}
+.software-page [role="alert"] {
+  padding: 14px;
+  border-radius: 8px;
+  background: #fff0ed;
+  color: #963a29;
+}
+.software-page [role="status"] {
+  padding: 14px;
+  border-radius: 8px;
+  background: #e5f1df;
+}
+.software-page label {
+  display: block;
+  margin: 12px 0;
+}
+.software-page h2,
+.software-page h3 {
+  margin: 12px 0;
+}

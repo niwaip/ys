@@ -62,3 +62,7 @@ API 测试通过真实 HTTP 边界使用临时 PGlite 数据目录，结束自�
 ## CSV 资料导入
 
 进入客户空间的“CSV 资料导入”，选择 UTF-8 CSV，检查映射及问题后整批提交。所有来源、采集时间、原始文本、SHA-256 与对象引用可从导入历史回读；问题记录不会显示为成功。输入示例、完整 HTTP 契约、整批事务及幂等规则见 [CSV 导入契约](docs/csv-import.md)，验证证据见 [T02 验证](docs/verification/t02.md)。
+
+## 软件 SBOM
+
+“软件 SBOM”页面建立软件对象、上传 CycloneDX JSON 1.4–1.6、查看独立输入版本、组件及原始资料。未知版本/生态明确提示，未执行扫描。支持范围、身份与历史规则、API 和后续 Trivy/容器接缝见 [SBOM 导入契约](docs/sbom-import.md)。

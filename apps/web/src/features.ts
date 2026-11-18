@@ -1,3 +1,4 @@
+import { SoftwarePage } from "./features/software/SoftwarePage";
 import { ImportsPage } from "./features/imports/ImportsPage";
 import type { ComponentType } from "react";
 import { AssetsPage } from "./features/assets/AssetsPage";
@@ -16,4 +17,5 @@ export type Feature = {
 export const features: Feature[] = [
   { id: "assets", label: "资产台账", icon: "▦", component: AssetsPage },
   { id: "imports", label: "CSV 资料导入", icon: "⇧", component: ImportsPage },
+  { id: "software", label: "软件 SBOM", icon: "◇", component: SoftwarePage },
 ];
