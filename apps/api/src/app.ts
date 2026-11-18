@@ -8,6 +8,7 @@ import { OperatorGuard } from "./auth/auth";
 import { CustomersController } from "./customers/customers.controller";
 import { AssetsController } from "./assets/assets.controller";
 import { AssetsService } from "./assets/assets.service";
+import { ImportsModule } from "./imports/imports.module";
 const CONFIG = Symbol("APP_CONFIG");
 Inject(CONFIG)(OperatorGuard, undefined, 0);
 Inject(CONFIG)(CustomersController, undefined, 0);
@@ -65,6 +66,7 @@ export async function createApp(
         imports: [
           CoreModule.register(config, database),
           AssetsModule,
+          ImportsModule,
           ...features,
         ],
         controllers: [CustomersController],

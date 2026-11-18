@@ -171,7 +171,16 @@ export function AssetsPage({
                         {asset.sourceRef || (
                           <span className="subtle">未提供</span>
                         )}
-                        <small className="block subtle">人工录入</small>
+                        <small className="block subtle">
+                          {asset.source === "manual"
+                            ? "人工录入"
+                            : asset.source}
+                        </small>
+                        {asset.importId && (
+                          <small className="block subtle">
+                            导入资料 <code>{asset.importId}</code>
+                          </small>
+                        )}
                       </td>
                       <td>
                         <details>

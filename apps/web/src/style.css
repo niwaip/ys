@@ -788,3 +788,36 @@ pre {
     padding: 22px;
   }
 }
+
+.import-upload,
+.import-preview,
+.import-history {
+  padding: 24px;
+  margin-bottom: 24px;
+}
+.import-upload p {
+  line-height: 1.7;
+  max-width: 920px;
+}
+.import-upload input {
+  max-width: 560px;
+}
+.import-preview dd {
+  margin: 4px 0 16px;
+  overflow-wrap: anywhere;
+}
+.import-preview dt {
+  color: #64748b;
+  font-size: 12px;
+}
+.import-preview pre {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  max-width: 100%;
+}
+.import-preview details {
+  margin: 16px 0;
+}
+.import-history li {
+  margin: 12px 0;
+}
