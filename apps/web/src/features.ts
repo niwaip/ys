@@ -1,4 +1,5 @@
 import { AssessmentsPage } from "./features/assessments/AssessmentsPage";
+import { LifecyclePage } from "./features/lifecycle/LifecyclePage";
 import { SoftwarePage } from "./features/software/SoftwarePage";
 import { WindowsPage } from "./features/windows/WindowsPage";
 import { ImportsPage } from "./features/imports/ImportsPage";
@@ -25,6 +26,7 @@ export const features: Feature[] = [
     component: WindowsPage,
   },
   { id: "imports", label: "CSV 资料导入", icon: "⇧", component: ImportsPage },
+  { id: "lifecycle", label: "EOS/EOL 生命周期", icon: "◷", component: LifecyclePage },
   { id: "software", label: "软件 SBOM", icon: "◇", component: SoftwarePage },
   {
     id: "assessments",
