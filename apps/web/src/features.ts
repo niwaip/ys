@@ -1,0 +1,17 @@
+import type { ComponentType } from "react";
+import { AssetsPage } from "./features/assets/AssetsPage";
+export type FeatureProps = {
+  customerId: string;
+  token: string;
+  onUnauthorized: () => void;
+};
+export type Feature = {
+  id: string;
+  label: string;
+  icon: string;
+  component: ComponentType<FeatureProps>;
+};
+// Register implemented customer-scoped pages here; the shell owns identity and navigation.
+export const features: Feature[] = [
+  { id: "assets", label: "资产台账", icon: "▦", component: AssetsPage },
+];

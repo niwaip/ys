@@ -1,0 +1,87 @@
+import "reflect-metadata";
+import { Inject, Module, type DynamicModule } from "@nestjs/common";
+import { APP_GUARD, NestFactory } from "@nestjs/core";
+import { json } from "express";
+import { configSchema, type AppConfig } from "./config";
+import { openDatabase, DATABASE } from "./persistence/database";
+import { OperatorGuard } from "./auth/auth";
+import { CustomersController } from "./customers/customers.controller";
+import { AssetsController } from "./assets/assets.controller";
+import { AssetsService } from "./assets/assets.service";
+const CONFIG = Symbol("APP_CONFIG");
+Inject(CONFIG)(OperatorGuard, undefined, 0);
+Inject(CONFIG)(CustomersController, undefined, 0);
+Inject(AssetsService)(AssetsController, undefined, 0);
+@Module({})
+class ApplicationModule {}
+/** Feature modules can import exported DATABASE and OperatorGuard from this shared core. */
+@Module({})
+export class CoreModule {
+  static register(
+    config: AppConfig,
+    database: Awaited<ReturnType<typeof openDatabase>>,
+  ): DynamicModule {
+    return {
+      module: CoreModule,
+      global: true,
+      providers: [
+        { provide: CONFIG, useValue: config },
+        { provide: DATABASE, useValue: database },
+        OperatorGuard,
+        { provide: APP_GUARD, useExisting: OperatorGuard },
+      ],
+      exports: [CONFIG, DATABASE, OperatorGuard],
+    };
+  }
+}
+@Module({
+  controllers: [AssetsController],
+  providers: [
+    {
+      provide: AssetsService,
+      inject: [DATABASE],
+      useFactory: (db: Awaited<ReturnType<typeof openDatabase>>) =>
+        new AssetsService(db),
+    },
+  ],
+  exports: [AssetsService],
+})
+export class AssetsModule {}
+export async function createApp(
+  input: AppConfig,
+  features: DynamicModule["imports"] = [],
+) {
+  const config = configSchema.parse(input);
+  const database = await openDatabase(config.databaseUrl);
+  try {
+    for (const customer of config.customers)
+      await database.query(
+        "INSERT INTO customers (id,name) VALUES ($1,$2) ON CONFLICT (id) DO UPDATE SET name=EXCLUDED.name",
+        [customer.id, customer.name],
+      );
+    const app = await NestFactory.create(
+      {
+        module: ApplicationModule,
+        imports: [
+          CoreModule.register(config, database),
+          AssetsModule,
+          ...features,
+        ],
+        controllers: [CustomersController],
+        providers: [
+          {
+            provide: "database-lifecycle",
+            useValue: { onApplicationShutdown: () => database.close() },
+          },
+        ],
+      },
+      { logger: false, bodyParser: false },
+    );
+    app.use(json({ limit: "1mb" }));
+    await app.init();
+    return app;
+  } catch (error) {
+    await database.close();
+    throw error;
+  }
+}
