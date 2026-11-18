@@ -42,7 +42,7 @@ export class ImportsService {
     session: Queryable = this.db,
   ): Promise<ImportMaterial> {
     const result = await session.query(
-      `SELECT ${columns} FROM import_materials WHERE customer_id=$1 AND id=$2`,
+      `SELECT ${columns} FROM import_materials WHERE customer_id=$1 AND id=$2 AND format='csv'`,
       [customer, id],
     );
     if (!result.rows.length)
@@ -51,7 +51,7 @@ export class ImportsService {
   }
   async list(customer: string) {
     const result = await this.db.query(
-      `SELECT ${columns} FROM import_materials WHERE customer_id=$1 ORDER BY imported_at DESC,id LIMIT 100`,
+      `SELECT ${columns} FROM import_materials WHERE customer_id=$1 AND format='csv' ORDER BY imported_at DESC,id LIMIT 100`,
       [customer],
     );
     return {

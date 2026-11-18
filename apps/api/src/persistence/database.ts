@@ -43,6 +43,14 @@ const migrations = [
     CREATE UNIQUE INDEX assets_import_identity ON assets(customer_id,source,kind,source_ref) WHERE import_id IS NOT NULL;
   `,
   },
+  { version: 8, sql: `
+    CREATE TABLE lifecycle_assessments (
+      id uuid PRIMARY KEY, customer_id text NOT NULL REFERENCES customers(id),
+      batch_id uuid NOT NULL, evaluated_at timestamptz NOT NULL DEFAULT now(), result jsonb NOT NULL,
+      FOREIGN KEY(customer_id,batch_id) REFERENCES import_materials(customer_id,id)
+    );
+    CREATE INDEX lifecycle_assessment_customer ON lifecycle_assessments(customer_id,evaluated_at DESC,id);
+  ` },
 ];
 export async function openDatabase(url: string): Promise<Database> {
   let raw: Queryable & { close(): Promise<void> };
