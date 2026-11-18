@@ -6,7 +6,7 @@
 
 | 任务 | GitHub | 集成状态 | 提交 |
 | --- | --- | --- | --- |
-| T01 | [按客户创建和查看一项资产](https://github.com/niwaip/ys/issues/2) | 待实现 | — |
+| T01 | [按客户创建和查看一项资产](https://github.com/niwaip/ys/issues/2) | 已集成；npm test、npm run build 通过 | e0d643b |
 | T02 | [预览并导入一份 CSV 资产清单](https://github.com/niwaip/ys/issues/3) | 待实现 | — |
 | T03 | [导入固定脚本产生的主机采集 JSON](https://github.com/niwaip/ys/issues/4) | 待实现 | — |
 | T04 | [上传软件 SBOM 并查看组件清单](https://github.com/niwaip/ys/issues/5) | 待实现 | — |
