@@ -42,7 +42,7 @@ export class ImportsService {
     session: Queryable = this.db,
   ): Promise<ImportMaterial> {
     const result = await session.query(
-      `SELECT ${columns} FROM import_materials WHERE customer_id=$1 AND id=$2 AND format='csv'`,
+      `SELECT ${columns} FROM import_materials WHERE customer_id=$1 AND id=$2 AND format IN ('csv','cyclonedx-json')`,
       [customer, id],
     );
     if (!result.rows.length)
@@ -116,6 +116,7 @@ export class ImportsService {
         [customer, id],
       );
       const material = await this.get(customer, id, session);
+      if (material.format !== "csv") throw new ConflictException("该资料不使用资产 CSV 提交流程");
       if (material.status === "committed")
         return { ...material, replayed: true };
       if (!material.canCommit)
