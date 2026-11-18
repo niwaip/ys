@@ -13,7 +13,7 @@
 | T05 | [从页面执行 Trivy 软件评估并保存结果](https://github.com/niwaip/ys/issues/6) | 待实现 | — |
 | T06 | [评估容器 SBOM 并关联镜像身份](https://github.com/niwaip/ys/issues/7) | 待实现 | — |
 | T07 | [基于主机资料进行有补丁依据的 Windows CVE 评估](https://github.com/niwaip/ys/issues/8) | 待实现 | — |
-| T08 | [导入生命周期主数据并展示 EOS/EOL 评估](https://github.com/niwaip/ys/issues/9) | 待实现 | — |
+| T08 | [导入生命周期主数据并展示 EOS/EOL 评估](https://github.com/niwaip/ys/issues/9) | 已集成 | `8a052ee` |
 | T09 | [通过 Pi 对话完成一次公开 PHP CVE 查询](https://github.com/niwaip/ys/issues/10) | 待实现 | — |
 | T10 | [通过客户对话查询和解释已有评估](https://github.com/niwaip/ys/issues/11) | 待实现 | — |
 | T11 | [重扫后查看历史并比较评估版本](https://github.com/niwaip/ys/issues/12) | 待实现 | — |
