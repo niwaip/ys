@@ -16,13 +16,13 @@ export type Feature = {
 };
 // Register implemented customer-scoped pages here; the shell owns identity and navigation.
 export const features: Feature[] = [
+  { id: "assets", label: "资产台账", icon: "▦", component: AssetsPage },
   {
     id: "windows",
     label: "Windows 采集导入",
     icon: "⇧",
     component: WindowsPage,
   },
-  { id: "assets", label: "资产台账", icon: "▦", component: AssetsPage },
   { id: "imports", label: "CSV 资料导入", icon: "⇧", component: ImportsPage },
   { id: "software", label: "软件 SBOM", icon: "◇", component: SoftwarePage },
 ];
