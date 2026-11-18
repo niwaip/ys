@@ -11,7 +11,9 @@ export type CreateAsset = z.infer<typeof createAssetSchema>;
 export type Asset = CreateAsset & {
   id: string;
   customerId: string;
-  source: "manual";
+  source: string;
+  importId?: string;
+  collectedAt?: string | null;
   createdAt: string;
 };
 export type Customer = { id: string; name: string };
@@ -20,4 +22,34 @@ export type AssetPage = {
   total: number;
   limit: number;
   offset: number;
+};
+
+export type ImportRow = {
+  row: number;
+  status: "ready" | "invalid" | "duplicate" | "imported";
+  issues: string[];
+  mapped?: {
+    name: string;
+    kind: string;
+    source: string;
+    sourceRef: string;
+    collectedAt: string | null;
+    attributes: Record<string, string>;
+  };
+  assetId?: string;
+};
+export type ImportMaterial = {
+  id: string;
+  customerId: string;
+  format: "csv";
+  fileName: string;
+  contentHash: string;
+  content?: string;
+  importedAt: string;
+  committedAt?: string;
+  status: "preview" | "committed";
+  policy: "atomic";
+  canCommit: boolean;
+  mapping: Record<string, string>;
+  rows: ImportRow[];
 };

@@ -1,6 +1,6 @@
 # YS · 客户资产风险工作台
 
-按客户建立、查看主机资产的最小完整应用。React + Vite 前端、NestJS API、TypeScript 业务契约与 PostgreSQL 持久化按功能组织。当前仅实现人工主机建档，不展示虚构扫描结果。
+按客户建立、查看主机资产的最小完整应用。React + Vite 前端、NestJS API、TypeScript 业务契约与 PostgreSQL 持久化按功能组织。当前实现人工主机建档与 CSV 清单预览/原子导入，不展示虚构扫描结果。
 
 ## 本地运行
 
@@ -54,7 +54,11 @@ API 测试通过真实 HTTP 边界使用临时 PGlite 数据目录，结束自�
 - `packages/contracts`：仅共享业务输入输出与运行时校验，不共享数据库实体。
 - `apps/api/src/assets`：资产模块和业务接口；其他功能增加自己的 Nest 功能模块，通过 `createApp(config, features)` 的 imports 或应用的静态 imports 挂载。
 - `apps/api/src/auth`：OperatorGuard 验证身份及 URL 中 customerId 的权限。该 guard 在 CoreModule 中作为全局 guard 注册，新增功能默认也须认证；客户业务 URL 必须含 customerId，并在 SQL 中同时限定 customer_id 与对象编号；服务间调用同样需要已验证的客户范围。
-- `apps/api/src/persistence/database.ts`：导出 DATABASE 注入令牌和参数化 query 接口。当前仅需单会话 SQL；后续长任务/并发事务增加专门事务接口，不能跨异步请求直接拼接 BEGIN/COMMIT。迁移在 migrations 数组末尾追加版本，禁止修改已发布迁移。首片单进程启动，生产横向扩容前需加入迁移互斥。
+- `apps/api/src/persistence/database.ts`：导出 DATABASE 注入令牌和参数化 query 接口。现提供串行 transaction 回调，普通 query 同样排队；只在回调内使用 session，不能跨异步请求直接拼接 BEGIN/COMMIT。迁移在 migrations 数组末尾追加版本，禁止修改已发布迁移。首片单进程启动，生产横向扩容前需加入迁移互斥。
 - `apps/web/src/features.ts`：可组合页面注册，页面得到已授权客户上下文与 API 凭据；客户切换时重挂载页面，取消旧请求，避免旧资料留在新客户视图。
 
 资产主数据选择及边界见 [ADR 001](docs/adr/001-local-asset-master.md)。
+
+## CSV 资料导入
+
+进入客户空间的“CSV 资料导入”，选择 UTF-8 CSV，检查映射及问题后整批提交。所有来源、采集时间、原始文本、SHA-256 与对象引用可从导入历史回读；问题记录不会显示为成功。输入示例、完整 HTTP 契约、整批事务及幂等规则见 [CSV 导入契约](docs/csv-import.md)，验证证据见 [T02 验证](docs/verification/t02.md)。

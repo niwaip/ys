@@ -6,11 +6,15 @@ import type {
   CreateAsset,
 } from "../../../../packages/contracts";
 import type { Database } from "../persistence/database";
-const columns = `id, customer_id AS "customerId", name, kind, source, source_ref AS "sourceRef", attributes, created_at AS "createdAt"`;
+const columns = `id, customer_id AS "customerId", name, kind, source, source_ref AS "sourceRef", attributes, import_id AS "importId", collected_at AS "collectedAt", created_at AS "createdAt"`;
 function serialize(row: Record<string, unknown>): Asset {
   return {
     ...row,
     sourceRef: row.sourceRef ?? undefined,
+    importId: row.importId ?? undefined,
+    collectedAt: row.collectedAt
+      ? new Date(row.collectedAt as string).toISOString()
+      : undefined,
     createdAt: new Date(row.createdAt as string).toISOString(),
   } as Asset;
 }

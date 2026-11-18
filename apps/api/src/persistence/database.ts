@@ -2,11 +2,14 @@ import { PGlite } from "@electric-sql/pglite";
 import pg from "pg";
 import { mkdir } from "node:fs/promises";
 import { resolve } from "node:path";
-export interface Database {
+export interface Queryable {
   query<T extends Record<string, unknown> = Record<string, unknown>>(
     sql: string,
     params?: unknown[],
   ): Promise<{ rows: T[] }>;
+}
+export interface Database extends Queryable {
+  transaction<T>(work: (session: Queryable) => Promise<T>): Promise<T>;
   close(): Promise<void>;
 }
 export const DATABASE = Symbol("DATABASE");
@@ -25,14 +28,29 @@ const migrations = [
   CREATE INDEX assets_customer_created ON assets(customer_id, created_at DESC, id);
 `,
   },
+  {
+    version: 2,
+    sql: `
+    CREATE TABLE import_materials (
+      id uuid PRIMARY KEY, customer_id text NOT NULL REFERENCES customers(id),
+      format text NOT NULL, file_name text NOT NULL, content text NOT NULL,
+      content_hash text NOT NULL, imported_at timestamptz NOT NULL DEFAULT now(),
+      result jsonb NOT NULL, UNIQUE(customer_id, format, content_hash), UNIQUE(customer_id,id)
+    );
+    ALTER TABLE assets ADD COLUMN import_id uuid;
+    ALTER TABLE assets ADD COLUMN collected_at timestamptz;
+    ALTER TABLE assets ADD CONSTRAINT assets_import_customer FOREIGN KEY(customer_id,import_id) REFERENCES import_materials(customer_id,id);
+    CREATE UNIQUE INDEX assets_import_identity ON assets(customer_id,source,kind,source_ref) WHERE import_id IS NOT NULL;
+  `,
+  },
 ];
 export async function openDatabase(url: string): Promise<Database> {
-  let database: Database;
+  let raw: Queryable & { close(): Promise<void> };
   if (url.startsWith("pglite://")) {
     const path = resolve(url.slice("pglite://".length));
     await mkdir(path, { recursive: true });
     const engine = new PGlite(path);
-    database = {
+    raw = {
       query: (sql, params) => engine.query(sql, params),
       close: () => engine.close(),
     };
@@ -40,7 +58,7 @@ export async function openDatabase(url: string): Promise<Database> {
     const pool = new pg.Pool({ connectionString: url });
     // One connection keeps migrations/transactions pinned to the same session.
     const client = await pool.connect();
-    database = {
+    raw = {
       query: (sql, params) => client.query(sql, params),
       close: async () => {
         client.release();
@@ -48,12 +66,38 @@ export async function openDatabase(url: string): Promise<Database> {
       },
     };
   } else throw new Error("DATABASE_URL 必须为 pglite:// 或 PostgreSQL URL");
+  // Serialize every query and transaction on the shared session. A transaction
+  // receives an unqueued session so no other request can interleave its queries.
+  let tail: Promise<unknown> = Promise.resolve();
+  function exclusive<T>(work: () => Promise<T>): Promise<T> {
+    const result = tail.then(work);
+    tail = result.catch(() => {});
+    return result;
+  }
+  const database: Database = {
+    query: (sql, params) => exclusive(() => raw.query(sql, params)),
+    transaction: (work) =>
+      exclusive(async () => {
+        await raw.query("BEGIN");
+        try {
+          const result = await work(raw);
+          await raw.query("COMMIT");
+          return result;
+        } catch (error) {
+          await raw.query("ROLLBACK");
+          throw error;
+        }
+      }),
+    close: () => exclusive(() => raw.close()),
+  };
   try {
     await database.query("BEGIN");
     await database.query(
       "CREATE TABLE IF NOT EXISTS schema_migrations (version integer PRIMARY KEY)",
     );
-    for (const migration of migrations) {
+    for (const migration of [...migrations].sort(
+      (a, b) => a.version - b.version,
+    )) {
       const existing = await database.query(
         "SELECT version FROM schema_migrations WHERE version=$1",
         [migration.version],
