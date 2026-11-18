@@ -15,11 +15,14 @@ export interface Database extends Queryable {
 export const DATABASE = Symbol("DATABASE");
 // Numbered migrations are applied atomically; new features append migrations here.
 const migrations = [
-  {version:4,sql:`
+  {
+    version: 4,
+    sql: `
     CREATE TABLE software_objects(id uuid PRIMARY KEY, customer_id text NOT NULL REFERENCES customers(id), name text NOT NULL, created_at timestamptz NOT NULL DEFAULT now(), UNIQUE(customer_id,id));
     CREATE TABLE software_versions(id uuid PRIMARY KEY,customer_id text NOT NULL,software_id uuid NOT NULL,version text,import_id uuid NOT NULL,details jsonb NOT NULL,created_at timestamptz NOT NULL DEFAULT now(),UNIQUE(customer_id,id), UNIQUE(customer_id,import_id),FOREIGN KEY(customer_id,software_id) REFERENCES software_objects(customer_id,id),FOREIGN KEY(customer_id,import_id) REFERENCES import_materials(customer_id,id));
     CREATE INDEX software_versions_object ON software_versions(customer_id,software_id,created_at DESC);
-  `},
+  `,
+  },
   {
     version: 1,
     sql: `
@@ -48,14 +51,17 @@ const migrations = [
     CREATE UNIQUE INDEX assets_import_identity ON assets(customer_id,source,kind,source_ref) WHERE import_id IS NOT NULL;
   `,
   },
-  { version: 8, sql: `
+  {
+    version: 8,
+    sql: `
     CREATE TABLE lifecycle_assessments (
       id uuid PRIMARY KEY, customer_id text NOT NULL REFERENCES customers(id),
       batch_id uuid NOT NULL, evaluated_at timestamptz NOT NULL DEFAULT now(), result jsonb NOT NULL,
       FOREIGN KEY(customer_id,batch_id) REFERENCES import_materials(customer_id,id)
     );
     CREATE INDEX lifecycle_assessment_customer ON lifecycle_assessments(customer_id,evaluated_at DESC,id);
-  ` },
+  `,
+  },
 ];
 export async function openDatabase(url: string): Promise<Database> {
   let raw: Queryable & { close(): Promise<void> };

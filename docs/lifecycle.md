@@ -22,13 +22,15 @@ source/sourceRef/product/eosStage/eolStage 非空，最多500字符。version �
 | POST `/batches` `{fileName,content}` | 201：直接原子保存有来源的 immutable lifecycle-csv-v1 批次及各行日期问题；不是资产 CSV 预览/提交流程 |
 | GET `/batches` | 最近100批 `{items}`，不含原文，按 importedAt 降序、UUID排序 |
 | GET `/batches/:id` | 完整原文、SHA-256、接入时间、来源行、阶段、问题 |
-| POST `/assessments` `{batchId,assetIds}` | 明确选择1–1000个不重复客户资产，201：保存新的不可变评估 |
+| POST `/assessments` `{batchId,assetIds?,softwareTargets?}` | 明确选择合计1–1000个不重复客户资产或软件输入版本（softwareTargets: [{softwareId,versionId}]），201：保存新的不可变评估 |
 | GET `/assessments` | 最近100次 `{items}`，按 evaluatedAt 降序、UUID排序 |
 | GET `/assessments/:id` | 回读固定输入、匹配及证据；不重新计算 |
 
 相同客户/格式/精确 UTF-8 内容 SHA-256 复用原批次 ID，返回 replayed=true；改文件名不产生新批次。不同客户独立存储。新内容产生新批次，不修改历史。每次显式评估产生新的评估ID；新批次不自动替换历史评估。资料接入 importedAt、评估 evaluatedAt 和来源阶段 date 分别表达，不相互填补。
 
 资产匹配输入是已保存资产的 attributes.product / attributes.version 字符串，去首尾空白；不从主机名、IP、产品名称中的数字推断版本，不执行范围或模糊匹配。product 和已知 version 同时字面相等为 exact，verification=verified 仅说明匹配核实，日期仍可能未知/无效。产品相等且任一版本缺失为 weak / needs_verification。双方版本均已知但不同、无相符产品或产品未知为 unmatched / unknown。多个来源行保持独立证据，不择优隐藏差异，不将弱匹配当作核实结论。页面明确显示匹配依据、输入来源及每个阶段的状态。
+
+软件对象使用 T04 SoftwareService 的客户范围读取，product 为软件对象名称，version 为明确选择的不可变 SBOM 输入版本；items 保留 softwareId（assetId）、versionId、importId，不自动选最新或由组件名称冒充应用产品。缺版本仍为弱匹配。
 
 ## Dashboard T12 / 报告 T13
 

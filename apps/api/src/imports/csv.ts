@@ -1,7 +1,10 @@
 import { BadRequestException } from "@nestjs/common";
 import type { ImportRow } from "../../../../packages/contracts";
 // RFC 4180 quoting, comma delimiter, LF/CRLF. No format inference.
-export function parseCsvRecords(content: string): { headers: string[]; records: string[][] } {
+export function parseCsvRecords(content: string): {
+  headers: string[];
+  records: string[][];
+} {
   const records: string[][] = [];
   let record: string[] = [];
   let field = "";
@@ -59,7 +62,10 @@ export function parseCsvRecords(content: string): { headers: string[]; records: 
     throw new BadRequestException("CSV 最多 1000 条记录");
   return { headers, records };
 }
-export function parseCsv(content: string): { mapping: Record<string, string>; rows: ImportRow[] } {
+export function parseCsv(content: string): {
+  mapping: Record<string, string>;
+  rows: ImportRow[];
+} {
   const { headers, records } = parseCsvRecords(content);
   const core = ["source", "sourceRef", "name", "kind", "collectedAt"];
   const mapping = Object.fromEntries(

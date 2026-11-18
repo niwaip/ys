@@ -116,7 +116,8 @@ export class ImportsService {
         [customer, id],
       );
       const material = await this.get(customer, id, session);
-      if (material.format !== "csv") throw new ConflictException("该资料不使用资产 CSV 提交流程");
+      if (material.format !== "csv")
+        throw new ConflictException("该资料不使用资产 CSV 提交流程");
       if (material.status === "committed")
         return { ...material, replayed: true };
       if (!material.canCommit)
