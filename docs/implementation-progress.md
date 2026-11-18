@@ -8,8 +8,8 @@
 | --- | --- | --- | --- |
 | T01 | [按客户创建和查看一项资产](https://github.com/niwaip/ys/issues/2) | 已集成；npm test、npm run build 通过 | e0d643b |
 | T02 | [预览并导入一份 CSV 资产清单](https://github.com/niwaip/ys/issues/3) | 已集成；npm test、npm run build 通过 | 43ae384 |
-| T03 | [导入固定脚本产生的主机采集 JSON](https://github.com/niwaip/ys/issues/4) | 待实现 | — |
-| T04 | [上传软件 SBOM 并查看组件清单](https://github.com/niwaip/ys/issues/5) | 待实现 | — |
+| T03 | [导入固定脚本产生的主机采集 JSON](https://github.com/niwaip/ys/issues/4) | 已集成 | `2e29a33` |
+| T04 | [上传软件 SBOM 并查看组件清单](https://github.com/niwaip/ys/issues/5) | 已集成 | `47aa521` |
 | T05 | [从页面执行 Trivy 软件评估并保存结果](https://github.com/niwaip/ys/issues/6) | 待实现 | — |
 | T06 | [评估容器 SBOM 并关联镜像身份](https://github.com/niwaip/ys/issues/7) | 待实现 | — |
 | T07 | [基于主机资料进行有补丁依据的 Windows CVE 评估](https://github.com/niwaip/ys/issues/8) | 待实现 | — |
@@ -21,3 +21,5 @@
 | T13 | [生成绑定评估依据的事实报告草稿](https://github.com/niwaip/ys/issues/14) | 待实现 | — |
 | T14 | [用 Pi 生成并校验报告叙述](https://github.com/niwaip/ys/issues/15) | 待实现 | — |
 | T15 | [内部复核报告并导出正式修订](https://github.com/niwaip/ys/issues/16) | 待实现 | — |
+
+运行约束：T03 起工具返回 `agent thread limit reached`，新代理及唤醒均被拒绝。主代理接手合并，仍在运行的实现代理在新工作树及分支继续后续票；无法继续保证每票全新代理上下文。独立分支、TDD、集成验证及最终审查要求保留。T03/T04 合并后 11 API 测试与构建通过，T04 工作树完整 4 浏览器流程通过。
