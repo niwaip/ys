@@ -290,3 +290,138 @@ test("missing and failed assessment coverage never becomes a zero-risk report, a
     (await http.get(`/api/customers/a/reports/${report.id}`).set(auth)).body,
   ).toEqual(report);
 });
+test("container and Windows reports retain target snapshots, curated rule provenance and applicability without treating fixed as affected", async () => {
+  directory = await mkdtemp(join(tmpdir(), "ys-report-targets-"));
+  app = await createApp({ ...config, databaseUrl: `pglite://${directory}` });
+  const http = request(app.getHttpServer());
+  const image = (
+    await http
+      .post("/api/customers/a/containers")
+      .set(auth)
+      .send({ name: "fixture-image", source: "fixture SBOM" })
+      .expect(201)
+  ).body;
+  const version = (
+    await http
+      .post(`/api/customers/a/containers/${image.id}/sbom`)
+      .set(auth)
+      .send({
+        fileName: "image.json",
+        content: JSON.stringify({
+          bomFormat: "CycloneDX",
+          specVersion: "1.5",
+          metadata: { component: { type: "container", name: "fixture-image" } },
+          components: [],
+        }),
+      })
+      .expect(201)
+  ).body;
+  const containerJob = (
+    await http
+      .post("/api/customers/a/assessments")
+      .set(auth)
+      .send({
+        containerId: image.id,
+        versionId: version.id,
+        idempotencyKey: "report-container",
+      })
+      .expect(202)
+  ).body;
+  const snapshot = (
+    await http
+      .post("/api/customers/a/windows/imports")
+      .set(auth)
+      .send({
+        fileName: "win.json",
+        content: JSON.stringify({
+          Hostname: "report-WIN",
+          SerialNumber: "report-win-1",
+          OS: "Windows Server 2022",
+          OSBuild: "20348",
+          Architecture: "x64",
+          CollectedAt: "2026-11-18T00:00:00Z",
+          UBR: 2700,
+          InstalledKBs: [],
+          KBInventoryComplete: true,
+          RebootPending: false,
+          CollectionStatus: { Overall: "COMPLETE" },
+        }),
+      })
+      .expect(201)
+  ).body;
+  const { readFile } = await import("node:fs/promises");
+  const rules = (
+    await http
+      .post("/api/customers/a/windows/rules")
+      .set(auth)
+      .send({
+        fileName: "rules.json",
+        content: await readFile("tests/fixtures/windows/rules.json", "utf8"),
+      })
+      .expect(201)
+  ).body;
+  const windowsJob = (
+    await http
+      .post("/api/customers/a/assessments")
+      .set(auth)
+      .send({
+        snapshotId: snapshot.snapshotId,
+        ruleImportId: rules.id,
+        idempotencyKey: "report-windows",
+      })
+      .expect(202)
+  ).body;
+  await expect
+    .poll(
+      async () =>
+        (
+          await http
+            .get(`/api/customers/a/assessments/${windowsJob.id}`)
+            .set(auth)
+        ).body.status,
+    )
+    .toBe("succeeded");
+  await expect
+    .poll(
+      async () =>
+        (
+          await http
+            .get(`/api/customers/a/assessments/${containerJob.id}`)
+            .set(auth)
+        ).body.status,
+    )
+    .toBe("unavailable");
+  const report = (
+    await http
+      .post("/api/customers/a/reports")
+      .set(auth)
+      .send({ assessmentRefs: [containerJob.id, windowsJob.id] })
+      .expect(201)
+  ).body;
+  expect(
+    report.revision.facts.scope.map((x: { kind: string }) => x.kind),
+  ).toEqual(["container", "windows"]);
+  expect(report.revision.facts.statistics).toMatchObject({
+    confirmedAffectedCount: 0,
+    applicabilityCounts: { fixed: 1 },
+  });
+  expect(report.revision.facts.sourceRefs).toContainEqual(
+    expect.objectContaining({
+      kind: "windows_rules",
+      id: rules.id,
+      contentHash: rules.contentHash,
+    }),
+  );
+  const html = (
+    await http.get(`/api/customers/a/reports/${report.id}/preview`).set(auth)
+  ).text;
+  expect(html).toContain("offline_curated_rules");
+  expect(html).toContain("fixed");
+  expect(html).toContain("不证明任何运行实例");
+  expect(html).toContain("fixture-image");
+  await http
+    .post("/api/customers/b/reports")
+    .set(auth)
+    .send({ assessmentRefs: [windowsJob.id] })
+    .expect(404);
+});

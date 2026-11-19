@@ -1,6 +1,6 @@
 import { ReportReviewPanel } from "./ReportReviewPanel";
 import { useEffect, useRef, useState } from "react";
-import type { AssessmentPage } from "../../../../../packages/contracts/assessments";
+import type { AnyAssessmentPage as AssessmentPage } from "../../../../../packages/contracts/assessments";
 import type { LifecycleAssessment } from "../../../../../packages/contracts/lifecycle";
 import type {
   Report,
@@ -103,8 +103,8 @@ export function ReportsPage({
                 )
               }
             />
-            {a.id} · {a.status} · 输入版本 {a.target.versionId} /{" "}
-            {a.input.version ?? "未知版本"} · 发现 {a.findingCount ?? "未知"} ·{" "}
+            {a.id} · {a.status} · 输入版本 {JSON.stringify(a.target)} /{" "}
+            {("version" in a.input ? a.input.version : null) ?? "未知版本"} · 发现 {a.findingCount ?? "未知"} ·{" "}
             {a.coverage?.status ?? "无可用结果"}
           </label>
         ))}
@@ -211,7 +211,7 @@ export function ReportsPage({
                   run(async () =>
                     setEvidence(
                       await call(
-                        `${base}/${r.kind === "cve" ? "assessments" : "lifecycle/assessments"}/${r.id}`,
+                        `${base}/${r.kind === "cve" ? "assessments" : r.kind === "windows_rules" ? "windows/rules" : "lifecycle/assessments"}/${r.id}`,
                       ),
                     ),
                   )

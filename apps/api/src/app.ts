@@ -12,8 +12,11 @@ import { ImportsModule } from "./imports/imports.module";
 import { LifecycleModule } from "./lifecycle/lifecycle.module";
 import { SoftwareModule } from "./software/software.module";
 import { WindowsModule } from "./windows/windows.module";
+import { configuredPublicExecutor } from "./agent/pi-process";
+import { AgentModule } from "./agent/agent.module";
 import { AssessmentsModule } from "./assessments/assessments.module";
 import { ProcessTrivyExecutor, type TrivyExecutor } from "./assessments/trivy";
+import { ContainersModule } from "./containers/containers.module";
 import { ReportsModule } from "./reports/reports.module";
 const CONFIG = Symbol("APP_CONFIG");
 Inject(CONFIG)(OperatorGuard, undefined, 0);
@@ -79,7 +82,17 @@ export async function createApp(
           ImportsModule,
           LifecycleModule,
           SoftwareModule,
+          ContainersModule,
           WindowsModule,
+          ...(!features.some(
+            (f) =>
+              typeof f === "object" &&
+              f !== null &&
+              "module" in f &&
+              f.module === AgentModule,
+          )
+            ? [AgentModule.register(configuredPublicExecutor(config.pi))]
+            : []),
           assessments,
           ReportsModule.register(assessments),
           ...features,

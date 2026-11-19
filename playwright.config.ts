@@ -15,6 +15,8 @@ export default defineConfig({
     env: {
       YS_TRIVY_EXECUTABLE: resolve(".data/trivy-browser-fixture/trivy.cjs"),
       YS_TRIVY_CACHE_DIR: resolve(".data/trivy-browser-fixture"),
+      YS_PI_EXECUTABLE: "",
+      YS_CVE_SCRIPT: "",
       PORT: "3101",
       VITE_API_PORT: "3101",
       VITE_PORT: "4173",

@@ -1,4 +1,15 @@
 import { ReportReviewService, ReportReviewController } from "./review";
+import type { WindowsAssessment } from "../../../../packages/contracts/windows-assessments";
+import {
+  ContainersModule,
+  ContainerService,
+} from "../containers/containers.module";
+import { WindowsModule, WindowsService } from "../windows/windows.module";
+import {
+  WindowsAssessmentsModule,
+  WindowsAssessmentService,
+} from "../windows-assessments/windows-assessments.module";
+import type { WindowsSnapshot } from "../../../../packages/contracts/windows";
 import {
   BadRequestException,
   ConflictException,
@@ -51,6 +62,9 @@ export class ReportsService {
     private readonly lifecycle: LifecycleService,
     private readonly software: SoftwareService,
     private readonly imports: ImportsService,
+    private readonly containers: ContainerService,
+    private readonly windows: WindowsService,
+    private readonly windowsAssessments: WindowsAssessmentService,
   ) {}
   async create(
     customer: string,
@@ -58,12 +72,14 @@ export class ReportsService {
     input: z.infer<typeof inputSchema>,
   ): Promise<Report> {
     const assessmentSnapshots = await Promise.all(
-      input.assessmentRefs.map((id) => this.assessments.get(customer, id)),
+      input.assessmentRefs.map(
+        async (id) =>
+          (await this.assessments.get(
+            customer,
+            id,
+          )) as ReportFacts["assessmentSnapshots"][number],
+      ),
     );
-    if (assessmentSnapshots.some((a) => a.target.kind !== "software"))
-      throw new BadRequestException(
-        "本片报告仅支持软件CVE评估；其他目标需使用对应的报告适配器",
-      );
     if (
       assessmentSnapshots.some(
         (a) => a.status === "queued" || a.status === "running",
@@ -78,21 +94,104 @@ export class ReportsService {
     const scope = new Map<string, ReportScopeTarget>(),
       cveTargets = new Set<string>(),
       lifeTargets = new Set<string>();
+    const sourceMetadata = new Map<
+      string,
+      { importedAt: string; collectedAt: string | null }
+    >();
+    const ruleRefs: ReportFacts["sourceRefs"] = [];
     for (const a of assessmentSnapshots) {
-      const key = `software:${a.target.softwareId}:${a.target.versionId}`;
+      let target: ReportScopeTarget;
+      if (a.target.kind === "windows") {
+        const windowsJob = a as WindowsAssessment;
+        const snapshot = await this.windows.getSnapshot(
+          customer,
+          a.target.snapshotId,
+        );
+        const observed = snapshot.snapshot as WindowsSnapshot;
+        const material = await this.windows.get(
+          customer,
+          windowsJob.input.importId,
+        );
+        const rules = await this.windowsAssessments.getRules(
+          customer,
+          windowsJob.input.ruleImportId,
+        );
+        target = {
+          kind: "windows",
+          objectId: a.target.assetId,
+          versionId: a.target.snapshotId,
+          name: observed.hostname,
+          version: observed.osVersion ?? observed.fullBuild ?? observed.osBuild,
+          sourceIdentity: {
+            snapshotId: a.target.snapshotId,
+            os: observed.os,
+            osBuild: observed.osBuild,
+            ubr: observed.ubr,
+            architecture: observed.architecture,
+          },
+        };
+        sourceMetadata.set(a.id, {
+          importedAt: String(material.importedAt),
+          collectedAt: observed.collectedAt,
+        });
+        ruleRefs.push({
+          kind: "windows_rules",
+          id: windowsJob.input.ruleImportId,
+          inputId: windowsJob.input.ruleImportId,
+          contentHash: windowsJob.input.ruleHash,
+          ruleVersion: rules.rules.ruleVersion,
+          importedAt: String((rules as Record<string, unknown>).importedAt),
+          collectedAt: null,
+          evaluatedAt: a.finishedAt ?? null,
+          toolVersion: a.execution?.toolVersion ?? null,
+        });
+      } else if (a.target.kind === "container") {
+        const image = await this.containers.get(customer, a.target.containerId),
+          snapshot = await this.containers.getVersion(
+            customer,
+            a.target.containerId,
+            a.target.versionId,
+          ),
+          material = await this.imports.get(customer, a.input.importId);
+        target = {
+          kind: "container",
+          objectId: image.id,
+          versionId: snapshot.id,
+          name: image.name,
+          version: snapshot.version,
+          sourceIdentity: { ...snapshot.identity, source: image.source },
+        };
+        sourceMetadata.set(a.id, {
+          importedAt: material.importedAt,
+          collectedAt: snapshot.collectedAt,
+        });
+      } else {
+        const object = await this.software.get(customer, a.target.softwareId),
+          snapshot = await this.software.getVersion(
+            customer,
+            a.target.softwareId,
+            a.target.versionId,
+          ),
+          material = await this.imports.get(customer, a.input.importId);
+        target = {
+          kind: "software",
+          objectId: object.id,
+          versionId: snapshot.id,
+          name: object.name,
+          version: snapshot.version,
+        };
+        sourceMetadata.set(a.id, {
+          importedAt: material.importedAt,
+          collectedAt: snapshot.collectedAt,
+        });
+      }
+      const key = `${target.kind}:${target.objectId}:${target.versionId}`;
       if (cveTargets.has(key))
         throw new ConflictException(
           "同一对象输入版本只能选择一次CVE评估，不累计历史扫描",
         );
       cveTargets.add(key);
-      const object = await this.software.get(customer, a.target.softwareId);
-      scope.set(key, {
-        kind: "software",
-        objectId: a.target.softwareId,
-        versionId: a.target.versionId,
-        name: object.name,
-        version: a.input.version,
-      });
+      scope.set(key, target);
     }
     for (const a of lifecycleSnapshots)
       for (const item of a.items) {
@@ -149,9 +248,13 @@ export class ReportsService {
                 `生命周期 ${item.assetId} ${name}：${s.dateStatus}，日期未知`,
               );
       }
-    const findings = assessmentSnapshots.flatMap(
-        (a) => a.result?.findings ?? [],
-      ),
+    const findings: {
+        severity: string;
+        vulnerabilityId: string;
+        applicability: string;
+      }[] = assessmentSnapshots.reduce<
+        { severity: string; vulnerabilityId: string; applicability: string }[]
+      >((all, a) => [...all, ...(a.result?.findings ?? [])], []),
       severityCounts: Record<string, number> = Object.create(null);
     for (const finding of findings)
       severityCounts[finding.severity] =
@@ -159,21 +262,20 @@ export class ReportsService {
     const lifecycleItems = lifecycleSnapshots.flatMap((a) => a.items),
       now = new Date().toISOString();
     const sourceRefs: ReportFacts["sourceRefs"] = [];
+    sourceRefs.push(
+      ...ruleRefs.filter(
+        (r, i, all) => all.findIndex((x) => x.id === r.id) === i,
+      ),
+    );
     for (const a of assessmentSnapshots) {
-      const material = await this.imports.get(customer, a.input.importId);
-      const snapshot = await this.software.getVersion(
-        customer,
-        a.target.softwareId,
-        a.target.versionId,
-      );
+      const metadata = sourceMetadata.get(a.id)!;
       sourceRefs.push({
         kind: "cve",
         id: a.id,
         inputId: a.input.importId,
         contentHash: a.input.contentHash,
         ruleVersion: a.result?.parserVersion ?? "no-normalized-result",
-        importedAt: material.importedAt,
-        collectedAt: snapshot.collectedAt,
+        ...metadata,
         evaluatedAt: a.finishedAt ?? null,
         toolVersion: a.execution?.toolVersion ?? null,
       });
@@ -201,6 +303,15 @@ export class ReportsService {
       lifecycleSnapshots,
       sourceRefs,
       statistics: {
+        confirmedAffectedCount: assessmentSnapshots.some((a) => a.result)
+          ? findings.filter((v) => v.applicability === "affected").length
+          : null,
+        applicabilityCounts: Object.fromEntries(
+          [...new Set(findings.map((v) => v.applicability))].map((key) => [
+            key,
+            findings.filter((v) => v.applicability === key).length,
+          ]),
+        ),
         findingInstances: assessmentSnapshots.some((a) => a.result)
           ? findings.length
           : null,
@@ -389,6 +500,9 @@ export class ReportsModule {
         LifecycleModule,
         SoftwareModule,
         ImportsModule,
+        ContainersModule,
+        WindowsModule,
+        WindowsAssessmentsModule,
       ],
       controllers: [ReportsController, ReportReviewController],
       providers: [
@@ -405,6 +519,9 @@ export class ReportsModule {
             LifecycleService,
             SoftwareService,
             ImportsService,
+            ContainerService,
+            WindowsService,
+            WindowsAssessmentService,
           ],
           useFactory: (
             db: Database,
@@ -412,7 +529,10 @@ export class ReportsModule {
             l: LifecycleService,
             s: SoftwareService,
             i: ImportsService,
-          ) => new ReportsService(db, a, l, s, i),
+            c: ContainerService,
+            w: WindowsService,
+            wa: WindowsAssessmentService,
+          ) => new ReportsService(db, a, l, s, i, c, w, wa),
         },
       ],
       exports: [ReportsService, ReportReviewService],

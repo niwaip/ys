@@ -1,4 +1,4 @@
-import type { Assessment } from "./assessments";
+import type { AnyAssessment } from "./assessments";
 import type { LifecycleAssessment } from "./lifecycle";
 export type ReportScopeTarget = {
   kind: string;
@@ -6,16 +6,17 @@ export type ReportScopeTarget = {
   versionId?: string;
   name: string;
   version: string | null;
+  sourceIdentity?: Record<string, unknown>;
 };
 export type ReportFacts = {
   schemaVersion: "report-facts-v1";
   customerId: string;
   generatedAt: string;
   scope: ReportScopeTarget[];
-  assessmentSnapshots: Assessment[];
+  assessmentSnapshots: AnyAssessment[];
   lifecycleSnapshots: LifecycleAssessment[];
   sourceRefs: {
-    kind: "cve" | "lifecycle";
+    kind: "cve" | "lifecycle" | "windows_rules";
     id: string;
     inputId: string;
     contentHash: string;
@@ -27,6 +28,8 @@ export type ReportFacts = {
   }[];
   statistics: {
     findingInstances: number | null;
+    confirmedAffectedCount?: number | null;
+    applicabilityCounts?: Record<string, number>;
     uniqueCveCount: number | null;
     severityCounts: Record<string, number>;
     lifecycleExact: number | null;
