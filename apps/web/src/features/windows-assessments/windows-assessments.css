@@ -1,0 +1,45 @@
+.windows-assessments {
+  max-width: 1200px;
+}
+.windows-assessments-input,
+.windows-assessments article {
+  background: #fff;
+  border: 1px solid #dce4d9;
+  border-radius: 12px;
+  padding: 24px;
+  margin: 24px 0;
+  overflow-wrap: anywhere;
+}
+.windows-assessments label {
+  display: block;
+  margin: 16px 0;
+}
+.windows-assessments input,
+.windows-assessments select {
+  display: block;
+  width: 100%;
+  margin-top: 8px;
+}
+.windows-assessments button {
+  padding: 10px 16px;
+  margin: 6px 10px 6px 0;
+  border: 1px solid #cbd5c9;
+  border-radius: 8px;
+  color: #183e2e;
+  background: #eef3e9;
+  cursor: pointer;
+}
+.windows-assessments button:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+.windows-assessments pre {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.windows-assessments table {
+  width: 100%;
+}
+.windows-assessments td {
+  vertical-align: top;
+}

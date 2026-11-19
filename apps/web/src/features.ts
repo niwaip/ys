@@ -1,3 +1,4 @@
+import { WindowsAssessmentsPage } from "./features/windows-assessments/WindowsAssessmentsPage";
 import { AssessmentsPage } from "./features/assessments/AssessmentsPage";
 import { LifecyclePage } from "./features/lifecycle/LifecyclePage";
 import { SoftwarePage } from "./features/software/SoftwarePage";
@@ -18,6 +19,12 @@ export type Feature = {
 };
 // Register implemented customer-scoped pages here; the shell owns identity and navigation.
 export const features: Feature[] = [
+  {
+    id: "windows-assessments",
+    label: "Windows 补丁评估",
+    icon: "◈",
+    component: WindowsAssessmentsPage,
+  },
   { id: "assets", label: "资产台账", icon: "▦", component: AssetsPage },
   {
     id: "windows",
@@ -26,7 +33,12 @@ export const features: Feature[] = [
     component: WindowsPage,
   },
   { id: "imports", label: "CSV 资料导入", icon: "⇧", component: ImportsPage },
-  { id: "lifecycle", label: "EOS/EOL 生命周期", icon: "◷", component: LifecyclePage },
+  {
+    id: "lifecycle",
+    label: "EOS/EOL 生命周期",
+    icon: "◷",
+    component: LifecyclePage,
+  },
   { id: "software", label: "软件 SBOM", icon: "◇", component: SoftwarePage },
   {
     id: "assessments",
