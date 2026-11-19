@@ -16,6 +16,10 @@ export const DATABASE = Symbol("DATABASE");
 // Numbered migrations are applied atomically; new features append migrations here.
 const migrations = [
   {
+    version: 24,
+    sql: `ALTER TABLE assets ADD COLUMN deleted_at timestamptz; ALTER TABLE assets ADD COLUMN deleted_by text; ALTER TABLE assets ADD COLUMN hardware_type text NOT NULL DEFAULT 'unknown' CHECK(hardware_type IN ('unknown','server','network')); CREATE TABLE asset_audit(id uuid PRIMARY KEY,customer_id text NOT NULL,asset_id uuid NOT NULL,action text NOT NULL,actor text NOT NULL,created_at timestamptz NOT NULL DEFAULT now(),FOREIGN KEY(customer_id,asset_id) REFERENCES assets(customer_id,id));`,
+  },
+  {
     version: 14,
     sql: `CREATE TABLE report_narrations(id uuid PRIMARY KEY,customer_id text NOT NULL,report_id uuid NOT NULL,base_revision_id uuid NOT NULL,idempotency_key text NOT NULL,actor_key text NOT NULL,status text NOT NULL,details jsonb NOT NULL,created_at timestamptz NOT NULL DEFAULT now(),UNIQUE(customer_id,report_id,idempotency_key),FOREIGN KEY(customer_id,report_id) REFERENCES reports(customer_id,id),FOREIGN KEY(customer_id,base_revision_id) REFERENCES report_revisions(customer_id,id));CREATE INDEX report_narration_scope ON report_narrations(customer_id,report_id,created_at DESC,id);`,
   },

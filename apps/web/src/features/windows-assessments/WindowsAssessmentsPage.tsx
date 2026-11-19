@@ -35,6 +35,7 @@ export function WindowsAssessmentsPage({
   customerId,
   token,
   onUnauthorized,
+  assetId,
 }: FeatureProps) {
   const [snapshots, setSnapshots] = useState<WindowsMaterial[]>([]),
     [rules, setRules] = useState<WindowsRuleMaterial[]>([]),
@@ -59,7 +60,7 @@ export function WindowsAssessmentsPage({
   }
   async function refresh() {
     const list = await call<{ items: WindowsAssessment[] }>(
-      "/assessments?limit=100&targetKind=windows",
+      `/assessments?limit=100&targetKind=windows${assetId ? "&targetId=" + assetId : ""}`,
     );
     setHistory(list.items.filter((x) => x.target.kind === "windows"));
     const id = selected.current;
@@ -72,7 +73,11 @@ export function WindowsAssessmentsPage({
     abort.current = new AbortController();
     Promise.all([
       call<{ items: WindowsMaterial[] }>("/windows/imports").then((x) =>
-        setSnapshots(x.items.filter((x) => !!x.snapshotId)),
+        setSnapshots(
+          x.items.filter(
+            (x) => !!x.snapshotId && (!assetId || x.assetId === assetId),
+          ),
+        ),
       ),
       call<{ items: WindowsRuleMaterial[] }>("/windows/rules").then((x) =>
         setRules(x.items),
@@ -196,9 +201,7 @@ export function WindowsAssessmentsPage({
         <button disabled={!snapshotId || !ruleId || busy} onClick={submit}>
           开始 Windows 评估
         </button>
-        <button onClick={() => setRequestKey(requestId())}>
-          新建评估请求
-        </button>
+        <button onClick={() => setRequestKey(requestId())}>新建评估请求</button>
       </div>
       {error && <p role="alert">{error}</p>}
       <h3>Windows 评估历史</h3>

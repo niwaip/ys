@@ -1,3 +1,4 @@
+import { requireActiveAsset } from "../assets/asset-state";
 import {
   BadRequestException,
   ConflictException,
@@ -120,6 +121,7 @@ export class CollectionLinksService {
       .update(JSON.stringify(value))
       .digest("hex");
     return this.db.transaction(async (session) => {
+      await requireActiveAsset(session, customerId, value.assetId);
       const old = (
         await session.query(
           "SELECT details FROM asset_version_links WHERE customer_id=$1 AND input_hash=$2",

@@ -5,6 +5,7 @@ test("镜像详情保留digest版本、组件和评估证据，刷新及客户�
   await page.goto("/");
   await page.getByLabel("操作员访问令牌").fill("browser-test-secret-token");
   await page.getByRole("button", { name: "进入工作台" }).click();
+  await page.locator("nav button").filter({ hasText: "资产台账" }).click();
   await page.getByRole("button", { name: "容器镜像" }).click();
   const name = `Image-${Date.now()}`;
   await page.getByLabel("镜像名称").fill(name);
@@ -35,22 +36,18 @@ test("镜像详情保留digest版本、组件和评估证据，刷新及客户�
         },
       ],
     });
-  await page
-    .getByLabel("容器 SBOM 文件")
-    .setInputFiles({
-      name: "bad.json",
-      mimeType: "application/json",
-      buffer: Buffer.from("{"),
-    });
+  await page.getByLabel("容器 SBOM 文件").setInputFiles({
+    name: "bad.json",
+    mimeType: "application/json",
+    buffer: Buffer.from("{"),
+  });
   await page.getByRole("button", { name: "上传镜像 SBOM" }).click();
   await expect(page.getByRole("alert")).toContainText("无效 JSON");
-  await page
-    .getByLabel("容器 SBOM 文件")
-    .setInputFiles({
-      name: "image.json",
-      mimeType: "application/json",
-      buffer: Buffer.from(content(digest)),
-    });
+  await page.getByLabel("容器 SBOM 文件").setInputFiles({
+    name: "image.json",
+    mimeType: "application/json",
+    buffer: Buffer.from(content(digest)),
+  });
   await page.getByRole("button", { name: "上传镜像 SBOM" }).click();
   await expect(page.getByText("镜像 SBOM 已保存为独立输入版本")).toBeVisible();
   await expect(
@@ -75,13 +72,11 @@ test("镜像详情保留digest版本、组件和评估证据，刷新及客户�
   await expect(
     page.getByText("发现不自动归属于运行实例。", { exact: false }),
   ).toBeVisible();
-  await page
-    .getByLabel("容器 SBOM 文件")
-    .setInputFiles({
-      name: "image2.json",
-      mimeType: "application/json",
-      buffer: Buffer.from(content("sha256:" + "b".repeat(64))),
-    });
+  await page.getByLabel("容器 SBOM 文件").setInputFiles({
+    name: "image2.json",
+    mimeType: "application/json",
+    buffer: Buffer.from(content("sha256:" + "b".repeat(64))),
+  });
   await page.getByRole("button", { name: "上传镜像 SBOM" }).click();
   await expect(page.getByText("本输入版本有 0 个评估任务")).toBeVisible();
   await expect(

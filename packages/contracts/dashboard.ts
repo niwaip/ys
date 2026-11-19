@@ -3,12 +3,18 @@ import type { LifecycleAssessmentItem } from "./lifecycle";
 export type DashboardKind = "host" | "software" | "container";
 export type DashboardObject = {
   kind: DashboardKind;
+  hardwareType?: string;
   id: string;
   name: string;
   inputId: string | null;
   inputLabel: string | null;
   assessmentId: string | null;
-  selection: "software_current" | "explicit_assessment" | "unselected";
+  selection:
+    | "software_current"
+    | "explicit_assessment"
+    | "latest_attempt"
+    | "unselected";
+  lifecycleAssessmentId?: string;
   status: AssessmentStatus | "unselected" | "outside_time_range";
   componentCount: number | null;
   installedSoftwareCount: number | null;
@@ -36,6 +42,8 @@ export type DashboardObject = {
   lifecycle: LifecycleAssessmentItem | null;
 };
 export type DashboardRequest = {
+  hardwareType?: "server" | "network" | "unknown";
+  selectionMode?: "explicit" | "current";
   trendMode?: "selected_inputs" | "object_history";
   assessmentRefs?: string[];
   lifecycleAssessmentId?: string;
@@ -64,15 +72,24 @@ export type DashboardView = {
   scope: {
     hash: string;
     object: DashboardRequest["object"] | null;
+    hardwareType?: DashboardRequest["hardwareType"] | null;
     from: string | null;
     to: string | null;
     assessmentRefs: string[];
     lifecycleAssessmentId: string | null;
     selectionPolicy: string;
+    lifecycleAssessmentRefs?: string[];
     trendMode: "selected_inputs" | "object_history";
   };
   metrics: {
-    inventory: { host: number; software: number; container: number };
+    inventory: {
+      host: number;
+      software: number;
+      container: number;
+      server?: number;
+      network?: number;
+      unclassified?: number;
+    };
     components: { known: number; unknownObjects: number };
     cve: {
       uniqueObserved: number | null;
@@ -107,6 +124,7 @@ export type DashboardView = {
       batchId: string | null;
       sourceHash: string | null;
       coveredObjects: number;
+      upcoming90d?: number | null;
       eos: Record<string, number> | null;
       eol: Record<string, number> | null;
     };
@@ -121,7 +139,14 @@ export type DashboardView = {
   warnings: string[];
 };
 export type DashboardCatalog = {
-  inventory: { host: number; software: number; container: number };
+  inventory: {
+    host: number;
+    software: number;
+    container: number;
+    server?: number;
+    network?: number;
+    unclassified?: number;
+  };
   objectTotal: number;
   objectLimit: number;
   objectOffset: number;

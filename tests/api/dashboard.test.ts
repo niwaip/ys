@@ -506,3 +506,133 @@ test("容器失败与Windows fixed单独披露，EOS固定评估匹配同一对�
     .expect(404);
   await h.post("/api/customers/acme/dashboard/view").send({}).expect(401);
 });
+
+test("当前概览默认解析每对象单批次，删除主机排除当前统计但可读取历史", async () => {
+  const h = await start();
+  const base = "/api/customers/acme";
+  const host = (
+    await h
+      .post(base + "/assets")
+      .set(auth)
+      .send({
+        name: "在管主机",
+        kind: "host",
+        attributes: { product: "Device", version: "1" },
+      })
+      .expect(201)
+  ).body;
+  const sw = (
+    await h
+      .post(base + "/software")
+      .set(auth)
+      .send({ name: "当前软件" })
+      .expect(201)
+  ).body;
+  const v = (
+    await h
+      .post(base + `/software/${sw.id}/sbom`)
+      .set(auth)
+      .send({
+        fileName: "current.json",
+        content: JSON.stringify({
+          bomFormat: "CycloneDX",
+          specVersion: "1.5",
+          metadata: {
+            component: { type: "application", name: "当前软件", version: "1" },
+          },
+          components: [],
+        }),
+      })
+      .expect(201)
+  ).body;
+  const first = (
+    await h
+      .post(base + "/assessments")
+      .set(auth)
+      .send({ softwareId: sw.id, versionId: v.id, idempotencyKey: "first" })
+      .expect(202)
+  ).body;
+  await settle(h, first.id);
+  const second = (
+    await h
+      .post(base + "/assessments")
+      .set(auth)
+      .send({ softwareId: sw.id, versionId: v.id, idempotencyKey: "second" })
+      .expect(202)
+  ).body;
+  await settle(h, second.id);
+  let view = (
+    await h
+      .post(base + "/dashboard/view")
+      .set(auth)
+      .send({ selectionMode: "current" })
+      .expect(200)
+  ).body;
+  expect(view.scope.assessmentRefs).toEqual([second.id]);
+  expect(view.metrics.coverage.failed).toBe(1);
+  expect(view.metrics.cve.uniqueCves).toBeNull();
+  await h
+    .patch(base + `/assets/${host.id}/classification`)
+    .set(auth)
+    .send({ hardwareType: "network" })
+    .expect(200);
+  const endDate = new Date(Date.now() + 30 * 86400000)
+    .toISOString()
+    .slice(0, 10);
+  const batch = (
+    await h
+      .post(base + "/lifecycle/batches")
+      .set(auth)
+      .send({
+        fileName: "eosl.csv",
+        content: `source,sourceRef,product,version,eosStage,eosDate,eolStage,eolDate\nVendor,fixture,Device,1,Sales,,Support,${endDate}`,
+      })
+      .expect(201)
+  ).body;
+  await h
+    .post(base + "/lifecycle/assessments")
+    .set(auth)
+    .send({ batchId: batch.id, assetIds: [host.id], softwareTargets: [] })
+    .expect(201);
+  const network = (
+    await h
+      .post(base + "/dashboard/view")
+      .set(auth)
+      .send({ selectionMode: "current", hardwareType: "network" })
+      .expect(200)
+  ).body;
+  expect(network.metrics.inventory.network).toBe(1);
+  expect(network.metrics.lifecycle.upcoming90d).toBe(1);
+  expect(network.objects.map((v: { id: string }) => v.id)).toEqual([host.id]);
+  const drill = (
+    await h
+      .post(base + "/dashboard/findings")
+      .set(auth)
+      .send({
+        hardwareType: "network",
+        assessmentRefs: network.scope.assessmentRefs,
+      })
+      .expect(200)
+  ).body;
+  expect(drill.items).toEqual([]);
+  await h
+    .delete(base + `/assets/${host.id}`)
+    .set(auth)
+    .expect(200);
+  view = (
+    await h
+      .post(base + "/dashboard/view")
+      .set(auth)
+      .send({ selectionMode: "current" })
+      .expect(200)
+  ).body;
+  expect(view.metrics.inventory.host).toBe(0);
+  expect(view.metrics.inventory.software).toBe(1);
+  expect(
+    (await h.get(base + "/dashboard/catalog").set(auth)).body.inventory.host,
+  ).toBe(0);
+  await h
+    .get(base + `/assets/${host.id}`)
+    .set(auth)
+    .expect(200);
+});

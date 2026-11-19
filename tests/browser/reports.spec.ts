@@ -43,6 +43,7 @@ test("select lifecycle facts, preview protected draft, inspect evidence and swit
   await page.goto("/");
   await page.getByLabel("操作员访问令牌").fill("browser-test-secret-token");
   await page.getByRole("button", { name: "进入工作台" }).click();
+  await page.locator("nav button").filter({ hasText: "资产台账" }).click();
   await page.getByRole("button", { name: "风险事实报告" }).click();
   await page.getByLabel(new RegExp(assessment.id)).check();
   await page.getByRole("button", { name: "生成事实草稿" }).click();

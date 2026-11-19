@@ -3,7 +3,7 @@ import type {
   Software,
   SoftwareDetail,
 } from "../../../../../packages/contracts/software";
-import type { AssetPage } from "../../../../../packages/contracts";
+import type { AssetPage, Asset } from "../../../../../packages/contracts";
 import type {
   LifecycleAssessment,
   LifecycleBatch,
@@ -24,13 +24,15 @@ export function LifecyclePage({
   customerId,
   token,
   onUnauthorized,
-}: FeatureProps) {
+  mode = "both",
+  assetId,
+}: FeatureProps & { mode?: "both" | "materials" | "assessment" }) {
   const [batches, setBatches] = useState<LifecycleBatch[]>([]),
     [assessments, setAssessments] = useState<LifecycleAssessment[]>([]),
     [selected, setSelected] = useState<LifecycleBatch>(),
     [result, setResult] = useState<LifecycleAssessment>(),
     [assets, setAssets] = useState<AssetPage["items"]>([]),
-    [ids, setIds] = useState<string[]>([]),
+    [ids, setIds] = useState<string[]>(assetId ? [assetId] : []),
     [file, setFile] = useState<File>(),
     [error, setError] = useState(""),
     [busy, setBusy] = useState(false);
@@ -67,8 +69,12 @@ export function LifecyclePage({
         ),
       )
       .catch(fail);
-    call<AssetPage>(`/customers/${customerId}/assets?limit=100`)
-      .then((x) => setAssets(x.items))
+    call<AssetPage | Asset>(
+      assetId
+        ? `/customers/${customerId}/assets/${assetId}`
+        : `/customers/${customerId}/assets?limit=100`,
+    )
+      .then((x) => setAssets("items" in x ? x.items : [x]))
       .catch(fail);
     return () => controller.current.abort();
   }, [customerId, token]);
@@ -105,34 +111,39 @@ export function LifecyclePage({
       <div className="page-heading">
         <div>
           <div className="eyebrow">LIFECYCLE</div>
-          <h1>EOS/EOL 生命周期</h1>
+          <h1>{mode === "materials" ? "生命周期资料" : "EOSL评估"}</h1>
           <p>独立导入有来源的阶段资料，按指定批次保存评估依据。</p>
+          {assetId && (
+            <p>本次仅评估台账选中的资产：{assets[0]?.name ?? assetId}</p>
+          )}
         </div>
       </div>
-      <section className="asset-panel import-upload">
-        <h2>上传生命周期 CSV</h2>
-        <p>
-          UTF-8，最多1000条、500000字节。必需表头
-          source、sourceRef、product、version、eosStage、eosDate、eolStage、eolDate。版本及日期可空；日期为
-          YYYY-MM-DD。阶段名称按来源原意填写，不自动合并厂商缩写。
-        </p>
-        <p className="hint">
-          坏日期单独保留为无效 /
-          未知。相同内容复用批次，更新资料产生新批次。系统不自动获取厂商资料，导入不表示完整覆盖。
-        </p>
-        <label>
-          生命周期 CSV 文件
-          <input
-            type="file"
-            accept=".csv,text/csv"
-            disabled={busy}
-            onChange={(e) => setFile(e.target.files?.[0])}
-          />
-        </label>
-        <button className="primary" disabled={!file || busy} onClick={upload}>
-          导入生命周期批次
-        </button>
-      </section>
+      {mode !== "assessment" && (
+        <section className="asset-panel import-upload">
+          <h2>上传生命周期 CSV</h2>
+          <p>
+            UTF-8，最多1000条、500000字节。必需表头
+            source、sourceRef、product、version、eosStage、eosDate、eolStage、eolDate。版本及日期可空；日期为
+            YYYY-MM-DD。阶段名称按来源原意填写，不自动合并厂商缩写。
+          </p>
+          <p className="hint">
+            坏日期单独保留为无效 /
+            未知。相同内容复用批次，更新资料产生新批次。系统不自动获取厂商资料，导入不表示完整覆盖。
+          </p>
+          <label>
+            生命周期 CSV 文件
+            <input
+              type="file"
+              accept=".csv,text/csv"
+              disabled={busy}
+              onChange={(e) => setFile(e.target.files?.[0])}
+            />
+          </label>
+          <button className="primary" disabled={!file || busy} onClick={upload}>
+            导入生命周期批次
+          </button>
+        </section>
+      )}
       {error && (
         <p className="error" role="alert">
           {error}
@@ -211,98 +222,114 @@ export function LifecyclePage({
             <summary>原始生命周期 CSV</summary>
             <pre>{selected.content}</pre>
           </details>
-          <h3>选择客户资产</h3>
-          <p>
-            以资产扩展属性 product / version
-            匹配，未知版本需核实。这里只列出最近100个资产。
-          </p>
-          {assets.map((a) => (
-            <label className="block" key={a.id}>
-              <input
-                type="checkbox"
-                checked={ids.includes(a.id)}
-                onChange={(e) =>
-                  setIds(
-                    e.target.checked
-                      ? [...ids, a.id]
-                      : ids.filter((id) => id !== a.id),
-                  )
+          {mode !== "materials" && (
+            <>
+              <h3>选择客户资产</h3>
+              <p>
+                以资产扩展属性 product / version
+                匹配，未知版本需核实。这里只列出最近100个资产。
+              </p>
+              {assets.map((a) => (
+                <label className="block" key={a.id}>
+                  <input
+                    type="checkbox"
+                    checked={ids.includes(a.id)}
+                    onChange={(e) =>
+                      setIds(
+                        e.target.checked
+                          ? [...ids, a.id]
+                          : ids.filter((id) => id !== a.id),
+                      )
+                    }
+                  />
+                  {a.name} · {String(a.attributes.product ?? "未知产品")} /{" "}
+                  {String(a.attributes.version ?? "未知版本")}
+                </label>
+              ))}
+              {!assetId && (
+                <>
+                  <h3>选择软件输入版本</h3>
+                  <p>
+                    按软件对象名称和明确选择的 SBOM
+                    版本匹配，不自动采用最新版本。
+                  </p>
+                  {software.flatMap((o) =>
+                    o.versions.map((v) => (
+                      <label className="block" key={v.id}>
+                        <input
+                          type="checkbox"
+                          checked={softwareIds.includes(v.id)}
+                          onChange={(e) =>
+                            setSoftwareIds(
+                              e.target.checked
+                                ? [...softwareIds, v.id]
+                                : softwareIds.filter((id) => id !== v.id),
+                            )
+                          }
+                        />
+                        {o.name} / {v.version ?? "未知版本"} · 输入版本 {v.id}
+                      </label>
+                    )),
+                  )}
+                </>
+              )}
+              <button
+                className="primary"
+                disabled={busy || (!ids.length && !softwareIds.length)}
+                onClick={() =>
+                  run(async () => {
+                    setResult(
+                      await call<LifecycleAssessment>(`${base}/assessments`, {
+                        method: "POST",
+                        body: JSON.stringify({
+                          batchId: selected.id,
+                          assetIds: ids,
+                          softwareTargets: software.flatMap((o) =>
+                            o.versions
+                              .filter((v) => softwareIds.includes(v.id))
+                              .map((v) => ({
+                                softwareId: o.id,
+                                versionId: v.id,
+                              })),
+                          ),
+                        }),
+                      }),
+                    );
+                    await refresh();
+                  })
                 }
-              />
-              {a.name} · {String(a.attributes.product ?? "未知产品")} /{" "}
-              {String(a.attributes.version ?? "未知版本")}
-            </label>
-          ))}
-          <h3>选择软件输入版本</h3>
-          <p>按软件对象名称和明确选择的 SBOM 版本匹配，不自动采用最新版本。</p>
-          {software.flatMap((o) =>
-            o.versions.map((v) => (
-              <label className="block" key={v.id}>
-                <input
-                  type="checkbox"
-                  checked={softwareIds.includes(v.id)}
-                  onChange={(e) =>
-                    setSoftwareIds(
-                      e.target.checked
-                        ? [...softwareIds, v.id]
-                        : softwareIds.filter((id) => id !== v.id),
-                    )
-                  }
-                />
-                {o.name} / {v.version ?? "未知版本"} · 输入版本 {v.id}
-              </label>
-            )),
+              >
+                保存生命周期评估
+              </button>
+            </>
           )}
-          <button
-            className="primary"
-            disabled={busy || (!ids.length && !softwareIds.length)}
-            onClick={() =>
-              run(async () => {
-                setResult(
-                  await call<LifecycleAssessment>(`${base}/assessments`, {
-                    method: "POST",
-                    body: JSON.stringify({
-                      batchId: selected.id,
-                      assetIds: ids,
-                      softwareTargets: software.flatMap((o) =>
-                        o.versions
-                          .filter((v) => softwareIds.includes(v.id))
-                          .map((v) => ({ softwareId: o.id, versionId: v.id })),
-                      ),
-                    }),
-                  }),
-                );
-                await refresh();
-              })
-            }
-          >
-            保存生命周期评估
-          </button>
         </section>
       )}
-      <section className="asset-panel">
-        <h2>评估历史</h2>
-        {assessments.length === 0 && <p>尚未评估，不能解释为无风险</p>}
-        {assessments.map((a) => (
-          <p key={a.id}>
-            <button
-              disabled={busy}
-              onClick={() =>
-                run(async () =>
-                  setResult(
-                    await call<LifecycleAssessment>(
-                      `${base}/assessments/${a.id}`,
+      {mode !== "materials" && (
+        <section className="asset-panel">
+          <h2>评估历史</h2>
+          {assessments.length === 0 && <p>尚未评估，不能解释为无风险</p>}
+          {assessments.map((a) => (
+            <p key={a.id}>
+              <button
+                disabled={busy}
+                onClick={() =>
+                  run(async () =>
+                    setResult(
+                      await call<LifecycleAssessment>(
+                        `${base}/assessments/${a.id}`,
+                      ),
                     ),
-                  ),
-                )
-              }
-            >
-              {a.evaluatedAt} · {a.id}
-            </button>
-          </p>
-        ))}
-      </section>
-      {result && (
+                  )
+                }
+              >
+                {a.evaluatedAt} · {a.id}
+              </button>
+            </p>
+          ))}
+        </section>
+      )}
+      {result && mode !== "materials" && (
         <section className="asset-panel">
           <h2>生命周期评估结果</h2>
           <p>

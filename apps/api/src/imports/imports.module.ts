@@ -1,3 +1,4 @@
+import { requireActiveAsset } from "../assets/asset-state";
 import { NetBoxService } from "../netbox/netbox.module";
 import {
   BadRequestException,
@@ -143,6 +144,7 @@ export class ImportsService {
         const m = row.mapped!;
         const linked = resolved.get(row.row);
         if (linked) {
+          await requireActiveAsset(session, customer, linked);
           row.status = "imported";
           row.assetId = linked;
           continue;

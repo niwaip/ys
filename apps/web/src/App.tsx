@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState, type FormEvent } from "react";
 import type { Customer } from "../../../packages/contracts";
 import { api } from "./api";
-import { features } from "./features";
+import { features, featureGroups } from "./features";
 export function App() {
   const [token, setToken] = useState(
     () => sessionStorage.getItem("ys-token") ?? "",
@@ -13,7 +13,30 @@ export function App() {
   const [customerId, setCustomerId] = useState(
     () => sessionStorage.getItem("ys-customer") ?? "",
   );
-  const [featureId, setFeatureId] = useState(features[0].id);
+  const [featureId, setFeatureId] = useState(
+    () => location.hash.slice(1).split("?")[0] || features[0].id,
+  );
+  const [assetId, setAssetId] = useState<string | undefined>(
+    () =>
+      new URLSearchParams(location.hash.split("?")[1]).get("asset") ??
+      undefined,
+  );
+  function navigate(id: string, asset?: string) {
+    setFeatureId(id);
+    setAssetId(asset);
+    location.hash = id + (asset ? "?asset=" + encodeURIComponent(asset) : "");
+  }
+  useEffect(() => {
+    const change = () => {
+      setFeatureId(location.hash.slice(1).split("?")[0] || features[0].id);
+      setAssetId(
+        new URLSearchParams(location.hash.split("?")[1]).get("asset") ??
+          undefined,
+      );
+    };
+    window.addEventListener("hashchange", change);
+    return () => window.removeEventListener("hashchange", change);
+  }, []);
   const [error, setError] = useState("");
   const [checking, setChecking] = useState(false);
   const [attempt, setAttempt] = useState(0);
@@ -127,6 +150,7 @@ export function App() {
             value={customerId}
             onChange={(e) => {
               setCustomerId(e.target.value);
+              navigate(featureId);
               sessionStorage.setItem("ys-customer", e.target.value);
             }}
           >
@@ -139,16 +163,23 @@ export function App() {
         </label>
         <div className="nav-label">管理工作区</div>
         <nav>
-          {features.map((f) => (
-            <button
-              key={f.id}
-              className={feature.id === f.id ? "active" : ""}
-              onClick={() => setFeatureId(f.id)}
-            >
-              <span>{f.icon}</span>
-              {f.label}
-              <span className="nav-arrow">↗</span>
-            </button>
+          {featureGroups.map((group) => (
+            <section className="nav-group" key={group} aria-label={group}>
+              <div className="nav-label">{group}</div>
+              {features
+                .filter((f) => !f.hidden && f.group === group)
+                .map((f) => (
+                  <button
+                    key={f.id}
+                    className={feature.id === f.id ? "active" : ""}
+                    onClick={() => navigate(f.id)}
+                  >
+                    <span>{f.icon}</span>
+                    {f.label}
+                    <span className="nav-arrow">↗</span>
+                  </button>
+                ))}
+            </section>
           ))}
         </nav>
         <div className="sidebar-note">
@@ -177,12 +208,17 @@ export function App() {
           </div>
           <span className="scope-badge">● 客户独立视图</span>
         </header>
-        <main className="page" key={customerId}>
+        <main
+          className="page"
+          key={`${customerId}:${feature.id}:${assetId ?? ""}`}
+        >
           {customer ? (
             <Page
               customerId={customer.id}
               token={token}
               onUnauthorized={logout}
+              onNavigate={navigate}
+              assetId={assetId}
             />
           ) : (
             <div className="empty">

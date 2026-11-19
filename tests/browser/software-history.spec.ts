@@ -36,6 +36,7 @@ test("软件重扫历史明确current选择并比较两批差异、覆盖及重�
   await page.goto("/");
   await page.getByLabel("操作员访问令牌").fill("browser-test-secret-token");
   await page.getByRole("button", { name: "进入工作台" }).click();
+  await page.locator("nav button").filter({ hasText: "资产台账" }).click();
   await page.getByRole("button", { name: "历史与比较" }).click();
   await page
     .getByRole("combobox", { name: "历史软件对象", exact: true })

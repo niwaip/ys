@@ -880,3 +880,9 @@ pre {
   white-space: pre-wrap;
   overflow-wrap: anywhere;
 }
+
+.nav-group { border-top: 1px solid #365345; padding-top: 4px; }
+.nav-group:first-child { border-top: 0; }
+.nav-group .nav-label { margin: 16px 10px 7px; letter-spacing: 1px; }
+.workspace-tabs { display: flex; gap: 8px; overflow-x: auto; margin: 0 0 24px; padding-bottom: 8px; }
+.workspace-tabs button { flex-shrink: 0; }

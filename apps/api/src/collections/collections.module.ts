@@ -91,11 +91,13 @@ export class CollectionsService {
   ) {
     const asset = (
       await session.query(
-        "SELECT id,name,source,source_ref,attributes FROM assets WHERE customer_id=$1 AND id=$2",
+        "SELECT id,name,source,source_ref,attributes,deleted_at FROM assets WHERE customer_id=$1 AND id=$2 FOR UPDATE",
         [customerId, assetId],
       )
     ).rows[0];
     if (!asset) throw new NotFoundException("该客户下未找到目标资产");
+    if (asset.deleted_at)
+      throw new ConflictException("资产已删除，请先恢复纳管");
     let mapping: Record<string, unknown> | undefined;
     if (this.netbox.enabled) {
       mapping = (

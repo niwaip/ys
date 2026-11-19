@@ -37,10 +37,12 @@ import type {
 import { aggregateDashboard, trendPoints } from "./metrics";
 const inputSchema = z
   .object({
+    hardwareType: z.enum(["server", "network", "unknown"]).optional(),
+    selectionMode: z.enum(["explicit", "current"]).default("explicit"),
     trendMode: z
       .enum(["selected_inputs", "object_history"])
       .default("selected_inputs"),
-    assessmentRefs: z.array(z.uuid()).max(1000).default([]),
+    assessmentRefs: z.array(z.uuid()).max(100000).default([]),
     lifecycleAssessmentId: z.uuid().optional(),
     object: z
       .object({ kind: z.enum(["host", "software", "container"]), id: z.uuid() })
@@ -78,15 +80,23 @@ export class DashboardService {
     private windows: WindowsService,
     private lifecycle: LifecycleService,
   ) {}
-  private async objects(customer: string, filter?: DashboardRequest["object"]) {
+  private async objects(
+    customer: string,
+    filter?: DashboardRequest["object"],
+    hardwareType?: string,
+  ) {
     const r = await this.db.query(
-      `SELECT * FROM (SELECT 'host' AS kind,id,name FROM assets WHERE customer_id=$1 UNION ALL SELECT 'software' AS kind,id,name FROM software_objects WHERE customer_id=$1 UNION ALL SELECT 'container' AS kind,id,name FROM container_images WHERE customer_id=$1) inventory ${filter ? "WHERE kind=$2 AND id=$3" : ""} ORDER BY kind,id LIMIT 1001`,
-      filter ? [customer, filter.kind, filter.id] : [customer],
+      `SELECT * FROM (SELECT 'host' AS kind,id,name,hardware_type AS "hardwareType" FROM assets WHERE customer_id=$1 AND deleted_at IS NULL UNION ALL SELECT 'software' AS kind,id,name,NULL AS "hardwareType" FROM software_objects WHERE customer_id=$1 UNION ALL SELECT 'container' AS kind,id,name,NULL AS "hardwareType" FROM container_images WHERE customer_id=$1) inventory WHERE ($2::text IS NULL OR (kind=$2 AND id=$3)) AND ($4::text IS NULL OR (kind='host' AND "hardwareType"=$4)) ORDER BY kind,id`,
+      [
+        customer,
+        filter?.kind ?? null,
+        filter?.id ?? null,
+        hardwareType ?? null,
+      ],
     );
     if (filter && !r.rows.length)
       throw new NotFoundException("该客户下未找到所选对象");
-    if (r.rows.length > 1000)
-      throw new BadRequestException("概览最多1000对象，请明确选择对象范围");
+
     return r.rows as { kind: DashboardKind; id: string; name: string }[];
   }
   async catalog(
@@ -95,11 +105,11 @@ export class DashboardService {
     offset = 0,
   ): Promise<DashboardCatalog> {
     const counts = await this.db.query(
-      `SELECT (SELECT count(*)::int FROM assets WHERE customer_id=$1) AS host,(SELECT count(*)::int FROM software_objects WHERE customer_id=$1) AS software,(SELECT count(*)::int FROM container_images WHERE customer_id=$1) AS container`,
+      `SELECT (SELECT count(*)::int FROM assets WHERE customer_id=$1 AND deleted_at IS NULL) AS host,(SELECT count(*)::int FROM software_objects WHERE customer_id=$1) AS software,(SELECT count(*)::int FROM container_images WHERE customer_id=$1) AS container`,
       [customer],
     );
     const page = await this.db.query(
-      `SELECT * FROM (SELECT 'host' AS kind,id,name FROM assets WHERE customer_id=$1 UNION ALL SELECT 'software' AS kind,id,name FROM software_objects WHERE customer_id=$1 UNION ALL SELECT 'container' AS kind,id,name FROM container_images WHERE customer_id=$1) inventory ORDER BY kind,id LIMIT $2 OFFSET $3`,
+      `SELECT * FROM (SELECT 'host' AS kind,id,name,hardware_type AS "hardwareType" FROM assets WHERE customer_id=$1 AND deleted_at IS NULL UNION ALL SELECT 'software' AS kind,id,name,NULL AS "hardwareType" FROM software_objects WHERE customer_id=$1 UNION ALL SELECT 'container' AS kind,id,name,NULL AS "hardwareType" FROM container_images WHERE customer_id=$1) inventory ORDER BY kind,id LIMIT $2 OFFSET $3`,
       [customer, limit, offset],
     );
     const a = await this.db.query(
@@ -155,7 +165,11 @@ export class DashboardService {
       new Set(input.assessmentRefs).size !== (input.assessmentRefs ?? []).length
     )
       throw new BadRequestException("评估批次不能重复");
-    const objects = await this.objects(customer, input.object),
+    const objects = await this.objects(
+        customer,
+        input.object,
+        input.hardwareType,
+      ),
       selected = new Map<string, AnyAssessment>();
     for (const id of input.assessmentRefs ?? []) {
       const a = await this.assessments.get(customer, id),
@@ -204,6 +218,34 @@ export class DashboardService {
           row.inputId = current.versionId;
           if (current.assessmentId)
             job = await this.assessments.get(customer, current.assessmentId);
+        }
+      }
+      if (!job && input.selectionMode === "current") {
+        if (!row.inputId && object.kind !== "host") {
+          const table =
+            object.kind === "software"
+              ? "software_versions"
+              : "container_versions";
+          const column =
+            object.kind === "software" ? "software_id" : "container_id";
+          const latest = (
+            await this.db.query(
+              `SELECT id FROM ${table} WHERE customer_id=$1 AND ${column}=$2 ORDER BY created_at DESC,id DESC LIMIT 1`,
+              [customer, object.id],
+            )
+          ).rows[0];
+          if (latest) row.inputId = String(latest.id);
+        }
+        const candidate = (
+          await this.db.query(
+            `SELECT details FROM vulnerability_jobs WHERE customer_id=$1 AND COALESCE(details#>>'{target,softwareId}',details#>>'{target,containerId}',details#>>'{target,assetId}')=$2 AND ($3::text IS NULL OR COALESCE(details#>>'{target,versionId}',details#>>'{target,snapshotId}')=$3) ORDER BY created_at DESC,id DESC LIMIT 1`,
+            [customer, object.id, row.inputId],
+          )
+        ).rows[0];
+        if (candidate) {
+          job = candidate.details as AnyAssessment;
+          row.selection = "latest_attempt";
+          row.inputId = identity(job).inputId;
         }
       }
       if (row.inputId) {
@@ -291,7 +333,23 @@ export class DashboardService {
           Date.parse(lifecycle.evaluatedAt) > Date.parse(input.to)));
     const applicableLifecycle = lifecycleOutside ? null : lifecycle;
     for (const row of rows) {
-      const match = applicableLifecycle?.items.find(
+      let rowLifecycle = applicableLifecycle;
+      if (!input.lifecycleAssessmentId && input.selectionMode === "current") {
+        const latest = (
+          await this.db.query(
+            `SELECT result FROM lifecycle_assessments WHERE customer_id=$1 AND EXISTS(SELECT 1 FROM jsonb_array_elements(result->'items') item WHERE item->>'assetId'=$2 AND ($3::text IS NULL OR item->>'versionId'=$3)) ORDER BY evaluated_at DESC,id DESC LIMIT 1`,
+            [customer, row.id, row.kind === "software" ? row.inputId : null],
+          )
+        ).rows[0];
+        rowLifecycle = (latest?.result as typeof applicableLifecycle) ?? null;
+        if (
+          rowLifecycle &&
+          ((input.from && rowLifecycle.evaluatedAt < input.from) ||
+            (input.to && rowLifecycle.evaluatedAt > input.to))
+        )
+          rowLifecycle = null;
+      }
+      const match = rowLifecycle?.items.find(
         (x) =>
           x.assetId === row.id &&
           (row.kind !== "software" || x.versionId === row.inputId),
@@ -306,7 +364,10 @@ export class DashboardService {
         row.issues.push(
           "生命周期资产属性输入未绑定所选 Windows 快照，不能计入此快照生命周期状态",
         );
-      } else row.lifecycle = match ?? null;
+      } else {
+        row.lifecycle = match ?? null;
+        if (match && rowLifecycle) row.lifecycleAssessmentId = rowLifecycle.id;
+      }
     }
     const historyWhere = `customer_id=$1 AND COALESCE(details#>>'{target,softwareId}',details#>>'{target,containerId}',details#>>'{target,assetId}')=ANY($2::text[]) AND ($5::boolean OR COALESCE(details#>>'{target,versionId}',details#>>'{target,snapshotId}')=ANY($6::text[])) AND ($3::timestamptz IS NULL OR (details->>'createdAt')::timestamptz >= $3::timestamptz) AND ($4::timestamptz IS NULL OR (details->>'createdAt')::timestamptz <= $4::timestamptz)`;
     const historyParams = [
@@ -331,6 +392,7 @@ export class DashboardService {
     const historyTotal = Number(historyCount.rows[0].total);
     const scope = {
       object: input.object ?? null,
+      hardwareType: input.hardwareType ?? null,
       from: input.from ?? null,
       to: input.to ?? null,
       assessmentRefs: rows
@@ -339,7 +401,16 @@ export class DashboardService {
       lifecycleAssessmentId: input.lifecycleAssessmentId ?? null,
       trendMode: input.trendMode ?? "selected_inputs",
       selectionPolicy:
-        "software explicit current; container/Windows explicit assessment; no historical accumulation",
+        input.selectionMode === "current"
+          ? "软件current指针优先；其余按对象及固定输入取最近一次尝试（含失败），生命周期按对象匹配最近固定评估；不累计历史"
+          : "software explicit current; container/Windows explicit assessment; no historical accumulation",
+      lifecycleAssessmentRefs: [
+        ...new Set(
+          rows
+            .map((r) => r.lifecycleAssessmentId)
+            .filter((id): id is string => !!id),
+        ),
+      ],
     };
     const hash = createHash("sha256")
       .update(
@@ -350,7 +421,13 @@ export class DashboardService {
         }),
       )
       .digest("hex");
-    const metrics = aggregateDashboard(rows, applicableLifecycle);
+    const metrics = aggregateDashboard(
+      rows,
+      applicableLifecycle,
+      input.selectionMode === "current" &&
+        !input.lifecycleAssessmentId &&
+        rows.some((r) => !!r.lifecycle),
+    );
     if (lifecycleOutside && lifecycle) {
       metrics.lifecycle = {
         ...metrics.lifecycle,
@@ -376,9 +453,12 @@ export class DashboardService {
       },
       warnings: [
         "只统计所选固定输入/批次；未知、失败、未选择不表示零风险",
+        "已删除资产不计入当前纳管范围；软件及镜像为独立对象，删除主机不删除共享SBOM",
         "Trivy tool_reported不自动等同确认受影响；Windows仅affected计确认影响",
         "容器发现不证明任何运行实例使用该镜像",
-        ...(!lifecycle ? ["未选择生命周期评估版本；EOS/EOL未知"] : []),
+        ...(!lifecycle && input.selectionMode !== "current"
+          ? ["未选择生命周期评估版本；EOS/EOL未知"]
+          : []),
         ...(lifecycleOutside
           ? ["所选生命周期评估在时间范围外；不计状态、未换用其他评估"]
           : []),

@@ -8,7 +8,10 @@ export function AssetsPage({
   customerId,
   token,
   onUnauthorized,
+  onNavigate,
 }: FeatureProps) {
+  const [status, setStatus] = useState("active");
+  const [deleting, setDeleting] = useState<{ id: string; name: string }>();
   const [detailAsset, setDetailAsset] = useState<{
     id: string;
     name: string;
@@ -27,7 +30,7 @@ export function AssetsPage({
     setData(undefined);
     setError("");
     api<AssetPage>(
-      `/customers/${customerId}/assets?limit=20&offset=${offset}`,
+      `/customers/${customerId}/assets?limit=20&offset=${offset}&status=${status}`,
       token,
       {},
       controller.signal,
@@ -39,7 +42,25 @@ export function AssetsPage({
         else setError(e.message);
       });
     return () => controller.abort();
-  }, [customerId, token, offset, revision, onUnauthorized]);
+  }, [customerId, token, offset, status, revision, onUnauthorized]);
+  async function change(path: string, method: string, body?: object) {
+    setSaving(true);
+    setError("");
+    try {
+      await api(`/customers/${customerId}/assets/${path}`, token, {
+        method,
+        ...(body ? { body: JSON.stringify(body) } : {}),
+      });
+      setDeleting(undefined);
+      setOffset(0);
+      refresh();
+    } catch (e) {
+      if (e instanceof ApiError && e.status === 401) onUnauthorized();
+      else setError((e as Error).message);
+    } finally {
+      setSaving(false);
+    }
+  }
   async function save(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const values = new FormData(event.currentTarget);
@@ -102,7 +123,7 @@ export function AssetsPage({
       />
       <div className="stats">
         <div className="stat">
-          <span>纳管资产</span>
+          <span>{status === "active" ? "纳管资产" : "已删除资产"}</span>
           <strong>
             {data?.total ?? "—"}
             <small> 项</small>
@@ -111,8 +132,8 @@ export function AssetsPage({
         </div>
         <div className="stat">
           <span>资产类型</span>
-          <strong className="stat-word">主机</strong>
-          <p>人工建档 · 持续补充资料</p>
+          <strong className="stat-word">硬件</strong>
+          <p>服务器 · 网络设备 · 未分类</p>
         </div>
         <div className="stat">
           <span>评估覆盖</span>
@@ -136,10 +157,31 @@ export function AssetsPage({
           ✓ {notice}
         </div>
       )}
+      <div className="form-actions">
+        <button
+          className={status === "active" ? "primary" : "secondary"}
+          onClick={() => {
+            setStatus("active");
+            setOffset(0);
+          }}
+        >
+          在管资产
+        </button>
+        <button
+          className={status === "deleted" ? "primary" : "secondary"}
+          onClick={() => {
+            setStatus("deleted");
+            setOffset(0);
+          }}
+        >
+          已删除资产
+        </button>
+      </div>
       <section className="asset-panel">
         <div className="panel-heading">
           <h2>
-            全部资产 <span>{data?.total ?? "—"}</span>
+            {status === "active" ? "全部资产" : "已删除资产"}{" "}
+            <span>{data?.total ?? "—"}</span>
           </h2>
           <span className="subtle">按建档时间排序</span>
         </div>
@@ -147,6 +189,8 @@ export function AssetsPage({
           <div className="empty">
             {error ? "暂时无法读取资产" : "正在读取资产…"}
           </div>
+        ) : !data.total && status === "deleted" ? (
+          <div className="empty">暂无已删除资产</div>
         ) : !data.total ? (
           <div className="empty">
             <div className="empty-icon">▦</div>
@@ -175,7 +219,7 @@ export function AssetsPage({
                     <th>来源标识</th>
                     <th>扩展属性</th>
                     <th>建档时间</th>
-                    <th>评估状态</th>
+                    <th>操作</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -193,7 +237,20 @@ export function AssetsPage({
                         <code title={asset.id}>{asset.id}</code>
                       </td>
                       <td>
-                        <span className="badge">主机</span>
+                        <select
+                          aria-label="硬件类型"
+                          value={asset.hardwareType ?? "unknown"}
+                          disabled={saving || status === "deleted"}
+                          onChange={(e) =>
+                            void change(`${asset.id}/classification`, "PATCH", {
+                              hardwareType: e.target.value,
+                            })
+                          }
+                        >
+                          <option value="unknown">未分类硬件</option>
+                          <option value="server">服务器</option>
+                          <option value="network">网络设备</option>
+                        </select>
                       </td>
                       <td>
                         {asset.sourceRef || (
@@ -222,8 +279,55 @@ export function AssetsPage({
                         {new Date(asset.createdAt).toLocaleString("zh-CN")}
                       </td>
                       <td>
-                        <span className="status-dot" />
-                        未评估
+                        {status === "active" ? (
+                          <div className="form-actions">
+                            <button
+                              className="secondary"
+                              onClick={() =>
+                                onNavigate?.("assessment-workspace", asset.id)
+                              }
+                            >
+                              CVE评估
+                            </button>
+                            <button
+                              className="secondary"
+                              onClick={() =>
+                                onNavigate?.("lifecycle", asset.id)
+                              }
+                            >
+                              EOSL评估
+                            </button>
+                            <button
+                              className="secondary"
+                              disabled={saving}
+                              onClick={() =>
+                                setDeleting({ id: asset.id, name: asset.name })
+                              }
+                            >
+                              删除
+                            </button>
+                          </div>
+                        ) : (
+                          <>
+                            <small>
+                              删除于{" "}
+                              {asset.deletedAt
+                                ? new Date(asset.deletedAt).toLocaleString(
+                                    "zh-CN",
+                                  )
+                                : "未知"}{" "}
+                              · {asset.deletedBy}
+                            </small>
+                            <button
+                              disabled={saving}
+                              onClick={() =>
+                                void change(`${asset.id}/restore`, "POST", {})
+                              }
+                            >
+                              恢复
+                            </button>
+                          </>
+                        )}
                       </td>
                     </tr>
                   ))}
@@ -290,6 +394,34 @@ export function AssetsPage({
               />
             </section>
           </div>
+        </div>
+      )}
+      {deleting && (
+        <div className="modal-backdrop">
+          <section
+            className="modal"
+            role="dialog"
+            aria-modal="true"
+            aria-label="删除资产"
+          >
+            <h2>删除资产：{deleting.name}</h2>
+            <p>
+              从YS移除纳管，保留历史采集、评估和报告，可在已删除资产中恢复。不会删除NetBox原对象，同步不会自动恢复。
+            </p>
+            <div className="form-actions">
+              <button disabled={saving} onClick={() => setDeleting(undefined)}>
+                取消
+              </button>
+              <button
+                className="primary"
+                disabled={saving}
+                onClick={() => void change(deleting.id, "DELETE")}
+              >
+                确认删除
+              </button>
+            </div>
+            {error && <p role="alert">{error}</p>}
+          </section>
         </div>
       )}
       {creating && (

@@ -1,3 +1,4 @@
+import { requireActiveAsset } from "../assets/asset-state";
 import {
   BadRequestException,
   ConflictException,
@@ -234,6 +235,7 @@ export class BaselinesService {
       await tx.query("SELECT id FROM customers WHERE id=$1 FOR UPDATE", [
         customer,
       ]);
+      await requireActiveAsset(tx, customer, asset);
       const repeated = (
         await tx.query(
           "SELECT * FROM asset_baselines WHERE customer_id=$1 AND idempotency_key=$2",

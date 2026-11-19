@@ -3,6 +3,7 @@ test("软件SBOM上传、组件未知提示、刷新与客户隔离", async ({ p
   await page.goto("/");
   await page.getByLabel("操作员访问令牌").fill("browser-test-secret-token");
   await page.getByRole("button", { name: "进入工作台" }).click();
+  await page.locator("nav button").filter({ hasText: "资产台账" }).click();
   await page.getByRole("button", { name: "软件 SBOM" }).click();
   const name = `Billing-${Date.now()}`;
   await page.getByLabel("软件名称").fill(name);

@@ -55,7 +55,8 @@ test("lifecycle CSV exposes separate stages and immutable assessment history per
   await page.goto("/");
   await page.getByLabel("操作员访问令牌").fill("browser-test-secret-token");
   await page.getByRole("button", { name: "进入工作台" }).click();
-  await page.getByRole("button", { name: "EOS/EOL 生命周期" }).click();
+  await page.locator("nav button").filter({ hasText: "资产台账" }).click();
+  await page.locator("nav button").filter({ hasText: "生命周期资料" }).click();
   await page.getByLabel("生命周期 CSV 文件").setInputFiles({
     name: `lifecycle-${unique}.csv`,
     mimeType: "text/csv",
@@ -67,6 +68,10 @@ test("lifecycle CSV exposes separate stages and immutable assessment history per
   await expect(
     page.getByText("eolDate 无效，保留其他信息", { exact: true }),
   ).toBeVisible();
+  await page.locator("nav button").filter({ hasText: "EOSL评估" }).click();
+  await page
+    .getByRole("button", { name: `lifecycle-${unique}.csv`, exact: true })
+    .click();
   await page.getByLabel(new RegExp(name)).check();
   await page.getByLabel(new RegExp(snapshot.id)).check();
   await page.getByRole("button", { name: "保存生命周期评估" }).click();
@@ -83,7 +88,7 @@ test("lifecycle CSV exposes separate stages and immutable assessment history per
     page.getByRole("heading", { name: "Widget · 精确匹配", exact: true }),
   ).toBeVisible();
   await page.reload();
-  await page.getByRole("button", { name: "EOS/EOL 生命周期" }).click();
+  await page.locator("nav button").filter({ hasText: "生命周期资料" }).click();
   await expect(
     page.getByRole("button", { name: `lifecycle-${unique}.csv`, exact: true }),
   ).toBeVisible();

@@ -44,7 +44,12 @@ export function DashboardPage({
   customerId,
   token,
   onUnauthorized,
-}: FeatureProps) {
+  title = "客户风险概览",
+}: FeatureProps & { title?: string }) {
+  const [autoCurrent, setAutoCurrent] = useState(true);
+  const [hardwareType, setHardwareType] = useState<
+    "" | "server" | "network" | "unknown"
+  >("");
   const [catalog, setCatalog] = useState<DashboardCatalog>(),
     [data, setData] = useState<DashboardView>(),
     [object, setObject] = useState(""),
@@ -84,12 +89,12 @@ export function DashboardPage({
       loadCatalog(),
       call<DashboardView>("/dashboard/view", {
         method: "POST",
-        body: "{}",
+        body: JSON.stringify({ selectionMode: "current" }),
       }).then(setData),
     ]).catch(fail);
     return () => controller.current.abort();
   }, [customerId, token]);
-  async function apply() {
+  async function apply(hardwareOverride?: "server" | "network" | "unknown") {
     setBusy(true);
     setError("");
     setDetail(undefined);
@@ -97,9 +102,16 @@ export function DashboardPage({
     setEvidence(undefined);
     try {
       const request: DashboardRequest = {
+        selectionMode: autoCurrent ? "current" : "explicit",
+        ...((hardwareOverride ?? hardwareType)
+          ? {
+              hardwareType: (hardwareOverride ?? hardwareType) as
+                "server" | "network" | "unknown",
+            }
+          : {}),
         assessmentRefs: refs,
         trendMode: crossVersion ? "object_history" : "selected_inputs",
-        ...(selectedObject
+        ...(!hardwareOverride && selectedObject
           ? { object: { kind: selectedObject.kind, id: selectedObject.id } }
           : {}),
         ...(lifecycleId ? { lifecycleAssessmentId: lifecycleId } : {}),
@@ -124,6 +136,7 @@ export function DashboardPage({
         method: "POST",
         body: JSON.stringify({
           object: data.scope.object ?? undefined,
+          hardwareType: data.scope.hardwareType ?? undefined,
           assessmentRefs: data.scope.assessmentRefs,
           from: data.scope.from ?? undefined,
           to: data.scope.to ?? undefined,
@@ -153,7 +166,7 @@ export function DashboardPage({
       <header className="dashboard-heading">
         <div>
           <p className="dashboard-eyebrow">CUSTOMER OVERVIEW</p>
-          <h2>客户风险概览</h2>
+          <h2>{title}</h2>
           <p>
             客户 {customerId} ·
             固定输入与评估范围。未选择、失败与未知不表示安全。
@@ -169,6 +182,31 @@ export function DashboardPage({
         </p>
       )}
       <div className="dashboard-filters">
+        <label className="dashboard-check">
+          <input
+            type="checkbox"
+            checked={autoCurrent}
+            onChange={(e) => setAutoCurrent(e.target.checked)}
+          />
+          按当前对象汇总（优先软件current指针，其余取最近尝试，失败不回退）
+        </label>
+        <label>
+          硬件分类范围
+          <select
+            value={hardwareType}
+            onChange={(e) => {
+              setHardwareType(e.target.value as typeof hardwareType);
+              setObject("");
+              setSelectedObject(undefined);
+              setRefs([]);
+            }}
+          >
+            <option value="">全部对象</option>
+            <option value="server">服务器</option>
+            <option value="network">网络设备</option>
+            <option value="unknown">未分类硬件</option>
+          </select>
+        </label>
         <label>
           概览对象
           <select
@@ -183,7 +221,7 @@ export function DashboardPage({
               setRefs([]);
             }}
           >
-            <option value="">客户全部对象（最多1000）</option>
+            <option value="">客户全部在管对象</option>
             {objectOptions.map((x) => (
               <option key={`${x.kind}:${x.id}`} value={`${x.kind}:${x.id}`}>
                 {kindLabels[x.kind]} · {x.name}
@@ -233,8 +271,7 @@ export function DashboardPage({
           </select>
         </label>
         <p>
-          软件默认采用明确的 current 指针；容器/Windows
-          需显式选择。新扫描不会自动替换当前批次。
+          自动范围按对象解析固定输入及最近尝试，失败不回退。关闭自动汇总后使用手动指定批次。
           {catalog?.truncated ? "评估选择目录仅列最近1000条，已截断。" : ""}
         </p>
         <label>
@@ -251,7 +288,9 @@ export function DashboardPage({
             ))}
           </select>
         </label>
-        <p>生命周期选择目录为最近100次；不自动累加历史或改用最新。</p>
+        <p>
+          手动选择目录为最近100次；自动汇总按对象匹配固定生命周期评估，均不累计历史。
+        </p>
         <div className="dashboard-time">
           <label>
             评估开始时间
@@ -278,7 +317,11 @@ export function DashboardPage({
           />
           趋势对比所选对象的所有输入版本（汇总仍使用固定所选批次）
         </label>
-        <button className="dashboard-primary" disabled={busy} onClick={apply}>
+        <button
+          className="dashboard-primary"
+          disabled={busy}
+          onClick={() => void apply()}
+        >
           应用概览范围
         </button>
       </div>
@@ -292,8 +335,25 @@ export function DashboardPage({
                 ? `${kindLabels[data.scope.object.kind]} ${data.scope.object.id}`
                 : "客户全部对象"}{" "}
               · {data.scope.from ?? "不限开始"} — {data.scope.to ?? "不限结束"}{" "}
-              · EOS评估 {data.scope.lifecycleAssessmentId ?? "未选择"}
+              · EOS评估{" "}
+              {data.scope.lifecycleAssessmentId ??
+                (data.scope.lifecycleAssessmentRefs?.length
+                  ? `按对象匹配 ${data.scope.lifecycleAssessmentRefs.length} 个固定批次`
+                  : "未选择")}
             </p>
+            <p>{data.scope.selectionPolicy}</p>
+            {data.scope.hardwareType && (
+              <p>
+                硬件分类：
+                {
+                  {
+                    server: "服务器",
+                    network: "网络设备",
+                    unknown: "未分类硬件",
+                  }[data.scope.hardwareType]
+                }
+              </p>
+            )}
             <small>范围指纹 {data.scope.hash} · 汇总不累计历史批次</small>
           </div>
           <div className="dashboard-cards">
@@ -305,6 +365,31 @@ export function DashboardPage({
                 {data.metrics.inventory.software} · 镜像{" "}
                 {data.metrics.inventory.container}
               </small>
+              <div className="workspace-tabs">
+                {(
+                  [
+                    ["server", "服务器"],
+                    ["network", "网络设备"],
+                    ["unknown", "未分类硬件"],
+                  ] as const
+                ).map(([type, label]) => (
+                  <button
+                    key={type}
+                    onClick={() => {
+                      setHardwareType(type);
+                      setObject("");
+                      setSelectedObject(undefined);
+                      setRefs([]);
+                      void apply(type);
+                    }}
+                  >
+                    {label}{" "}
+                    {type === "unknown"
+                      ? data.metrics.inventory.unclassified
+                      : data.metrics.inventory[type]}
+                  </button>
+                ))}
+              </div>
             </article>
             <article>
               <span>已知 SBOM 组件</span>
@@ -391,6 +476,10 @@ export function DashboardPage({
             </article>
             <article>
               <h3>EOS / EOL 生命周期</h3>
+              <p>
+                未来90天内支持到期：{show(data.metrics.lifecycle.upcoming90d)}{" "}
+                个对象（按展示时日期）
+              </p>
               {data.metrics.lifecycle.status !== "selected" ? (
                 <p>
                   {data.metrics.lifecycle.status === "outside_time_range"

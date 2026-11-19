@@ -15,6 +15,9 @@ export type Asset = CreateAsset & {
   importId?: string;
   collectedAt?: string | null;
   createdAt: string;
+  deletedAt?: string | null;
+  deletedBy?: string | null;
+  hardwareType?: "unknown" | "server" | "network";
 };
 export type Customer = { id: string; name: string };
 export type AssetPage = {

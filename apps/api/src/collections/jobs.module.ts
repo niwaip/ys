@@ -1,3 +1,4 @@
+import { requireActiveAsset } from "../assets/asset-state";
 import { DirectCollectionExecutor } from "./direct-collection";
 import { CollectionAccessService, CollectionAccessController } from "./access";
 import {
@@ -148,18 +149,21 @@ export class CollectionJobsService {
       createdAt: new Date().toISOString(),
     };
     if (job.status === "queued") await this.access.authorized(job);
-    const saved = await this.db.query(
-      "INSERT INTO collection_jobs(id,customer_id,asset_id,idempotency_key,input_hash,status,details) VALUES($1,$2,$3,$4,$5,$6,$7::jsonb) ON CONFLICT(customer_id,idempotency_key) DO NOTHING RETURNING id",
-      [
-        job.id,
-        customerId,
-        input.assetId,
-        input.idempotencyKey,
-        hash,
-        job.status,
-        JSON.stringify(job),
-      ],
-    );
+    const saved = await this.db.transaction(async (tx) => {
+      await requireActiveAsset(tx, customerId, input.assetId);
+      return tx.query(
+        "INSERT INTO collection_jobs(id,customer_id,asset_id,idempotency_key,input_hash,status,details) VALUES($1,$2,$3,$4,$5,$6,$7::jsonb) ON CONFLICT(customer_id,idempotency_key) DO NOTHING RETURNING id",
+        [
+          job.id,
+          customerId,
+          input.assetId,
+          input.idempotencyKey,
+          hash,
+          job.status,
+          JSON.stringify(job),
+        ],
+      );
+    });
     if (!saved.rows.length) return this.submit(customerId, input);
     if (job.status === "queued") queueMicrotask(() => void this.drain());
     return job;

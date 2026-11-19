@@ -1,3 +1,4 @@
+import { requireActiveAsset } from "../assets/asset-state";
 import { NetBoxService } from "../netbox/netbox.module";
 import {
   BadRequestException,
@@ -141,6 +142,7 @@ export class WindowsService {
           );
           result.assetId = assetId;
         }
+        await requireActiveAsset(s, customer, assetId!);
         await s.query(
           "INSERT INTO windows_snapshots(id,customer_id,asset_id,import_id,snapshot) VALUES($1,$2,$3,$4,$5::jsonb)",
           [result.snapshotId, customer, assetId, id, JSON.stringify(snapshot)],

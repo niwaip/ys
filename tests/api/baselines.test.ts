@@ -287,6 +287,10 @@ test("NetBox写回响应丢失不更新基线、不重复写入；核对远端�
     }
     expect(pending).toBeTruthy();
     await http
+      .delete(base + `/assets/${asset.id}`)
+      .set(auth)
+      .expect(409);
+    await http
       .post(path + `/${pending}/reconcile`)
       .set(auth)
       .send({})
@@ -295,6 +299,10 @@ test("NetBox写回响应丢失不更新基线、不重复写入；核对远端�
     const approval = await active;
     expect(native.serial).toBe("MANUALLY-CORRECTED");
     expect(approval.status).toBe("unknown");
+    await http
+      .delete(base + `/assets/${asset.id}`)
+      .set(auth)
+      .expect(409);
     expect(writes).toBe(1);
     expect((await http.get(path).set(auth)).body.current).toBeNull();
     await http

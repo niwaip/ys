@@ -5,6 +5,7 @@ test("公开情报对话保存失败任务并刷新回读，不把未配置显�
   await page.goto("/");
   await page.getByLabel("操作员访问令牌").fill("browser-test-secret-token");
   await page.getByRole("button", { name: "进入工作台" }).click();
+  await page.locator("nav button").filter({ hasText: "资产台账" }).click();
   await expect(page.getByRole("button", { name: "公开 CVE 对话" })).toBeVisible(
     { timeout: 2000 },
   );

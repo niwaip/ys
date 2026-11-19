@@ -1,3 +1,4 @@
+import { requireActiveAsset } from "../assets/asset-state";
 import {
   BadRequestException,
   Controller,
@@ -291,10 +292,13 @@ export class LifecycleService {
       ruleVersion: "literal-product-version-v1",
       items,
     };
-    await this.db.query(
-      "INSERT INTO lifecycle_assessments(id,customer_id,batch_id,evaluated_at,result) VALUES($1,$2,$3,$4,$5::jsonb)",
-      [result.id, customer, batchId, evaluatedAt, JSON.stringify(result)],
-    );
+    await this.db.transaction(async (tx) => {
+      for (const id of assetIds) await requireActiveAsset(tx, customer, id);
+      await tx.query(
+        "INSERT INTO lifecycle_assessments(id,customer_id,batch_id,evaluated_at,result) VALUES($1,$2,$3,$4,$5::jsonb)",
+        [result.id, customer, batchId, evaluatedAt, JSON.stringify(result)],
+      );
+    });
     return result;
   }
   async getAssessment(customer: string, id: string) {

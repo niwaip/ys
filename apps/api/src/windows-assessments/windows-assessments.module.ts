@@ -1,3 +1,4 @@
+import { requireActiveAsset } from "../assets/asset-state";
 import {
   BadRequestException,
   ConflictException,
@@ -173,6 +174,7 @@ export class WindowsAssessmentService {
       createdAt: new Date().toISOString(),
     };
     const saved = await this.db.transaction(async (s) => {
+      await requireActiveAsset(s, customer, job.target.assetId);
       const r = await s.query(
         `INSERT INTO vulnerability_jobs(id,customer_id,idempotency_key,status,details) VALUES($1,$2,$3,'queued',$4::jsonb) ON CONFLICT(customer_id,idempotency_key) DO NOTHING RETURNING details`,
         [job.id, customer, input.idempotencyKey, JSON.stringify(job)],

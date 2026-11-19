@@ -1,3 +1,10 @@
+import {
+  CollectionWorkspace,
+  AssessmentWorkspace,
+  LifecycleMaterials,
+  LifecycleEvaluation,
+  RiskWorkspace,
+} from "./features/workspaces/Workspaces";
 import { CollectionsPage } from "./features/collections/CollectionsPage";
 import { DashboardPage } from "./features/dashboard/DashboardPage";
 import { SoftwareHistoryPage } from "./features/software-history/SoftwareHistoryPage";
@@ -17,15 +24,19 @@ export type FeatureProps = {
   customerId: string;
   token: string;
   onUnauthorized: () => void;
+  assetId?: string;
+  onNavigate?: (featureId: string, assetId?: string) => void;
 };
 export type Feature = {
   id: string;
   label: string;
   icon: string;
   component: ComponentType<FeatureProps>;
+  group?: string;
+  hidden?: boolean;
 };
 // Register implemented customer-scoped pages here; the shell owns identity and navigation.
-export const features: Feature[] = [
+const legacyFeatures: Feature[] = [
   { id: "assets", label: "资产台账", icon: "▦", component: AssetsPage },
   {
     id: "collections",
@@ -86,3 +97,77 @@ export const features: Feature[] = [
     component: AssessmentsPage,
   },
 ];
+
+const groups: Record<string, string> = {
+  dashboard: "总览",
+  assets: "资产管理",
+  collections: "资产管理",
+  software: "资产管理",
+  containers: "资产管理",
+  "lifecycle-materials": "资产管理",
+  "assessment-workspace": "CVE与EOSL评估",
+  lifecycle: "CVE与EOSL评估",
+  risk: "风险与报告",
+  "software-history": "风险与报告",
+  "customer-chat": "风险与报告",
+  "public-intelligence": "风险与报告",
+  reports: "风险与报告",
+};
+const replacements: Record<string, Partial<Feature>> = {
+  collections: { component: CollectionWorkspace },
+  lifecycle: { component: LifecycleEvaluation, label: "EOSL评估" },
+};
+const entries: Feature[] = [
+  ...legacyFeatures.map((f) => ({
+    ...f,
+    ...replacements[f.id],
+    hidden: [
+      "windows",
+      "imports",
+      "windows-assessments",
+      "assessments",
+    ].includes(f.id),
+  })),
+  {
+    id: "lifecycle-materials",
+    label: "生命周期资料",
+    icon: "◷",
+    component: LifecycleMaterials,
+  },
+  {
+    id: "assessment-workspace",
+    label: "CVE评估",
+    icon: "◈",
+    component: AssessmentWorkspace,
+  },
+  { id: "risk", label: "风险结果", icon: "◫", component: RiskWorkspace },
+];
+const order = [
+  "dashboard",
+  "assets",
+  "collections",
+  "containers",
+  "software",
+  "lifecycle-materials",
+  "assessment-workspace",
+  "lifecycle",
+  "risk",
+  "software-history",
+  "customer-chat",
+  "public-intelligence",
+  "reports",
+  "windows",
+  "imports",
+  "windows-assessments",
+  "assessments",
+];
+export const featureGroups = [
+  "总览",
+  "资产管理",
+  "CVE与EOSL评估",
+  "风险与报告",
+];
+export const features: Feature[] = order.map((id) => ({
+  ...entries.find((f) => f.id === id)!,
+  group: groups[id],
+}));

@@ -35,7 +35,11 @@ test("选择Windows固定快照与源戳规则、执行、刷新回读补丁依�
   await page.goto("/");
   await page.getByLabel("操作员访问令牌").fill("browser-test-secret-token");
   await page.getByRole("button", { name: "进入工作台" }).click();
-  await page.getByRole("button", { name: "Windows 补丁评估" }).click();
+  await page.locator("nav button").filter({ hasText: "资产台账" }).click();
+  await page.locator("nav button").filter({ hasText: "CVE评估" }).click();
+  await page
+    .getByRole("tab", { name: "Windows 补丁评估", exact: true })
+    .click();
   await page.getByLabel("Windows 规则 JSON").setInputFiles({
     name: "synthetic-rules.json",
     mimeType: "application/json",
@@ -60,7 +64,10 @@ test("选择Windows固定快照与源戳规则、执行、刷新回读补丁依�
     .getByRole("heading", { name: /^任务 / })
     .innerText();
   await page.reload();
-  await page.getByRole("button", { name: "Windows 补丁评估" }).click();
+  await page.locator("nav button").filter({ hasText: "CVE评估" }).click();
+  await page
+    .getByRole("tab", { name: "Windows 补丁评估", exact: true })
+    .click();
   const id = heading.replace("任务 ", "");
   await page.getByRole("button", { name: new RegExp(id) }).click();
   await expect(

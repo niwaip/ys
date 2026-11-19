@@ -50,6 +50,7 @@ test("controlled revision review and formal HTML delivery, then edits return to 
   await page.goto("/");
   await page.getByLabel("操作员访问令牌").fill("browser-test-secret-token");
   await page.getByRole("button", { name: "进入工作台" }).click();
+  await page.locator("nav button").filter({ hasText: "资产台账" }).click();
   await page.getByRole("button", { name: "风险事实报告" }).click();
   await page.getByRole("button", { name: report.id, exact: true }).click();
   await expect(

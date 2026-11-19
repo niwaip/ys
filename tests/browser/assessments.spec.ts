@@ -5,6 +5,7 @@ test("软件后台评估呈现发现、覆盖、过期库和证据，刷新后�
   await page.goto("/");
   await page.getByLabel("操作员访问令牌").fill("browser-test-secret-token");
   await page.getByRole("button", { name: "进入工作台" }).click();
+  await page.locator("nav button").filter({ hasText: "资产台账" }).click();
   await page.getByRole("button", { name: "软件 SBOM" }).click();
   const name = `Assessment-${Date.now()}`;
   await page.getByLabel("软件名称").fill(name);
@@ -23,16 +24,14 @@ test("软件后台评估呈现发现、覆盖、过期库和证据，刷新后�
       },
     ],
   });
-  await page
-    .getByLabel("SBOM 文件")
-    .setInputFiles({
-      name: "fixture.json",
-      mimeType: "application/json",
-      buffer: Buffer.from(content),
-    });
+  await page.getByLabel("SBOM 文件").setInputFiles({
+    name: "fixture.json",
+    mimeType: "application/json",
+    buffer: Buffer.from(content),
+  });
   await page.getByRole("button", { name: "上传 SBOM" }).click();
   await expect(page.getByText("SBOM 已导入为新输入版本")).toBeVisible();
-  await page.getByRole("button", { name: "软件漏洞评估" }).click();
+  await page.locator("nav button").filter({ hasText: "CVE评估" }).click();
   await page
     .getByRole("combobox", { name: "软件对象", exact: true })
     .selectOption({ label: name });
@@ -55,7 +54,7 @@ test("软件后台评估呈现发现、覆盖、过期库和证据，刷新后�
   await page.getByRole("button", { name: "提交评估", exact: true }).click();
   await expect(page.getByText("重复请求：回读原任务")).toBeVisible();
   await page.reload();
-  await page.getByRole("button", { name: "软件漏洞评估" }).click();
+  await page.locator("nav button").filter({ hasText: "CVE评估" }).click();
   const history = page.getByRole("button", { name: /执行成功 ·/ }).first();
   await history.click();
   await expect(

@@ -5,6 +5,7 @@ test("客户只读对话显示未评估并保持客户隔离，刷新回读固�
   await page.goto("/");
   await page.getByLabel("操作员访问令牌").fill("browser-test-secret-token");
   await page.getByRole("button", { name: "进入工作台" }).click();
+  await page.locator("nav button").filter({ hasText: "资产台账" }).click();
   await expect(page.getByRole("button", { name: "客户风险对话" })).toBeVisible({
     timeout: 2000,
   });

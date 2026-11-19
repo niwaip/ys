@@ -1,3 +1,4 @@
+import { requireActiveAsset } from "../assets/asset-state";
 import {
   BadGatewayException,
   BadRequestException,
@@ -283,10 +284,19 @@ export class NetBoxService {
       )
       .digest("hex");
     const id = randomUUID();
-    const claim = await this.db.query(
-      "INSERT INTO netbox_operations(id,customer_id,idempotency_key,input_hash,status,input) VALUES($1,$2,$3,$4,'pending',$5::jsonb) ON CONFLICT(customer_id,idempotency_key) DO NOTHING RETURNING id",
-      [id, customerId, input.idempotencyKey, hash, JSON.stringify(input)],
-    );
+    const claim = await this.db.transaction(async (tx) => {
+      if (update) await requireActiveAsset(tx, customerId, update.assetId);
+      return tx.query(
+        "INSERT INTO netbox_operations(id,customer_id,idempotency_key,input_hash,status,input) VALUES($1,$2,$3,$4,'pending',$5::jsonb) ON CONFLICT(customer_id,idempotency_key) DO NOTHING RETURNING id",
+        [
+          id,
+          customerId,
+          input.idempotencyKey,
+          hash,
+          JSON.stringify({ ...input, ...(update ? { update } : {}) }),
+        ],
+      );
+    });
     if (!claim.rows.length) {
       const old = (
         await this.db.query(
@@ -536,6 +546,11 @@ export class NetBoxService {
     );
     if (found.rows.length !== 1)
       throw new ConflictException("该NetBox资产尚未同步或映射至当前客户");
+    await requireActiveAsset(
+      this.db,
+      customerId,
+      String(found.rows[0].asset_id),
+    );
     return String(found.rows[0].asset_id);
   }
   async resolveSerial(customerId: string, serial: string | null) {

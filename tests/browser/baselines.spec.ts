@@ -91,6 +91,7 @@ test("台账只读展示分组Tab与SBOM组件，再采集突出变化并保留�
   await page.goto("/");
   await page.getByLabel("操作员访问令牌").fill("browser-test-secret-token");
   await page.getByRole("button", { name: "进入工作台" }).click();
+  await page.locator("nav button").filter({ hasText: "资产台账" }).click();
   await page.getByRole("button", { name, exact: true }).click();
   const dialog = page.getByRole("dialog", { name: "资产详情", exact: true });
   await dialog.getByRole("tab", { name: /^硬件/ }).click();

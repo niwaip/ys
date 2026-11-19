@@ -1,3 +1,4 @@
+import { requireActiveAsset } from "../assets/asset-state";
 import {
   BadRequestException,
   Controller,
@@ -132,6 +133,7 @@ export class CollectionAccessService {
     };
   }
   private async target(customerId: string, assetId: string) {
+    await requireActiveAsset(this.db, customerId, assetId);
     if (
       !(
         await this.db.query(
@@ -159,22 +161,25 @@ export class CollectionAccessService {
       throw new NotFoundException("该客户下未找到登录凭证");
     const id = randomUUID();
     const hostKey = value.hostKey.split(" ").slice(0, 2).join(" ");
-    await this.db.query(
-      "INSERT INTO asset_connections(id,customer_id,asset_id,credential_id,name,host,port,username,host_key,allow_docker,created_by) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)",
-      [
-        id,
-        customerId,
-        value.assetId,
-        value.credentialId,
-        value.name,
-        value.host,
-        value.port,
-        value.username,
-        hostKey,
-        value.allowDocker,
-        actor,
-      ],
-    );
+    await this.db.transaction(async (tx) => {
+      await requireActiveAsset(tx, customerId, value.assetId);
+      await tx.query(
+        "INSERT INTO asset_connections(id,customer_id,asset_id,credential_id,name,host,port,username,host_key,allow_docker,created_by) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)",
+        [
+          id,
+          customerId,
+          value.assetId,
+          value.credentialId,
+          value.name,
+          value.host,
+          value.port,
+          value.username,
+          hostKey,
+          value.allowDocker,
+          actor,
+        ],
+      );
+    });
     return {
       id,
       label: value.name,
@@ -185,7 +190,7 @@ export class CollectionAccessService {
   async list(customerId: string) {
     const rows = (
       await this.db.query(
-        'SELECT c.id,c.name AS label,c.asset_id AS "assetId",c.host,c.port,c.username,c.credential_id AS "credentialId",k.name AS "credentialName",c.allow_docker AS "allowDocker",c.host_key AS "hostKey" FROM asset_connections c JOIN access_credentials k ON c.customer_id=k.customer_id AND c.credential_id=k.id WHERE c.customer_id=$1 AND c.active=true ORDER BY c.created_at DESC,c.id LIMIT 100',
+        'SELECT c.id,c.name AS label,c.asset_id AS "assetId",c.host,c.port,c.username,c.credential_id AS "credentialId",k.name AS "credentialName",c.allow_docker AS "allowDocker",c.host_key AS "hostKey" FROM asset_connections c JOIN access_credentials k ON c.customer_id=k.customer_id AND c.credential_id=k.id WHERE c.customer_id=$1 AND c.active=true AND EXISTS(SELECT 1 FROM assets a WHERE a.customer_id=c.customer_id AND a.id=c.asset_id AND a.deleted_at IS NULL) ORDER BY c.created_at DESC,c.id LIMIT 100',
         [customerId],
       )
     ).rows;

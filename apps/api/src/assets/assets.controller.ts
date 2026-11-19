@@ -2,6 +2,8 @@ import {
   BadRequestException,
   Controller,
   Get,
+  Delete,
+  Patch,
   Post,
   Req,
 } from "@nestjs/common";
@@ -11,6 +13,7 @@ import { type AuthorizedRequest } from "../auth/auth";
 import { AssetsService } from "./assets.service";
 const pagination = z
   .object({
+    status: z.enum(["active", "deleted"]).default("active"),
     limit: z.coerce.number().int().min(1).max(100).default(50),
     offset: z.coerce.number().int().min(0).max(1000000).default(0),
   })
@@ -35,6 +38,40 @@ export class AssetsController {
       req.params.customerId,
       page.data.limit,
       page.data.offset,
+      page.data.status,
+    );
+  }
+  private id(req: AuthorizedRequest) {
+    if (!z.uuid().safeParse(req.params.assetId).success)
+      throw new BadRequestException("资产编号无效");
+    return req.params.assetId;
+  }
+  @Delete(":assetId") remove(req: AuthorizedRequest) {
+    return this.assets.setDeleted(
+      req.params.customerId,
+      this.id(req),
+      req.operator.name,
+      true,
+    );
+  }
+  @Post(":assetId/restore") restore(req: AuthorizedRequest) {
+    return this.assets.setDeleted(
+      req.params.customerId,
+      this.id(req),
+      req.operator.name,
+      false,
+    );
+  }
+  @Patch(":assetId/classification") classify(req: AuthorizedRequest) {
+    const input = z
+      .object({ hardwareType: z.enum(["unknown", "server", "network"]) })
+      .strict()
+      .safeParse(req.body);
+    if (!input.success) throw new BadRequestException("硬件分类无效");
+    return this.assets.classify(
+      req.params.customerId,
+      this.id(req),
+      input.data.hardwareType,
     );
   }
   @Get(":assetId")
@@ -44,5 +81,12 @@ export class AssetsController {
     return this.assets.get(req.params.customerId, req.params.assetId);
   }
 }
-for (const method of ["create", "list", "get"] as const)
+for (const method of [
+  "create",
+  "list",
+  "get",
+  "remove",
+  "restore",
+  "classify",
+] as const)
   Req()(AssetsController.prototype, method, 0);

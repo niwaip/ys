@@ -26,6 +26,7 @@ function phase(item: LifecycleAssessmentItem | null, key: "eos" | "eol") {
 export function aggregateDashboard(
   rows: DashboardObject[],
   lifecycle: LifecycleAssessment | null,
+  rowLifecycle = false,
 ): DashboardView["metrics"] {
   const usable = rows.filter((r) => r.status === "succeeded" && r.coverage),
     findings = usable.flatMap((r) => r.findings),
@@ -44,7 +45,7 @@ export function aggregateDashboard(
       conflicting: 0,
     },
     eol = { ...eos };
-  if (lifecycle)
+  if (lifecycle || rowLifecycle)
     for (const r of rows) {
       eos[phase(r.lifecycle, "eos")]++;
       eol[phase(r.lifecycle, "eol")]++;
@@ -52,6 +53,17 @@ export function aggregateDashboard(
   return {
     inventory: {
       host: rows.filter((r) => r.kind === "host").length,
+      server: rows.filter(
+        (r) => r.kind === "host" && r.hardwareType === "server",
+      ).length,
+      network: rows.filter(
+        (r) => r.kind === "host" && r.hardwareType === "network",
+      ).length,
+      unclassified: rows.filter(
+        (r) =>
+          r.kind === "host" &&
+          (!r.hardwareType || r.hardwareType === "unknown"),
+      ).length,
       software: rows.filter((r) => r.kind === "software").length,
       container: rows.filter((r) => r.kind === "container").length,
     },
@@ -114,14 +126,27 @@ export function aggregateDashboard(
       collectedAtUnknown: rows.filter((r) => !r.collectedAt).length,
     },
     lifecycle: {
-      status: lifecycle ? "selected" : "unselected",
+      status: lifecycle || rowLifecycle ? "selected" : "unselected",
       assessmentId: lifecycle?.id ?? null,
       evaluatedAt: lifecycle?.evaluatedAt ?? null,
       batchId: lifecycle?.batchId ?? null,
       sourceHash: lifecycle?.contentHash ?? null,
       coveredObjects: rows.filter((r) => !!r.lifecycle).length,
-      eos: lifecycle ? eos : null,
-      eol: lifecycle ? eol : null,
+      upcoming90d:
+        lifecycle || rowLifecycle
+          ? rows.filter(
+              (r) =>
+                phase(r.lifecycle, "eol") === "future" &&
+                r.lifecycle?.evidence.some(
+                  (e) =>
+                    e.eol.date &&
+                    Date.parse(e.eol.date) > Date.now() &&
+                    Date.parse(e.eol.date) <= Date.now() + 90 * 86400000,
+                ),
+            ).length
+          : null,
+      eos: lifecycle || rowLifecycle ? eos : null,
+      eol: lifecycle || rowLifecycle ? eol : null,
     },
   };
 }

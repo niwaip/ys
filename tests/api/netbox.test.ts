@@ -462,4 +462,30 @@ test("资产迁出Tenant后，即使缓存未同步也拒绝新快照和Pi任务
     (await http.get("/api/customers/acme/collections/jobs").set(auth)).body
       .items,
   ).toEqual([]);
+  tenantId = 7;
+  const activeList = (
+    await http.get("/api/customers/acme/assets").set(auth).expect(200)
+  ).body;
+  const deletedId = activeList.items[0].id;
+  await http
+    .delete(`/api/customers/acme/assets/${deletedId}`)
+    .set(auth)
+    .expect(200);
+  await http
+    .post("/api/customers/acme/netbox/sync")
+    .set(auth)
+    .send({})
+    .expect(201);
+  expect(
+    (await http.get("/api/customers/acme/assets").set(auth)).body.items,
+  ).toEqual([]);
+  expect(
+    (await http.get("/api/customers/acme/assets?status=deleted").set(auth)).body
+      .items[0].id,
+  ).toBe(deletedId);
+  await http
+    .patch(`/api/customers/acme/netbox/assets/${deletedId}`)
+    .set(auth)
+    .send({ idempotencyKey: "deleted-update", name: "forbidden" })
+    .expect(409);
 });

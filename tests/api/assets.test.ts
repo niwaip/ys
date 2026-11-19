@@ -178,3 +178,93 @@ test("无效输入不创建记录，列表分页有明确边界，名称不充�
   expect(page.body.total).toBe(2);
   expect(page.body.items).toHaveLength(1);
 });
+
+test("删除移出纳管但保留快照，重启后可恢复且隔离客户", async () => {
+  directory = await mkdtemp(join(tmpdir(), "ys-delete-"));
+  const config = { databaseUrl: `pglite://${directory}`, operators, customers };
+  app = await createApp(config);
+  let http = request(app.getHttpServer());
+  const auth = { Authorization: `Bearer ${operators[0].token}` };
+  const asset = (
+    await http
+      .post("/api/customers/acme/assets")
+      .set(auth)
+      .send({ name: "待删除主机", kind: "host" })
+      .expect(201)
+  ).body;
+  const body = {
+    assetId: asset.id,
+    note: "证据",
+    data: {
+      schemaVersion: "ys-host/1",
+      identity: { hostname: "待删除主机" },
+      collectedAt: null,
+      sections: {},
+    },
+  };
+  const snap = (
+    await http
+      .post("/api/customers/acme/collections/manual")
+      .set(auth)
+      .send(body)
+      .expect(201)
+  ).body;
+  await http
+    .delete(`/api/customers/river/assets/${asset.id}`)
+    .set(auth)
+    .expect(404);
+  await http
+    .delete(`/api/customers/acme/assets/${asset.id}`)
+    .set(auth)
+    .expect(200);
+  expect(
+    (await http.get("/api/customers/acme/assets").set(auth)).body.total,
+  ).toBe(0);
+  expect(
+    (
+      await http
+        .get("/api/customers/acme/assets?status=deleted")
+        .set(auth)
+        .expect(200)
+    ).body.items[0],
+  ).toMatchObject({ id: asset.id, deletedBy: "测试操作员" });
+  await http
+    .get(`/api/customers/acme/collections/snapshots/${snap.id}`)
+    .set(auth)
+    .expect(200);
+  await http
+    .post("/api/customers/acme/collections/manual")
+    .set(auth)
+    .send(body)
+    .expect(409);
+  await http
+    .post(`/api/customers/acme/assets/${asset.id}/baseline/confirm`)
+    .set(auth)
+    .send({
+      snapshotId: snap.id,
+      expectedBaselineId: null,
+      idempotencyKey: "deleted",
+      sections: ["identity"],
+      excludeFields: [],
+    })
+    .expect(409);
+  await app.close();
+  app = await createApp(config);
+  http = request(app.getHttpServer());
+  expect(
+    (await http.get("/api/customers/acme/assets").set(auth)).body.total,
+  ).toBe(0);
+  await http
+    .post(`/api/customers/acme/assets/${asset.id}/restore`)
+    .set(auth)
+    .send({})
+    .expect(201);
+  expect(
+    (await http.get("/api/customers/acme/assets").set(auth)).body.items[0].id,
+  ).toBe(asset.id);
+  await http
+    .post("/api/customers/acme/collections/manual")
+    .set(auth)
+    .send(body)
+    .expect(201);
+});

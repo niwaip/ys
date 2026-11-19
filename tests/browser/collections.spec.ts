@@ -13,6 +13,7 @@ test("网页保存人工基础快照，刷新回读来源与未评估状态，�
   await page.goto("/");
   await page.getByLabel("操作员访问令牌").fill("browser-test-secret-token");
   await page.getByRole("button", { name: "进入工作台" }).click();
+  await page.locator("nav button").filter({ hasText: "资产台账" }).click();
   const name = `collection-${Date.now()}`;
   await page.getByRole("button", { name: "＋ 新建资产" }).click();
   await page.getByLabel("资产名称", { exact: true }).fill(name);
@@ -58,6 +59,7 @@ test("网页新建凭证并绑定所选主机，刷新后仅显示关联连接",
   await page.goto("/");
   await page.getByLabel("操作员访问令牌").fill("browser-test-secret-token");
   await page.getByRole("button", { name: "进入工作台" }).click();
+  await page.locator("nav button").filter({ hasText: "资产台账" }).click();
   const name = `connection-${Date.now()}`;
   await page.getByRole("button", { name: "＋ 新建资产" }).click();
   await page.getByLabel("资产名称", { exact: true }).fill(name);

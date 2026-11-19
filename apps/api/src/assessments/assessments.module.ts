@@ -1,3 +1,4 @@
+import { requireActiveAsset } from "../assets/asset-state";
 import {
   CollectionLinksModule,
   CollectionLinksService,
@@ -165,6 +166,8 @@ export class AssessmentService {
       createdAt: new Date().toISOString(),
     };
     const saved = await this.db.transaction(async (session) => {
+      if (provenance)
+        await requireActiveAsset(session, customer, provenance.assetId);
       const insert = await session.query(
         `INSERT INTO vulnerability_jobs(id,customer_id,idempotency_key,status,details) VALUES($1,$2,$3,'queued',$4::jsonb) ON CONFLICT(customer_id,idempotency_key) DO NOTHING RETURNING ${cols}`,
         [record.id, customer, input.idempotencyKey, JSON.stringify(record)],

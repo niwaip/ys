@@ -3,6 +3,7 @@ test("登录、建档、刷新及客户切换保持清晰归属", async ({ page 
   await page.goto("/");
   await page.getByLabel("操作员访问令牌").fill("browser-test-secret-token");
   await page.getByRole("button", { name: "进入工作台" }).click();
+  await page.locator("nav button").filter({ hasText: "资产台账" }).click();
   await expect(page.getByRole("heading", { name: "资产台账" })).toBeVisible();
   const name = `生产主机-${Date.now()}`;
   await page.getByRole("button", { name: "新建资产" }).click();
