@@ -1,4 +1,4 @@
-import { afterEach, expect, test } from "vitest";
+import { afterEach, expect, test, vi } from "vitest";
 import request from "supertest";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -14,10 +14,13 @@ const config = {
 let app: Awaited<ReturnType<typeof createApp>>;
 let directory: string;
 afterEach(async () => {
+  vi.unstubAllEnvs();
   await app?.close();
   if (directory) await rm(directory, { recursive: true, force: true });
 });
 test("公开情报任务明确标记未评估客户资产，刷新及重启仍能回读且按操作员隔离", async () => {
+  vi.stubEnv("YS_PI_EXECUTABLE", process.execPath);
+  vi.stubEnv("YS_CVE_SCRIPT", join(process.cwd(), "tests/fixtures/pi-rpc.mjs"));
   directory = await mkdtemp(join(tmpdir(), "ys-intelligence-"));
   app = await createApp({ ...config, databaseUrl: `pglite://${directory}` });
   const http = request(app.getHttpServer());

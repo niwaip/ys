@@ -295,8 +295,10 @@ export class PiPublicQueryExecutor implements PublicQueryExecutor {
     }
   }
 }
-export function configuredPublicExecutor(): PublicQueryExecutor {
-  if (!process.env.YS_PI_EXECUTABLE || !process.env.YS_CVE_SCRIPT)
+export function configuredPublicExecutor(
+  config?: import("../config").AppConfig["pi"],
+): PublicQueryExecutor {
+  if (!config?.executable || !config.scriptPath)
     return {
       async execute() {
         throw new AgentExecutionError(
@@ -306,15 +308,12 @@ export function configuredPublicExecutor(): PublicQueryExecutor {
       },
     };
   return new PiPublicQueryExecutor({
-    executable: process.env.YS_PI_EXECUTABLE,
-    artifactRoot: resolve(process.env.YS_AGENT_ARTIFACT_ROOT ?? ".data/agent"),
-    scriptPath: process.env.YS_CVE_SCRIPT,
-    pythonExecutable: process.env.YS_PYTHON_EXECUTABLE ?? "python3",
-    provider: process.env.YS_PI_PROVIDER,
-    model: process.env.YS_PI_MODEL,
-    terminalEvent:
-      process.env.YS_PI_TERMINAL_EVENT === "agent_end"
-        ? "agent_end"
-        : "agent_settled",
+    executable: config.executable,
+    artifactRoot: resolve(config.artifactRoot ?? ".data/agent"),
+    scriptPath: config.scriptPath,
+    pythonExecutable: config.pythonExecutable ?? "python3",
+    provider: config.provider,
+    model: config.model,
+    terminalEvent: config.terminalEvent,
   });
 }

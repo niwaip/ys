@@ -2,6 +2,17 @@ import { z } from "zod";
 const identity = z.string().regex(/^[a-zA-Z0-9_-]{1,80}$/);
 export const configSchema = z
   .object({
+    pi: z
+      .object({
+        executable: z.string().min(1).optional(),
+        scriptPath: z.string().min(1).optional(),
+        artifactRoot: z.string().min(1).optional(),
+        pythonExecutable: z.string().min(1).optional(),
+        provider: z.string().min(1).optional(),
+        model: z.string().min(1).optional(),
+        terminalEvent: z.enum(["agent_settled", "agent_end"]).optional(),
+      })
+      .optional(),
     trivy: z
       .object({
         executable: z.string().min(1).optional(),
@@ -42,6 +53,15 @@ export const configSchema = z
 export type AppConfig = z.infer<typeof configSchema>;
 export function loadConfig(): AppConfig {
   return configSchema.parse({
+    pi: {
+      executable: process.env.YS_PI_EXECUTABLE || undefined,
+      scriptPath: process.env.YS_CVE_SCRIPT || undefined,
+      artifactRoot: process.env.YS_AGENT_ARTIFACT_ROOT || undefined,
+      pythonExecutable: process.env.YS_PYTHON_EXECUTABLE || undefined,
+      provider: process.env.YS_PI_PROVIDER || undefined,
+      model: process.env.YS_PI_MODEL || undefined,
+      terminalEvent: process.env.YS_PI_TERMINAL_EVENT || undefined,
+    },
     trivy: {
       executable: process.env.YS_TRIVY_EXECUTABLE,
       cacheDir: process.env.YS_TRIVY_CACHE_DIR,
