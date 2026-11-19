@@ -12,6 +12,7 @@ import { ImportsModule } from "./imports/imports.module";
 import { LifecycleModule } from "./lifecycle/lifecycle.module";
 import { SoftwareModule } from "./software/software.module";
 import { WindowsModule } from "./windows/windows.module";
+import { configuredPublicExecutor } from "./agent/pi-process";
 import { AgentModule } from "./agent/agent.module";
 import { AssessmentsModule } from "./assessments/assessments.module";
 import { ProcessTrivyExecutor, type TrivyExecutor } from "./assessments/trivy";
@@ -88,7 +89,7 @@ export async function createApp(
               "module" in f &&
               f.module === AgentModule,
           )
-            ? [AgentModule.register()]
+            ? [AgentModule.register(configuredPublicExecutor(config.pi))]
             : []),
           assessments,
           ReportsModule.register(assessments),
