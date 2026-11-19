@@ -42,7 +42,7 @@ export type ImportRow = {
 export type ImportMaterial = {
   id: string;
   customerId: string;
-  format: "csv" | "cyclonedx-json";
+  format: "csv" | "cyclonedx-json" | "container-cyclonedx-json";
   fileName: string;
   contentHash: string;
   content?: string;
