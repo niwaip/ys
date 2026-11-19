@@ -57,7 +57,9 @@ export type Assessment = {
   customerId: string;
   status: AssessmentStatus;
   idempotencyKey: string;
-  target: { kind: "software"; softwareId: string; versionId: string } | {kind:"container";containerId:string;versionId:string};
+  target:
+    | { kind: "software"; softwareId: string; versionId: string }
+    | { kind: "container"; containerId: string; versionId: string };
   input: { importId: string; contentHash: string; version: string | null };
   createdAt: string;
   startedAt?: string;
@@ -78,4 +80,21 @@ export type AssessmentPage = {
   total: number;
   limit: number;
   offset: number;
+};
+
+/** All targets returned by the shared assessment HTTP/service read interfaces. */
+export type AnyAssessment =
+  Assessment | import("./windows-assessments").WindowsAssessment;
+export type AnyAssessmentSummary =
+  | AssessmentSummary
+  | (Omit<
+      import("./windows-assessments").WindowsAssessment,
+      "execution" | "result"
+    > & {
+      findingCount: number | null;
+      coverage?: import("./windows-assessments").WindowsAssessmentResult["coverage"];
+      database?: import("./windows-assessments").WindowsAssessmentResult["database"];
+    });
+export type AnyAssessmentPage = Omit<AssessmentPage, "items"> & {
+  items: AnyAssessmentSummary[];
 };

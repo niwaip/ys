@@ -14,7 +14,6 @@ import { z } from "zod";
 import type { AuthorizedRequest } from "../auth/auth";
 import { DATABASE, type Database } from "../persistence/database";
 import { WindowsModule, WindowsService } from "../windows/windows.module";
-import { ImportsModule, ImportsService } from "../imports/imports.module";
 import type { WindowsSnapshot } from "../../../../packages/contracts/windows";
 import { parseRules, evaluateWindows } from "./engine";
 import type { WindowsAssessment } from "../../../../packages/contracts/windows-assessments";
@@ -48,7 +47,6 @@ export class WindowsAssessmentService {
   constructor(
     private db: Database,
     private windows: WindowsService,
-    private imports: ImportsService,
   ) {}
   async onModuleInit() {
     await this.db.query(
@@ -122,8 +120,16 @@ export class WindowsAssessmentService {
     );
     return {
       items: r.rows.map((row) => {
-        const { content, ...result } = serialize(row);
-        return result;
+        const { content, rules: stored, ...result } = serialize(row);
+        const rules = stored as ReturnType<typeof parseRules>;
+        return {
+          ...result,
+          rules: {
+            ruleVersion: rules.ruleVersion,
+            scope: rules.scope,
+            sources: rules.sources.map(({ content, ...source }) => source),
+          },
+        };
       }),
     };
   }
@@ -208,7 +214,12 @@ export class WindowsAssessmentService {
           rules = await this.getRules(job.customerId, job.input.ruleImportId);
         if (
           material.contentHash !== job.input.contentHash ||
-          rules.contentHash !== job.input.ruleHash
+          rules.contentHash !== job.input.ruleHash ||
+          createHash("sha256")
+            .update(String(material.content))
+            .digest("hex") !== job.input.contentHash ||
+          createHash("sha256").update(rules.content).digest("hex") !==
+            job.input.ruleHash
         )
           throw Error("固定输入哈希不匹配");
         job.result = evaluateWindows(
@@ -268,14 +279,14 @@ for (const method of ["import", "list", "get"] as const)
   Req()(WindowsRulesController.prototype, method, 0);
 Inject(WindowsAssessmentService)(WindowsRulesController, undefined, 0);
 @Module({
-  imports: [WindowsModule, ImportsModule],
+  imports: [WindowsModule],
   controllers: [WindowsRulesController],
   providers: [
     {
       provide: WindowsAssessmentService,
-      inject: [DATABASE, WindowsService, ImportsService],
-      useFactory: (db: Database, w: WindowsService, i: ImportsService) =>
-        new WindowsAssessmentService(db, w, i),
+      inject: [DATABASE, WindowsService],
+      useFactory: (db: Database, w: WindowsService) =>
+        new WindowsAssessmentService(db, w),
     },
   ],
   exports: [WindowsAssessmentService],

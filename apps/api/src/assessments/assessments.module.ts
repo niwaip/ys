@@ -1,4 +1,7 @@
-import {ContainersModule,ContainerService} from "../containers/containers.module";
+import {
+  ContainersModule,
+  ContainerService,
+} from "../containers/containers.module";
 import {
   BadRequestException,
   ConflictException,
@@ -20,7 +23,9 @@ import { ImportsModule, ImportsService } from "../imports/imports.module";
 import type { AuthorizedRequest } from "../auth/auth";
 import type {
   Assessment,
-  AssessmentPage,
+  AnyAssessment,
+  AnyAssessmentPage,
+  AnyAssessmentSummary,
   AssessmentResult,
 } from "../../../../packages/contracts/assessments";
 import type { SoftwareComponent } from "../../../../packages/contracts/software";
@@ -32,10 +37,25 @@ import {
   windowsSubmitSchema,
 } from "../windows-assessments/windows-assessments.module";
 const EXECUTOR = Symbol("TRIVY_EXECUTOR");
-const submitSchema=z.union([z.object({softwareId:z.uuid(),versionId:z.uuid(),idempotencyKey:z.string().trim().min(1).max(200)}).strict(),z.object({containerId:z.uuid(),versionId:z.uuid(),idempotencyKey:z.string().trim().min(1).max(200)}).strict()]);
+const submitSchema = z.union([
+  z
+    .object({
+      softwareId: z.uuid(),
+      versionId: z.uuid(),
+      idempotencyKey: z.string().trim().min(1).max(200),
+    })
+    .strict(),
+  z
+    .object({
+      containerId: z.uuid(),
+      versionId: z.uuid(),
+      idempotencyKey: z.string().trim().min(1).max(200),
+    })
+    .strict(),
+]);
 type Submission = z.infer<typeof submitSchema>;
 const cols = `id,customer_id AS "customerId",status,details`;
-function serialize(row: Record<string, unknown>): Assessment {
+function serialize(row: Record<string, unknown>): AnyAssessment {
   return {
     ...(row.details as Assessment),
     id: String(row.id),
@@ -92,10 +112,27 @@ export class AssessmentService {
     }, 10);
   }
   async submit(customer: string, input: Submission) {
-    const target:Assessment['target']='containerId' in input?{kind:'container',containerId:input.containerId,versionId:input.versionId}:{kind:'software',softwareId:input.softwareId,versionId:input.versionId};
-    const snapshot=await this.snapshot(customer,target);
+    const target: Assessment["target"] =
+      "containerId" in input
+        ? {
+            kind: "container",
+            containerId: input.containerId,
+            versionId: input.versionId,
+          }
+        : {
+            kind: "software",
+            softwareId: input.softwareId,
+            versionId: input.versionId,
+          };
+    const snapshot = await this.snapshot(customer, target);
     const material = await this.imports.get(customer, snapshot.importId);
-    if (material.format !== (target.kind==="container"?"container-cyclonedx-json":"cyclonedx-json") || material.content === undefined)
+    if (
+      material.format !==
+        (target.kind === "container"
+          ? "container-cyclonedx-json"
+          : "cyclonedx-json") ||
+      material.content === undefined
+    )
       throw new BadRequestException("该输入不是可评估的软件 SBOM");
     const record: Assessment = {
       id: randomUUID(),
@@ -121,7 +158,14 @@ export class AssessmentService {
         [customer, input.idempotencyKey],
       );
       const old = serialize(existing.rows[0]);
-      if (old.target.kind!==target.kind||old.target.versionId!==target.versionId||('containerId' in old.target?old.target.containerId:old.target.softwareId)!==('containerId' in target?target.containerId:target.softwareId))
+      if (
+        old.target.kind !== target.kind ||
+        old.target.versionId !== target.versionId ||
+        ("containerId" in old.target
+          ? old.target.containerId
+          : old.target.softwareId) !==
+          ("containerId" in target ? target.containerId : target.softwareId)
+      )
         throw new ConflictException("幂等键已用于其他输入版本");
       return { ...old, replayed: true };
     });
@@ -139,8 +183,12 @@ export class AssessmentService {
   }
   async list(
     customer: string,
-    page: { limit?: number; offset?: number; targetKind?:"software"|"container"|"windows" } = {},
-  ): Promise<AssessmentPage> {
+    page: {
+      limit?: number;
+      offset?: number;
+      targetKind?: "software" | "container" | "windows";
+    } = {},
+  ): Promise<AnyAssessmentPage> {
     const limit = page.limit ?? 50,
       offset = page.offset ?? 0;
     if (
@@ -152,14 +200,16 @@ export class AssessmentService {
       offset > 1000000
     )
       throw new BadRequestException("分页无效");
-    const filter=page.targetKind?" AND details#>>'{target,kind}'=$4":"";
+    const filter = page.targetKind ? " AND details#>>'{target,kind}'=$4" : "";
     const r = await this.db.query(
       `SELECT id,customer_id AS "customerId",status,details - 'execution' - 'result' AS details, details#>'{result,coverage}' AS coverage,details#>'{result,database}' AS database,jsonb_array_length(details#>'{result,findings}') AS "findingCount" FROM vulnerability_jobs WHERE customer_id=$1${filter} ORDER BY created_at DESC,id LIMIT $2 OFFSET $3`,
-      page.targetKind?[customer,limit,offset,page.targetKind]:[customer, limit, offset],
+      page.targetKind
+        ? [customer, limit, offset, page.targetKind]
+        : [customer, limit, offset],
     );
     const count = await this.db.query(
-      `SELECT count(*)::int AS total FROM vulnerability_jobs WHERE customer_id=$1${page.targetKind?" AND details#>>'{target,kind}'=$2":""}`,
-      page.targetKind?[customer,page.targetKind]:[customer],
+      `SELECT count(*)::int AS total FROM vulnerability_jobs WHERE customer_id=$1${page.targetKind ? " AND details#>>'{target,kind}'=$2" : ""}`,
+      page.targetKind ? [customer, page.targetKind] : [customer],
     );
     return {
       items: r.rows.map((row) => {
@@ -172,14 +222,22 @@ export class AssessmentService {
             AssessmentResult["coverage"] | undefined,
           database: (row.database ?? undefined) as
             AssessmentResult["database"] | undefined,
-        };
+        } as AnyAssessmentSummary;
       }),
       total: Number(count.rows[0].total),
       limit,
       offset,
     };
   }
-  private snapshot(customer:string,target:Assessment['target']){return target.kind==='container'?this.containers.getVersion(customer,target.containerId,target.versionId):this.software.getVersion(customer,target.softwareId,target.versionId);}
+  private snapshot(customer: string, target: Assessment["target"]) {
+    return target.kind === "container"
+      ? this.containers.getVersion(
+          customer,
+          target.containerId,
+          target.versionId,
+        )
+      : this.software.getVersion(customer, target.softwareId, target.versionId);
+  }
   private async save(record: Assessment) {
     await this.db.query(
       `UPDATE vulnerability_jobs SET status=$3,details=$4::jsonb WHERE customer_id=$1 AND id=$2`,
@@ -192,12 +250,16 @@ export class AssessmentService {
         `UPDATE vulnerability_jobs SET status='running' WHERE id=(SELECT id FROM vulnerability_jobs WHERE status='queued' AND details#>>'{target,kind}' IN ('software','container') ORDER BY created_at,id LIMIT 1 FOR UPDATE SKIP LOCKED) AND status='queued' RETURNING ${cols}`,
       );
       if (!rows.rows.length) return;
-      const job = serialize(rows.rows[0]);
+      const selected = serialize(rows.rows[0]);
+      // Ownership is enforced by the claim query; retain a runtime guard for future target additions.
+      if (selected.target.kind === "windows")
+        throw Error("Windows task cannot be executed by Trivy");
+      const job = selected as Assessment;
       job.startedAt = new Date().toISOString();
       await this.save(job);
       this.abort = new AbortController();
       try {
-        const snapshot = await this.snapshot(job.customerId,job.target);
+        const snapshot = await this.snapshot(job.customerId, job.target);
         const material = await this.imports.get(
           job.customerId,
           job.input.importId,
@@ -256,7 +318,7 @@ class AssessmentsController {
     const page = z
       .object({
         limit: z.coerce.number().int().min(1).max(100).optional(),
-        targetKind:z.enum(["software","container","windows"]).optional(),
+        targetKind: z.enum(["software", "container", "windows"]).optional(),
         offset: z.coerce.number().int().min(0).max(1000000).optional(),
       })
       .strict()
@@ -281,13 +343,24 @@ export class AssessmentsModule {
   ): DynamicModule {
     return {
       module: AssessmentsModule,
-      imports: [SoftwareModule, ContainersModule, ImportsModule, WindowsAssessmentsModule],
+      imports: [
+        SoftwareModule,
+        ContainersModule,
+        ImportsModule,
+        WindowsAssessmentsModule,
+      ],
       controllers: [AssessmentsController],
       providers: [
         { provide: EXECUTOR, useValue: executor },
         {
           provide: AssessmentService,
-          inject: [DATABASE, SoftwareService, ContainerService, ImportsService, EXECUTOR],
+          inject: [
+            DATABASE,
+            SoftwareService,
+            ContainerService,
+            ImportsService,
+            EXECUTOR,
+          ],
           useFactory: (
             db: Database,
             software: SoftwareService,

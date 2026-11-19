@@ -16,6 +16,14 @@ const states = {
   timed_out: "超时",
   interrupted: "执行中断",
 };
+const evidenceLabels: Record<string, string> = {
+  same_branch_build: "同分支 Build 达到修复版本",
+  installed_exact_kb: "已安装公告指定 KB",
+  qualified_supersedence: "已核实规则中的补丁替代链",
+  source_declared_affected_build: "公告明确受影响的较低构建",
+  lower_build_incomplete_evidence: "较低构建但证据不足",
+  insufficient_evidence: "证据不足",
+};
 const applicability = {
   unknown: "未知",
   potentially_affected: "可能受影响",
@@ -50,7 +58,7 @@ export function WindowsAssessmentsPage({
   }
   async function refresh() {
     const list = await call<{ items: WindowsAssessment[] }>(
-      "/assessments?limit=100",
+      "/assessments?limit=100&targetKind=windows",
     );
     setHistory(list.items.filter((x) => x.target.kind === "windows"));
     const id = selected.current;
@@ -262,7 +270,7 @@ export function WindowsAssessmentsPage({
                         {f.evidence.fixedKbs.join(", ")}
                       </td>
                       <td>
-                        {f.evidence.basis}
+                        {evidenceLabels[f.evidence.basis] ?? f.evidence.basis}
                         <br />
                         {f.evidence.matchedKb ?? "无已安装补丁匹配"}
                       </td>

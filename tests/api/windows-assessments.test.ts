@@ -119,6 +119,36 @@ test("替代补丁基于显式来源路径，部分采集/未知重启/错误分
       basis: "qualified_supersedence",
     },
     {
+      h: { ...host, UBR: 2600, InstalledKBs: ["KB5042881"] },
+      expected: "fixed",
+      basis: "installed_exact_kb",
+    },
+    {
+      h: { ...host, CollectionStatus: { Overall: "PARTIAL" } },
+      expected: "unknown",
+      basis: "insufficient_evidence",
+    },
+    {
+      h: { ...host, CollectionStatus: { Overall: "COMPLETE", KBs: "FAILED" } },
+      expected: "unknown",
+      basis: "insufficient_evidence",
+    },
+    {
+      h: { ...host, RebootPending: true },
+      expected: "unknown",
+      basis: "insufficient_evidence",
+    },
+    {
+      h: { ...host, KBInventoryComplete: false },
+      expected: "unknown",
+      basis: "insufficient_evidence",
+    },
+    {
+      h: { ...host, UBR: null },
+      expected: "unknown",
+      basis: "insufficient_evidence",
+    },
+    {
       h: { ...host, UBR: 2600, InstalledKBs: ["KB9999999"] },
       expected: "affected",
       basis: "source_declared_affected_build",
