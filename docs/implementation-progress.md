@@ -11,15 +11,17 @@
 | T03 | [导入固定脚本产生的主机采集 JSON](https://github.com/niwaip/ys/issues/4) | 已集成 | `2e29a33` |
 | T04 | [上传软件 SBOM 并查看组件清单](https://github.com/niwaip/ys/issues/5) | 已集成 | `47aa521` |
 | T05 | [从页面执行 Trivy 软件评估并保存结果](https://github.com/niwaip/ys/issues/6) | 已集成 | `2fe7f9a` |
-| T06 | [评估容器 SBOM 并关联镜像身份](https://github.com/niwaip/ys/issues/7) | 待实现 | — |
-| T07 | [基于主机资料进行有补丁依据的 Windows CVE 评估](https://github.com/niwaip/ys/issues/8) | 待实现 | — |
+| T06 | [评估容器 SBOM 并关联镜像身份](https://github.com/niwaip/ys/issues/7) | 已集成 | `13e5170` |
+| T07 | [基于主机资料进行有补丁依据的 Windows CVE 评估](https://github.com/niwaip/ys/issues/8) | 已集成 | `6da6f1d` |
 | T08 | [导入生命周期主数据并展示 EOS/EOL 评估](https://github.com/niwaip/ys/issues/9) | 已集成 | `8a052ee` |
 | T09 | [通过 Pi 对话完成一次公开 PHP CVE 查询](https://github.com/niwaip/ys/issues/10) | 已集成 | `6059ec4` |
-| T10 | [通过客户对话查询和解释已有评估](https://github.com/niwaip/ys/issues/11) | 待实现 | — |
-| T11 | [重扫后查看历史并比较评估版本](https://github.com/niwaip/ys/issues/12) | 待实现 | — |
+| T10 | [通过客户对话查询和解释已有评估](https://github.com/niwaip/ys/issues/11) | 已集成 | `1743c4c` |
+| T11 | [重扫后查看历史并比较评估版本](https://github.com/niwaip/ys/issues/12) | 已集成 | `084977d` |
 | T12 | [按客户查看可下钻的风险 Dashboard](https://github.com/niwaip/ys/issues/13) | 待实现 | — |
 | T13 | [生成绑定评估依据的事实报告草稿](https://github.com/niwaip/ys/issues/14) | 已集成 | `ce49de8` |
 | T14 | [用 Pi 生成并校验报告叙述](https://github.com/niwaip/ys/issues/15) | 待实现 | — |
-| T15 | [内部复核报告并导出正式修订](https://github.com/niwaip/ys/issues/16) | 待实现 | — |
+| T15 | [内部复核报告并导出正式修订](https://github.com/niwaip/ys/issues/16) | 已集成 | `41c8aa1` |
 
 运行约束：T03 起工具返回 `agent thread limit reached`，新代理及唤醒均被拒绝。主代理接手合并，仍在运行的实现代理在新工作树及分支继续后续票；无法继续保证每票全新代理上下文。独立分支、TDD、集成验证及最终审查要求保留。T03/T04 合并后 11 API 测试与构建通过，T04 工作树完整 4 浏览器流程通过。
+
+后续限制恢复：已有代理可继续工作，但仍无法创建新代理；按独立分支继续，并由主代理处理集成。曾两次因额度中断；未完成工作保留在工作树，恢复后复验，不计作已完成。当前T15+T10整合后38项测试与构建通过；T11另3项API、构建及浏览器流程通过，已集成。
