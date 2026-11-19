@@ -39,14 +39,11 @@ test("reviewed delivery binds immutable facts and HTML, edited revisions require
       })
   ).body;
   const batch = (
-    await http
-      .post("/api/customers/a/lifecycle/batches")
-      .set(auth)
-      .send({
-        fileName: "eol.csv",
-        content:
-          "source,sourceRef,product,version,eosStage,eosDate,eolStage,eolDate\nFixture,fixture,Widget,1,Sales,2020-01-01,Support,",
-      })
+    await http.post("/api/customers/a/lifecycle/batches").set(auth).send({
+      fileName: "eol.csv",
+      content:
+        "source,sourceRef,product,version,eosStage,eosDate,eolStage,eolDate\nFixture,fixture,Widget,1,Sales,2020-01-01,Support,",
+    })
   ).body;
   const assessment = (
     await http
@@ -82,7 +79,11 @@ test("reviewed delivery binds immutable facts and HTML, edited revisions require
     density: "compact",
     blocks: [...report.revision.narrative.blocks]
       .reverse()
-      .map((x: { wording: string }) => ({ ...x, wording: "concise" })),
+      .map((x: { wording: string }) => ({
+        ...x,
+        wording: "concise",
+        text: "围绕【scope】，本段说明所选输入。因此，建议核对输入身份，以便明确后续核查范围。",
+      })),
   };
   const edited = (
     await http
@@ -97,6 +98,34 @@ test("reviewed delivery binds immutable facts and HTML, edited revisions require
     factHash: report.revision.factHash,
     facts: report.revision.facts,
   });
+  const editedPreview = (
+    await http
+      .get(`${base}/revisions/${edited.id}/preview`)
+      .set(auth)
+      .expect(200)
+  ).text;
+  expect(editedPreview).toContain("本段说明所选输入");
+  expect(editedPreview).toContain("建议核对输入身份，以便明确后续核查范围");
+  expect(editedPreview).toContain(asset.id);
+  expect(editedPreview).not.toContain("【scope】");
+  for (const text of [
+    "围绕【scope】，这些缺口限制结果解释，需补充证据后复评。",
+    "围绕【scope】，本段说明所选输入。因此，建议补充覆盖资料，以便完善后续评估输入。",
+    "建议安排人工复评，以便保留复核依据。",
+    "已确认安全，无风险。",
+    "围绕【missing】，本段说明所选输入。",
+    "围绕【scope】，本段说明所选输入。2027-01-01已修复。",
+    "围绕【findings】，本段说明所选输入。",
+    "围绕【scope】，本段说明所选输入。<script>alert(1)</script>",
+  ]) {
+    const invalid = structuredClone(narrative);
+    invalid.blocks[0].text = text;
+    await http
+      .post(`${base}/revisions`)
+      .set(auth)
+      .send({ baseRevisionId: edited.id, narrative: invalid })
+      .expect(400);
+  }
   await http
     .post(`${base}/revisions/${edited.id}/deliver`)
     .set(auth)

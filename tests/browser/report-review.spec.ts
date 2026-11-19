@@ -56,10 +56,27 @@ test("controlled revision review and formal HTML delivery, then edits return to 
     page.getByRole("button", { name: "下载正式 HTML" }),
   ).toBeDisabled();
   await expect(page.getByRole("button", { name: "复核通过" })).toBeDisabled();
+  await page.getByText("文字编辑语法与本报告引用目录", { exact: true }).click();
+  await expect(page.getByText(/这里只接受列出的有限句法/)).toBeVisible();
+  await page.getByLabel(/scope.*叙述文字/).fill("已修复，无风险。");
+  await page.getByRole("button", { name: "保存为新草稿" }).click();
+  await expect(page.getByRole("alert")).toContainText(
+    "叙述只接受目录中的引用说明句和建议句",
+  );
+  await page
+    .getByLabel(/scope.*叙述文字/)
+    .fill(
+      "围绕【scope】，本段说明所选输入。因此，建议核对输入身份，以便明确后续核查范围。",
+    );
   await page.getByLabel("版面密度").selectOption("compact");
   await page.getByRole("button", { name: "保存为新草稿" }).click();
   await expect(
     page.getByRole("button", { name: "修订 2 · draft" }),
+  ).toBeVisible();
+  await expect(
+    page
+      .frameLocator('iframe[title="事实报告草稿"]')
+      .getByText(/建议核对输入身份，以便明确后续核查范围/),
   ).toBeVisible();
   await page.getByRole("button", { name: "提交复核", exact: true }).click();
   await expect(

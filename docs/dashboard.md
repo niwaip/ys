@@ -52,3 +52,5 @@ T12 是客户范围只读聚合，不创建扫描、评估或风险分数。按�
 概览最多1000个对象；超限明确400，要求通过分页目录缩小到单对象，不截断后返回假总计。assessmentRefs最多1000个。趋势最多展示最近200批，返回真实total和truncated；无整库rawReport加载。输入或来源事实来自既有功能服务，Dashboard仅计算展示读模型，无新增迁移、后台任务或持久current副本。
 
 共享DTO `packages/contracts/dashboard.ts`，DashboardModule.register(共享assessments引用,共享history引用) 导出DashboardService，必须复用同一个动态模块引用，避免重复worker。read model在 `dashboard.module.ts`，统计函数在 `metrics.ts`，页面独立功能注册。人工报告文字和Pi输出不作为统计输入。
+
+明细 findings 复用 view 的同一范围解析：对象归属、评估引用匹配/去重、软件当前评估及时间筛选保持一致。只传 object 时使用相同当前指针，不回退历史；object 与 assessmentRefs 不匹配时两个接口均拒绝。

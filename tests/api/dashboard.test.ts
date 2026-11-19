@@ -250,6 +250,39 @@ test("按固定软件输入去重CVE并保留实例，明确范围与趋势覆�
     instances: 1,
   });
   expect(selected.objects[0].inputId).toBe(v2.id);
+  const objectScope = { object: { kind: "software", id: s.id } };
+  const implicitDetail = (
+    await h
+      .post("/api/customers/acme/dashboard/findings")
+      .set(auth)
+      .send(objectScope)
+      .expect(200)
+  ).body;
+  expect(implicitDetail).toMatchObject({
+    total: 3,
+    assessmentRefs: [first.id],
+  });
+  const other = (
+    await h
+      .post("/api/customers/acme/software")
+      .set(auth)
+      .send({ name: "Other" })
+  ).body;
+  for (const endpoint of ["view", "findings"]) {
+    await h
+      .post(`/api/customers/acme/dashboard/${endpoint}`)
+      .set(auth)
+      .send({
+        object: { kind: "software", id: other.id },
+        assessmentRefs: [first.id],
+      })
+      .expect(400);
+    await h
+      .post(`/api/customers/acme/dashboard/${endpoint}`)
+      .set(auth)
+      .send({ assessmentRefs: [first.id, first.id] })
+      .expect(400);
+  }
   const detail = (
     await h
       .post("/api/customers/acme/dashboard/findings")
@@ -269,9 +302,26 @@ test("按固定软件输入去重CVE并保留实例，明确范围与趋势覆�
     .set(auth)
     .send({ assessmentRefs: [first.id, second.id] })
     .expect(400);
-  const excluded = await view({ from: "2099-01-01T00:00:00Z" });
+  const excluded = await view({ ...objectScope, from: "2099-01-01T00:00:00Z" });
   expect(excluded.metrics.cve.uniqueObserved).toBeNull();
   expect(excluded.objects[0].status).toBe("outside_time_range");
+  const excludedDetail = (
+    await h
+      .post("/api/customers/acme/dashboard/findings")
+      .set(auth)
+      .send({ ...objectScope, from: "2099-01-01T00:00:00Z" })
+      .expect(200)
+  ).body;
+  expect(excludedDetail).toMatchObject({
+    items: [],
+    total: 0,
+    assessmentRefs: excluded.scope.assessmentRefs,
+  });
+  await h
+    .post("/api/customers/river/dashboard/findings")
+    .set(auth)
+    .send({ assessmentRefs: [first.id] })
+    .expect(404);
 });
 
 test("容器失败与Windows fixed单独披露，EOS固定评估匹配同一对象范围并分页目录", async () => {

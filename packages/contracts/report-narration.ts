@@ -1,3 +1,4 @@
+import type { NarrationReference, narrationGrammar } from "./report-language";
 import type {
   ReportNarrative,
   ReportScopeTarget,
@@ -12,6 +13,10 @@ export type ReportNarrationInput = {
   statistics: ReportFacts["statistics"];
   coverageIssues: string[];
   allowedNarrative: ReportNarrative;
+  language?: {
+    grammar: typeof narrationGrammar;
+    references: NarrationReference[];
+  };
   optionalTemplates: ["summary", "recommendations"];
 };
 export type ReportNarrationJob = {

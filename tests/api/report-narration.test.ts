@@ -36,14 +36,11 @@ async function seed() {
       })
   ).body;
   const batch = (
-    await h
-      .post("/api/customers/a/lifecycle/batches")
-      .set(auth)
-      .send({
-        fileName: "l.csv",
-        content:
-          "source,sourceRef,product,version,eosStage,eosDate,eolStage,eolDate\nFixture,fixture,Widget,1,Sales,,Support,2026-02-30",
-      })
+    await h.post("/api/customers/a/lifecycle/batches").set(auth).send({
+      fileName: "l.csv",
+      content:
+        "source,sourceRef,product,version,eosStage,eosDate,eolStage,eolDate\nFixture,fixture,Widget,1,Sales,,Support,2026-02-30",
+    })
   ).body;
   const assessment = (
     await h
@@ -92,7 +89,11 @@ test("AI job binds scoped immutable facts and creates a controlled reviewable re
             narrative: {
               ...input.allowedNarrative,
               blocks: [
-                { templateId: "summary", wording: "standard" },
+                {
+                  templateId: "summary",
+                  wording: "standard",
+                  text: "结合【coverage】，这些缺口限制结果解释，需补充证据后复评。因此，建议补充覆盖资料，以便完善后续评估输入。",
+                },
                 ...input.allowedNarrative.blocks.slice().reverse(),
                 { templateId: "recommendations", wording: "concise" },
               ],
@@ -144,6 +145,11 @@ test("AI job binds scoped immutable facts and creates a controlled reviewable re
   const html = (
     await http.get(`${base}/revisions/${revised.id}/preview`).set(auth)
   ).text;
+  expect(
+    seen.language.references.some((r: any) => r.token === "coverage"),
+  ).toBe(true);
+  expect(html).toContain("这些缺口限制结果解释，需补充证据后复评");
+  expect(html).not.toContain("【coverage】");
   expect(html).toContain("摘要");
   expect(html).toContain("建议");
   expect(html).toContain("未知");
@@ -163,7 +169,7 @@ test("AI job binds scoped immutable facts and creates a controlled reviewable re
 test("invented facts, identifiers, filled dates and timeout fall back without replacing the fact draft", async () => {
   directory = await mkdtemp(join(tmpdir(), "ys-narration-fallback-"));
   const options = { ...config, databaseUrl: `pglite://${directory}` };
-  const outputs = ["identifier", "statistics", "date", "timeout"];
+  const outputs = ["identifier", "statistics", "date", "empty", "timeout"];
   app = await createApp(options, [], {
     reportNarrationTimeoutMs: 70,
     reportNarrationExecutor: {
@@ -189,7 +195,7 @@ test("invented facts, identifiers, filled dates and timeout fall back without re
   const report = await seed(),
     http = request(app.getHttpServer()),
     base = `/api/customers/a/reports/${report.id}`;
-  for (const key of ["identifier", "statistics", "date", "timeout"]) {
+  for (const key of ["identifier", "statistics", "date", "empty", "timeout"]) {
     const job = (
       await http
         .post(`${base}/narrations`)
@@ -208,7 +214,7 @@ test("invented facts, identifiers, filled dates and timeout fall back without re
   expect(
     (await request(app.getHttpServer()).get(`${base}/narrations`).set(auth))
       .body.items,
-  ).toHaveLength(4);
+  ).toHaveLength(5);
 });
 test("a newer manual revision wins over an in-flight AI proposal, and shutdown preserves interrupted jobs", async () => {
   directory = await mkdtemp(join(tmpdir(), "ys-narration-conflict-"));
@@ -234,13 +240,10 @@ test("a newer manual revision wins over an in-flight AI proposal, and shutdown p
     http = request(app.getHttpServer()),
     base = `/api/customers/a/reports/${report.id}`;
   const job = (
-    await http
-      .post(`${base}/narrations`)
-      .set(auth)
-      .send({
-        baseRevisionId: report.revision.id,
-        idempotencyKey: "concurrent",
-      })
+    await http.post(`${base}/narrations`).set(auth).send({
+      baseRevisionId: report.revision.id,
+      idempotencyKey: "concurrent",
+    })
   ).body;
   await expect
     .poll(async () =>

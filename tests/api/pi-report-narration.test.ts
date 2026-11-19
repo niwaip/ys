@@ -48,6 +48,13 @@ test("fixed Pi report capability reads scoped input and writes bound proposal; m
       schemaVersion: "report-proposal-v1",
       baseRevisionId: input.baseRevisionId,
       factHash: input.factHash,
+      narrative: {
+        blocks: expect.arrayContaining([
+          expect.objectContaining({
+            text: "针对【scope】，请结合保护事实解读。接下来，建议复核来源证据，以便保留复核依据。",
+          }),
+        ]),
+      },
     });
     expect(events).toContain("agent_settled");
     await expect(

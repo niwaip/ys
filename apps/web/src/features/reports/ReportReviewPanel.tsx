@@ -1,3 +1,7 @@
+import {
+  narrationGrammar,
+  narrationReferences,
+} from "../../../../../packages/contracts/report-language";
 import { useEffect, useRef, useState } from "react";
 import type {
   Report,
@@ -117,6 +121,29 @@ export function ReportReviewPanel({
           <option value="compact">紧凑</option>
         </select>
       </label>
+      <details>
+        <summary>文字编辑语法与本报告引用目录</summary>
+        <p>{narrationGrammar.syntax}</p>
+        <p>
+          说明短语：{narrationGrammar.explanations.join("；")}。动作：
+          {narrationGrammar.actions.join("；")}。目的：
+          {narrationGrammar.purposes.join("；")}。
+        </p>
+        <p>
+          示例：围绕【scope】，本段说明所选输入。因此，建议核对输入身份，以便明确后续核查范围。
+        </p>
+        <ul>
+          {narrationReferences(report.revision.facts).map((ref) => (
+            <li key={ref.token}>
+              【{ref.token}】：{ref.value}；允许说明：
+              {ref.explanations.join("；")}
+            </li>
+          ))}
+        </ul>
+        <p>
+          事实由服务器插入；这里只接受列出的有限句法，不验证任意自然语言语义。未知引用、额外事实或无证据建议会在保存时给出原因。补充覆盖资料需要先引用【coverage】覆盖缺口。
+        </p>
+      </details>
       {narrative.blocks.map((block, index) => (
         <div key={`${block.templateId}:${block.factRef ?? ""}`}>
           <label>
@@ -141,6 +168,22 @@ export function ReportReviewPanel({
               <option value="standard">标准表述</option>
               <option value="concise">简洁表述</option>
             </select>
+          </label>
+          <label>
+            {block.templateId} {block.factRef ?? ""} 叙述文字
+            <textarea
+              value={block.text ?? ""}
+              disabled={busy}
+              maxLength={4000}
+              onChange={(e) =>
+                setNarrative({
+                  ...narrative,
+                  blocks: narrative.blocks.map((b, i) =>
+                    i === index ? { ...b, text: e.target.value } : b,
+                  ),
+                })
+              }
+            />
           </label>
           <button
             disabled={busy || index === 0}
