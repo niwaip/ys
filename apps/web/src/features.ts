@@ -1,4 +1,6 @@
 import { AgentPage } from "./features/agent/AgentPage";
+import { ReportsPage } from "./features/reports/ReportsPage";
+import { AssessmentsPage } from "./features/assessments/AssessmentsPage";
 import { LifecyclePage } from "./features/lifecycle/LifecyclePage";
 import { SoftwarePage } from "./features/software/SoftwarePage";
 import { WindowsPage } from "./features/windows/WindowsPage";
@@ -39,4 +41,11 @@ export const features: Feature[] = [
     component: LifecyclePage,
   },
   { id: "software", label: "软件 SBOM", icon: "◇", component: SoftwarePage },
+  { id: "reports", label: "风险事实报告", icon: "▤", component: ReportsPage },
+  {
+    id: "assessments",
+    label: "软件漏洞评估",
+    icon: "◈",
+    component: AssessmentsPage,
+  },
 ];
