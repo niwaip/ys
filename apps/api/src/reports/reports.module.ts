@@ -220,8 +220,6 @@ export class ReportsService {
         );
     }
     for (const a of assessmentSnapshots) {
-      if (a.target.kind !== "software")
-        throw new BadRequestException("此报告适配器仅支持软件目标");
       if (!a.result)
         coverageIssues.push(
           `CVE评估 ${a.id}：${a.status}，无可用结果，不是零漏洞`,
