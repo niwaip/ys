@@ -1,3 +1,4 @@
+import { ConversationsPage } from "./features/conversations/ConversationsPage";
 import { AgentPage } from "./features/agent/AgentPage";
 import { ReportsPage } from "./features/reports/ReportsPage";
 import { AssessmentsPage } from "./features/assessments/AssessmentsPage";
@@ -21,6 +22,12 @@ export type Feature = {
 // Register implemented customer-scoped pages here; the shell owns identity and navigation.
 export const features: Feature[] = [
   { id: "assets", label: "资产台账", icon: "▦", component: AssetsPage },
+  {
+    id: "customer-chat",
+    label: "客户风险对话",
+    icon: "◌",
+    component: ConversationsPage,
+  },
   {
     id: "public-intelligence",
     label: "公开 CVE 对话",
