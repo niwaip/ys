@@ -132,6 +132,8 @@ export class DashboardService {
     customer: string,
     input: DashboardRequest & { limit: number; offset: number },
   ) {
+    if (input.from && input.to && Date.parse(input.from) > Date.parse(input.to))
+      throw new BadRequestException("开始时间不能晚于结束时间");
     const rows: DashboardObject["findings"] = [],
       targets = new Set<string>();
     for (const id of input.assessmentRefs ?? []) {
@@ -309,13 +311,30 @@ export class DashboardService {
           input.lifecycleAssessmentId,
         )
       : null;
+    const lifecycleOutside =
+      !!lifecycle &&
+      ((!!input.from &&
+        Date.parse(lifecycle.evaluatedAt) < Date.parse(input.from)) ||
+        (!!input.to &&
+          Date.parse(lifecycle.evaluatedAt) > Date.parse(input.to)));
+    const applicableLifecycle = lifecycleOutside ? null : lifecycle;
     for (const row of rows) {
-      const match = lifecycle?.items.find(
+      const match = applicableLifecycle?.items.find(
         (x) =>
           x.assetId === row.id &&
           (row.kind !== "software" || x.versionId === row.inputId),
       );
-      row.lifecycle = match ?? null;
+      if (
+        row.kind === "host" &&
+        row.inputId &&
+        match &&
+        match.versionId !== row.inputId
+      ) {
+        row.lifecycle = null;
+        row.issues.push(
+          "生命周期资产属性输入未绑定所选 Windows 快照，不能计入此快照生命周期状态",
+        );
+      } else row.lifecycle = match ?? null;
     }
     const historyWhere = `customer_id=$1 AND COALESCE(details#>>'{target,softwareId}',details#>>'{target,containerId}',details#>>'{target,assetId}')=ANY($2::text[]) AND ($5::boolean OR COALESCE(details#>>'{target,versionId}',details#>>'{target,snapshotId}')=ANY($6::text[])) AND ($3::timestamptz IS NULL OR (details->>'createdAt')::timestamptz >= $3::timestamptz) AND ($4::timestamptz IS NULL OR (details->>'createdAt')::timestamptz <= $4::timestamptz)`;
     const historyParams = [
@@ -359,11 +378,22 @@ export class DashboardService {
         }),
       )
       .digest("hex");
+    const metrics = aggregateDashboard(rows, applicableLifecycle);
+    if (lifecycleOutside && lifecycle) {
+      metrics.lifecycle = {
+        ...metrics.lifecycle,
+        status: "outside_time_range",
+        assessmentId: lifecycle.id,
+        evaluatedAt: lifecycle.evaluatedAt,
+        batchId: lifecycle.batchId,
+        sourceHash: lifecycle.contentHash,
+      };
+    }
     return {
       customerId: customer,
       generatedAt: new Date().toISOString(),
       scope: { hash, ...scope },
-      metrics: aggregateDashboard(rows, lifecycle),
+      metrics,
       objects: rows,
       trend: {
         items: trendPoints(scoped.slice(-200)),
@@ -377,6 +407,9 @@ export class DashboardService {
         "Trivy tool_reported不自动等同确认受影响；Windows仅affected计确认影响",
         "容器发现不证明任何运行实例使用该镜像",
         ...(!lifecycle ? ["未选择生命周期评估版本；EOS/EOL未知"] : []),
+        ...(lifecycleOutside
+          ? ["所选生命周期评估在时间范围外；不计状态、未换用其他评估"]
+          : []),
       ],
     };
   }

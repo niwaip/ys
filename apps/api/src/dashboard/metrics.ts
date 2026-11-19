@@ -62,6 +62,13 @@ export function aggregateDashboard(
       ).length,
     },
     cve: {
+      uniqueCves: usable.length
+        ? new Set(
+            findings
+              .filter((f) => /^CVE-\d{4}-\d{4,}$/i.test(f.cve))
+              .map((f) => f.cve.toUpperCase()),
+          ).size
+        : null,
       uniqueObserved: usable.length
         ? new Set(findings.map((f) => f.cve)).size
         : null,
@@ -166,7 +173,11 @@ export function trendPoints(
         job.status === "succeeded" &&
         old.result?.coverage.status === "complete_for_declared_input" &&
         job.result?.coverage.status === "complete_for_declared_input" &&
+        old.toolVersion !== null &&
+        job.toolVersion !== null &&
         old.toolVersion === job.toolVersion &&
+        old.result.database.updatedAt !== null &&
+        job.result.database.updatedAt !== null &&
         JSON.stringify(old.result.database) ===
           JSON.stringify(job.result.database),
     };

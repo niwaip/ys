@@ -138,8 +138,8 @@ test("按固定软件输入去重CVE并保留实例，明确范围与趋势覆�
                       ]
                     : [],
                 Vulnerabilities: (v === "1"
-                  ? ["CVE-TEST-A", "CVE-TEST-A", "CVE-TEST-B"]
-                  : ["CVE-TEST-A"]
+                  ? ["CVE-2026-0001", "CVE-2026-0001", "CVE-2026-0002"]
+                  : ["CVE-2026-0001"]
                 ).map((id) => ({
                   VulnerabilityID: id,
                   PkgName: "express",
@@ -222,6 +222,7 @@ test("按固定软件输入去重CVE并保留实例，明确范围与趋势覆�
   const current = await view({ trendMode: "object_history" });
   expect(current.metrics.cve).toMatchObject({
     uniqueObserved: 2,
+    uniqueCves: 2,
     instances: 3,
     confirmedAffectedObjects: null,
     toolReportedObjects: 1,
@@ -433,6 +434,21 @@ test("容器失败与Windows fixed单独披露，EOS固定评估匹配同一对�
     inventory: { host: 2, container: 1 },
   });
   expect(catalog.objects).toHaveLength(1);
+  const outsideLifecycle = (
+    await h
+      .post("/api/customers/acme/dashboard/view")
+      .set(auth)
+      .send({
+        lifecycleAssessmentId: lifecycle.id,
+        from: "2099-01-01T00:00:00Z",
+      })
+      .expect(200)
+  ).body;
+  expect(outsideLifecycle.metrics.lifecycle).toMatchObject({
+    status: "outside_time_range",
+    assessmentId: lifecycle.id,
+    eos: null,
+  });
   await h
     .post("/api/customers/river/dashboard/view")
     .set(auth)

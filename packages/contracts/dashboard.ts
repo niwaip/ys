@@ -24,11 +24,7 @@ export type DashboardObject = {
     installedVersion: string;
     fixedVersion: string | null;
   }[];
-  coverage: AnyAssessment["result"] extends infer R
-    ? NonNullable<R> extends { coverage: infer C }
-      ? C | null
-      : never
-    : never;
+  coverage: NonNullable<AnyAssessment["result"]>["coverage"] | null;
   database: {
     freshness: string;
     updatedAt: string | null;
@@ -80,6 +76,7 @@ export type DashboardView = {
     components: { known: number; unknownObjects: number };
     cve: {
       uniqueObserved: number | null;
+      uniqueCves: number | null;
       instances: number | null;
       confirmedAffectedObjects: number | null;
       toolReportedObjects: number;
@@ -104,7 +101,7 @@ export type DashboardView = {
       collectedAtUnknown: number;
     };
     lifecycle: {
-      status: "selected" | "unselected";
+      status: "selected" | "unselected" | "outside_time_range";
       assessmentId: string | null;
       evaluatedAt: string | null;
       batchId: string | null;

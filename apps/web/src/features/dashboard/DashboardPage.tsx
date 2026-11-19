@@ -314,10 +314,11 @@ export function DashboardPage({
               </small>
             </article>
             <article>
-              <span>唯一观测 CVE / 公告</span>
-              <strong>{show(data.metrics.cve.uniqueObserved)}</strong>
+              <span>唯一观测 CVE</span>
+              <strong>{show(data.metrics.cve.uniqueCves)}</strong>
               <small>
-                实例 {show(data.metrics.cve.instances)} · Windows
+                公告标识 {show(data.metrics.cve.uniqueObserved)} · 实例{" "}
+                {show(data.metrics.cve.instances)} · Windows
                 fixed/unknown也为观测行，不等于风险数
               </small>
               <button onClick={() => drilldown()}>下钻观测实例</button>
@@ -389,8 +390,12 @@ export function DashboardPage({
             </article>
             <article>
               <h3>EOS / EOL 生命周期</h3>
-              {data.metrics.lifecycle.status === "unselected" ? (
-                <p>未选择评估版本，生命周期未知。</p>
+              {data.metrics.lifecycle.status !== "selected" ? (
+                <p>
+                  {data.metrics.lifecycle.status === "outside_time_range"
+                    ? "所选生命周期评估在时间范围外；当前范围生命周期未知。"
+                    : "未选择评估版本，生命周期未知。"}
+                </p>
               ) : (
                 <>
                   <p>
