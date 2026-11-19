@@ -16,6 +16,10 @@ export const DATABASE = Symbol("DATABASE");
 // Numbered migrations are applied atomically; new features append migrations here.
 const migrations = [
   {
+    version: 10,
+    sql: `CREATE TABLE customer_conversations(id uuid PRIMARY KEY,customer_id text NOT NULL REFERENCES customers(id),idempotency_key text NOT NULL,input_hash text NOT NULL,details jsonb NOT NULL,created_at timestamptz NOT NULL DEFAULT now(),UNIQUE(customer_id,idempotency_key));`,
+  },
+  {
     version: 6,
     sql: `CREATE TABLE container_images(id uuid PRIMARY KEY,customer_id text NOT NULL REFERENCES customers(id),name text NOT NULL,source text NOT NULL,created_at timestamptz NOT NULL DEFAULT now(),UNIQUE(customer_id,id));CREATE TABLE container_versions(id uuid PRIMARY KEY,customer_id text NOT NULL,container_id uuid NOT NULL,import_id uuid NOT NULL,version text,details jsonb NOT NULL,created_at timestamptz NOT NULL DEFAULT now(),UNIQUE(customer_id,id),UNIQUE(customer_id,import_id),FOREIGN KEY(customer_id,container_id) REFERENCES container_images(customer_id,id),FOREIGN KEY(customer_id,import_id) REFERENCES import_materials(customer_id,id));CREATE INDEX container_versions_image ON container_versions(customer_id,container_id,created_at DESC);`,
   },

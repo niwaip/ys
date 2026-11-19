@@ -18,6 +18,11 @@ import { AssessmentsModule } from "./assessments/assessments.module";
 import { ProcessTrivyExecutor, type TrivyExecutor } from "./assessments/trivy";
 import { ContainersModule } from "./containers/containers.module";
 import { ReportsModule } from "./reports/reports.module";
+import { ConversationsModule } from "./conversations/conversations.module";
+import {
+  configuredCustomerExecutor,
+  type CustomerReadExecutor,
+} from "./conversations/pi-customer";
 const CONFIG = Symbol("APP_CONFIG");
 Inject(CONFIG)(OperatorGuard, undefined, 0);
 Inject(CONFIG)(CustomersController, undefined, 0);
@@ -60,7 +65,10 @@ export class AssetsModule {}
 export async function createApp(
   input: AppConfig,
   features: DynamicModule["imports"] = [],
-  runtime: { trivyExecutor?: TrivyExecutor } = {},
+  runtime: {
+    trivyExecutor?: TrivyExecutor;
+    customerReadExecutor?: CustomerReadExecutor;
+  } = {},
 ) {
   const config = configSchema.parse(input);
   const database = await openDatabase(config.databaseUrl);
@@ -95,6 +103,11 @@ export async function createApp(
             : []),
           assessments,
           ReportsModule.register(assessments),
+          ConversationsModule.register(
+            assessments,
+            runtime.customerReadExecutor ??
+              configuredCustomerExecutor(config.pi),
+          ),
           ...features,
         ],
         controllers: [CustomersController],

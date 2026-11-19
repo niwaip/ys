@@ -1,10 +1,11 @@
-import { spawn } from "node:child_process";
-import { createHash, randomUUID } from "node:crypto";
+import { createHash } from "node:crypto";
 import { mkdir, readFile, realpath, stat, writeFile } from "node:fs/promises";
 import { dirname, join, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 import { z } from "zod";
-import { AgentExecutionError, type PublicQueryExecutor } from "./agent.module";
+import type { PublicQueryExecutor } from "./agent.module";
+import { AgentExecutionError } from "./errors";
+import { runPiCapability } from "./pi-rpc";
 import type { PublicIntelligenceResult } from "../../../../packages/contracts/agent";
 export type PiProcessConfig = {
   executable: string;
@@ -68,181 +69,21 @@ export class PiPublicQueryExecutor implements PublicQueryExecutor {
     );
     const extension = join(root, "tools/pi/public-cve-extension.mjs");
     const skill = join(root, "tools/pi/skills/public-cve/SKILL.md");
-    const args = [
-      ...(this.config.prefixArgs ?? []),
-      "--mode",
-      "rpc",
-      "--no-session",
-      "--no-extensions",
-      "--no-skills",
-      "--no-prompt-templates",
-      "--no-context-files",
-      "--no-mcp",
-      "--tools",
-      "ys_public_cve_query",
-      "-e",
-      extension,
-      "--skill",
-      skill,
-      ...(this.config.provider ? ["--provider", this.config.provider] : []),
-      ...(this.config.model ? ["--model", this.config.model] : []),
-    ];
-    const env: Record<string, string> = {
-      PATH: process.env.PATH ?? "",
-      HOME: jobDir,
-      XDG_CONFIG_HOME: join(jobDir, "config"),
-      PI_CODING_AGENT_DIR: join(jobDir, "pi"),
-      YS_AGENT_REQUEST_FILE: requestFile,
-      ...this.config.env,
-    };
-    for (const key of [
-      "OPENAI_API_KEY",
-      "ANTHROPIC_API_KEY",
-      "GEMINI_API_KEY",
-      "GOOGLE_API_KEY",
-    ])
-      if (process.env[key] && !env[key]) env[key] = process.env[key]!;
-    const terminal = this.config.terminalEvent ?? "agent_settled";
-    await new Promise<void>((ok, fail) => {
-      if (signal.aborted) {
-        fail(new AgentExecutionError("timed_out", "Pi 任务已中止"));
-        return;
-      }
-      const child = spawn(this.config.executable, args, {
-        cwd: jobDir,
-        env,
-        shell: false,
-        detached: process.platform !== "win32",
-        stdio: ["pipe", "pipe", "pipe"],
-      });
-      let finished = false,
-        buffer = "",
-        bytes = 0,
-        accepted = false,
-        toolStarted = false,
-        toolCompleted = false;
-      let events = Promise.resolve();
-      const commandId = randomUUID();
-      const kill = () => {
-        try {
-          if (child.pid && process.platform !== "win32")
-            process.kill(-child.pid, "SIGKILL");
-          else child.kill("SIGKILL");
-        } catch {}
-      };
-      const finish = (error?: Error) => {
-        if (finished) return;
-        finished = true;
-        clearTimeout(timer);
-        signal.removeEventListener("abort", abort);
-        kill();
-        events.then(
-          () => (error ? fail(error) : ok()),
-          () => fail(new AgentExecutionError("failed", "工具事件保存失败")),
-        );
-      };
-      const event = (type: string, message: string) => {
-        events = events.then(() => emit(type, message));
-      };
-      const abort = () =>
-        finish(
-          new AgentExecutionError(
-            "timed_out",
-            "Pi 任务超时或被中止；未自动重试",
-          ),
-        );
-      const timer = setTimeout(abort, this.config.timeoutMs ?? 60000);
-      signal.addEventListener("abort", abort, { once: true });
-      child.on("error", () =>
-        finish(new AgentExecutionError("unavailable", "Pi 可执行程序不可用")),
-      );
-      child.stderr.on("data", (chunk) => {
-        bytes += chunk.length;
-        if (bytes > 5_000_000)
-          finish(new AgentExecutionError("failed", "Pi 输出超出限制"));
-      });
-      child.stdout.on("data", (chunk) => {
-        bytes += chunk.length;
-        if (bytes > 5_000_000) {
-          finish(new AgentExecutionError("failed", "Pi 输出超出限制"));
-          return;
-        }
-        buffer += chunk.toString("utf8");
-        let at: number;
-        while ((at = buffer.indexOf("\n")) >= 0 && !finished) {
-          const line = buffer.slice(0, at);
-          buffer = buffer.slice(at + 1);
-          if (!line.trim()) continue;
-          let message: any;
-          try {
-            message = JSON.parse(line);
-          } catch {
-            finish(
-              new AgentExecutionError("failed", "Pi RPC 返回非 JSON 消息"),
-            );
-            return;
-          }
-          if (message.type === "response" && message.id === commandId) {
-            if (message.success !== true) {
-              finish(new AgentExecutionError("failed", "Pi 拒绝查询请求"));
-              return;
-            }
-            accepted = true;
-            event("accepted", "Pi 已接受请求，尚未完成");
-          }
-          if (message.type === "tool_execution_start") {
-            if (message.toolName !== "ys_public_cve_query") {
-              finish(new AgentExecutionError("failed", "Pi 请求了未授权工具"));
-              return;
-            }
-            toolStarted = true;
-            event("tool_started", "固定 CVE 查询脚本开始执行");
-          }
-          if (message.type === "tool_execution_end") {
-            if (
-              message.toolName !== "ys_public_cve_query" ||
-              !toolStarted ||
-              message.isError
-            ) {
-              finish(
-                new AgentExecutionError("failed", "固定 CVE 查询脚本执行失败"),
-              );
-              return;
-            }
-            toolCompleted = true;
-            event("tool_completed", "固定查询脚本已完成，等待 Pi 结束");
-          }
-          if (message.type === terminal) {
-            if (!accepted || !toolCompleted) {
-              finish(
-                new AgentExecutionError(
-                  "failed",
-                  "Pi 结束但没有成功执行固定查询工具",
-                ),
-              );
-              return;
-            }
-            event(terminal, "Pi 任务结束，核验固定脚本输出");
-            finish();
-          }
-        }
-      });
-      child.on("close", () => {
-        if (!finished)
-          finish(new AgentExecutionError("failed", "Pi 在任务完成前退出"));
-      });
-      child.stdin.on("error", () =>
-        finish(new AgentExecutionError("failed", "Pi 请求通道关闭")),
-      );
-      child.stdin.write(
-        JSON.stringify({
-          id: commandId,
-          type: "prompt",
-          message:
-            "/skill:ys-public-cve 请使用固定工具处理完整原始问题。原始问题已由后端绑定，请勿改写查询范围。",
-        }) + "\n",
-      );
-    });
+    await runPiCapability(
+      this.config,
+      {
+        jobDir,
+        requestFile,
+        extension,
+        skill,
+        tools: ["ys_public_cve_query"],
+        requiredTools: ["ys_public_cve_query"],
+        prompt:
+          "/skill:ys-public-cve 请使用固定工具处理完整原始问题。原始问题已由后端绑定，请勿改写查询范围。",
+      },
+      emit,
+      signal,
+    );
     try {
       for (const name of ["result.json", "report.html"]) {
         const path = await realpath(join(outputDir, name));
