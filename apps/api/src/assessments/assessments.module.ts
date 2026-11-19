@@ -1,4 +1,7 @@
-import {ContainersModule,ContainerService} from "../containers/containers.module";
+import {
+  ContainersModule,
+  ContainerService,
+} from "../containers/containers.module";
 import {
   BadRequestException,
   ConflictException,
@@ -27,7 +30,22 @@ import type { SoftwareComponent } from "../../../../packages/contracts/software"
 import { ProcessTrivyExecutor, type TrivyExecutor } from "./trivy";
 import { normalizeTrivy } from "./normalize";
 const EXECUTOR = Symbol("TRIVY_EXECUTOR");
-const submitSchema=z.union([z.object({softwareId:z.uuid(),versionId:z.uuid(),idempotencyKey:z.string().trim().min(1).max(200)}).strict(),z.object({containerId:z.uuid(),versionId:z.uuid(),idempotencyKey:z.string().trim().min(1).max(200)}).strict()]);
+const submitSchema = z.union([
+  z
+    .object({
+      softwareId: z.uuid(),
+      versionId: z.uuid(),
+      idempotencyKey: z.string().trim().min(1).max(200),
+    })
+    .strict(),
+  z
+    .object({
+      containerId: z.uuid(),
+      versionId: z.uuid(),
+      idempotencyKey: z.string().trim().min(1).max(200),
+    })
+    .strict(),
+]);
 type Submission = z.infer<typeof submitSchema>;
 const cols = `id,customer_id AS "customerId",status,details`;
 function serialize(row: Record<string, unknown>): Assessment {
@@ -87,10 +105,27 @@ export class AssessmentService {
     }, 10);
   }
   async submit(customer: string, input: Submission) {
-    const target:Assessment['target']='containerId' in input?{kind:'container',containerId:input.containerId,versionId:input.versionId}:{kind:'software',softwareId:input.softwareId,versionId:input.versionId};
-    const snapshot=await this.snapshot(customer,target);
+    const target: Assessment["target"] =
+      "containerId" in input
+        ? {
+            kind: "container",
+            containerId: input.containerId,
+            versionId: input.versionId,
+          }
+        : {
+            kind: "software",
+            softwareId: input.softwareId,
+            versionId: input.versionId,
+          };
+    const snapshot = await this.snapshot(customer, target);
     const material = await this.imports.get(customer, snapshot.importId);
-    if (material.format !== (target.kind==="container"?"container-cyclonedx-json":"cyclonedx-json") || material.content === undefined)
+    if (
+      material.format !==
+        (target.kind === "container"
+          ? "container-cyclonedx-json"
+          : "cyclonedx-json") ||
+      material.content === undefined
+    )
       throw new BadRequestException("该输入不是可评估的软件 SBOM");
     const record: Assessment = {
       id: randomUUID(),
@@ -116,7 +151,14 @@ export class AssessmentService {
         [customer, input.idempotencyKey],
       );
       const old = serialize(existing.rows[0]);
-      if (old.target.kind!==target.kind||old.target.versionId!==target.versionId||('containerId' in old.target?old.target.containerId:old.target.softwareId)!==('containerId' in target?target.containerId:target.softwareId))
+      if (
+        old.target.kind !== target.kind ||
+        old.target.versionId !== target.versionId ||
+        ("containerId" in old.target
+          ? old.target.containerId
+          : old.target.softwareId) !==
+          ("containerId" in target ? target.containerId : target.softwareId)
+      )
         throw new ConflictException("幂等键已用于其他输入版本");
       return { ...old, replayed: true };
     });
@@ -134,7 +176,13 @@ export class AssessmentService {
   }
   async list(
     customer: string,
-    page: { limit?: number; offset?: number; targetKind?:"software"|"container"|"windows" } = {},
+    page: {
+      limit?: number;
+      offset?: number;
+      targetKind?: "software" | "container" | "windows";
+      targetId?: string;
+      versionId?: string;
+    } = {},
   ): Promise<AssessmentPage> {
     const limit = page.limit ?? 50,
       offset = page.offset ?? 0;
@@ -147,14 +195,36 @@ export class AssessmentService {
       offset > 1000000
     )
       throw new BadRequestException("分页无效");
-    const filter=page.targetKind?" AND details#>>'{target,kind}'=$4":"";
+    const params: unknown[] = [customer];
+    let where = "customer_id=$1";
+    if (page.targetKind) {
+      params.push(page.targetKind);
+      where += ` AND details#>>'{target,kind}'=$${params.length}`;
+    }
+    for (const [name, expression] of [
+      [
+        "targetId",
+        "COALESCE(details#>>'{target,softwareId}',details#>>'{target,containerId}',details#>>'{target,assetId}')",
+      ],
+      [
+        "versionId",
+        "COALESCE(details#>>'{target,versionId}',details#>>'{target,snapshotId}')",
+      ],
+    ] as const) {
+      if (page[name]) {
+        if (!z.uuid().safeParse(page[name]).success)
+          throw new BadRequestException("目标筛选编号无效");
+        params.push(page[name]);
+        where += ` AND ${expression}=$${params.length}`;
+      }
+    }
     const r = await this.db.query(
-      `SELECT id,customer_id AS "customerId",status,details - 'execution' - 'result' AS details, details#>'{result,coverage}' AS coverage,details#>'{result,database}' AS database,jsonb_array_length(details#>'{result,findings}') AS "findingCount" FROM vulnerability_jobs WHERE customer_id=$1${filter} ORDER BY created_at DESC,id LIMIT $2 OFFSET $3`,
-      page.targetKind?[customer,limit,offset,page.targetKind]:[customer, limit, offset],
+      `SELECT id,customer_id AS "customerId",status,details - 'execution' - 'result' AS details,details#>'{result,coverage}' AS coverage,details#>'{result,database}' AS database,jsonb_array_length(details#>'{result,findings}') AS "findingCount" FROM vulnerability_jobs WHERE ${where} ORDER BY created_at DESC,id LIMIT $${params.length + 1} OFFSET $${params.length + 2}`,
+      [...params, limit, offset],
     );
     const count = await this.db.query(
-      `SELECT count(*)::int AS total FROM vulnerability_jobs WHERE customer_id=$1${page.targetKind?" AND details#>>'{target,kind}'=$2":""}`,
-      page.targetKind?[customer,page.targetKind]:[customer],
+      `SELECT count(*)::int AS total FROM vulnerability_jobs WHERE ${where}`,
+      params,
     );
     return {
       items: r.rows.map((row) => {
@@ -174,7 +244,15 @@ export class AssessmentService {
       offset,
     };
   }
-  private snapshot(customer:string,target:Assessment['target']){return target.kind==='container'?this.containers.getVersion(customer,target.containerId,target.versionId):this.software.getVersion(customer,target.softwareId,target.versionId);}
+  private snapshot(customer: string, target: Assessment["target"]) {
+    return target.kind === "container"
+      ? this.containers.getVersion(
+          customer,
+          target.containerId,
+          target.versionId,
+        )
+      : this.software.getVersion(customer, target.softwareId, target.versionId);
+  }
   private async save(record: Assessment) {
     await this.db.query(
       `UPDATE vulnerability_jobs SET status=$3,details=$4::jsonb WHERE customer_id=$1 AND id=$2`,
@@ -192,7 +270,7 @@ export class AssessmentService {
       await this.save(job);
       this.abort = new AbortController();
       try {
-        const snapshot = await this.snapshot(job.customerId,job.target);
+        const snapshot = await this.snapshot(job.customerId, job.target);
         const material = await this.imports.get(
           job.customerId,
           job.input.importId,
@@ -242,7 +320,9 @@ class AssessmentsController {
     const page = z
       .object({
         limit: z.coerce.number().int().min(1).max(100).optional(),
-        targetKind:z.enum(["software","container","windows"]).optional(),
+        targetKind: z.enum(["software", "container", "windows"]).optional(),
+        targetId: z.uuid().optional(),
+        versionId: z.uuid().optional(),
         offset: z.coerce.number().int().min(0).max(1000000).optional(),
       })
       .strict()
@@ -272,7 +352,13 @@ export class AssessmentsModule {
         { provide: EXECUTOR, useValue: executor },
         {
           provide: AssessmentService,
-          inject: [DATABASE, SoftwareService, ContainerService, ImportsService, EXECUTOR],
+          inject: [
+            DATABASE,
+            SoftwareService,
+            ContainerService,
+            ImportsService,
+            EXECUTOR,
+          ],
           useFactory: (
             db: Database,
             software: SoftwareService,
