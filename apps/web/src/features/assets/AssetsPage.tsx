@@ -268,7 +268,11 @@ export function AssetsPage({
               aria-label="资产详情"
             >
               <header>
-                <h2>资产详情 · {detailAsset.name}</h2>
+                <h2>
+                  资产详情 ·{" "}
+                  {data?.items.find((item) => item.id === detailAsset.id)
+                    ?.name ?? detailAsset.name}
+                </h2>
                 <button
                   className="collect-icon-button"
                   aria-label="关闭资产详情"
@@ -282,6 +286,7 @@ export function AssetsPage({
                 token={token}
                 onUnauthorized={onUnauthorized}
                 assetId={detailAsset.id}
+                onConfirmed={refresh}
               />
             </section>
           </div>
