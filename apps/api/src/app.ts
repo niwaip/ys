@@ -1,3 +1,4 @@
+import { BaselinesModule } from "./baselines/baselines.module";
 import { CollectionJobsModule } from "./collections/jobs.module";
 import type { CollectionExecutor } from "./collections/pi-collection";
 import { CollectionsModule } from "./collections/collections.module";
@@ -103,6 +104,7 @@ export async function createApp(
           NetBoxModule.register(config.netbox),
           AssetsModule,
           CollectionsModule,
+          BaselinesModule,
           CollectionJobsModule.register(config, runtime.collectionExecutor),
           ImportsModule,
           LifecycleModule,

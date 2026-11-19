@@ -1,3 +1,4 @@
+import { AssetBaseline } from "../collections/AssetBaseline";
 import { NetBoxPanel } from "./NetBoxPanel";
 import { useCallback, useEffect, useState, type FormEvent } from "react";
 import type { AssetPage } from "../../../../../packages/contracts";
@@ -8,6 +9,10 @@ export function AssetsPage({
   token,
   onUnauthorized,
 }: FeatureProps) {
+  const [detailAsset, setDetailAsset] = useState<{
+    id: string;
+    name: string;
+  }>();
   const [netboxMode, setNetboxMode] = useState<boolean | undefined>();
   const refresh = useCallback(() => setRevision((x) => x + 1), []);
   const [data, setData] = useState<AssetPage>();
@@ -177,7 +182,14 @@ export function AssetsPage({
                   {data.items.map((asset) => (
                     <tr key={asset.id}>
                       <td>
-                        <strong>{asset.name}</strong>
+                        <button
+                          className="text-button"
+                          onClick={() =>
+                            setDetailAsset({ id: asset.id, name: asset.name })
+                          }
+                        >
+                          {asset.name}
+                        </button>
                         <code title={asset.id}>{asset.id}</code>
                       </td>
                       <td>
@@ -246,6 +258,35 @@ export function AssetsPage({
       <div className="footnote">
         ◈ 客户数据独立保存 · 名称不作为全局身份 · 未评估不代表无风险
       </div>
+      {detailAsset && (
+        <div className="collection-page">
+          <div className="collect-overlay">
+            <section
+              className="collect-dialog baseline-dialog"
+              role="dialog"
+              aria-modal="true"
+              aria-label="资产详情"
+            >
+              <header>
+                <h2>资产详情 · {detailAsset.name}</h2>
+                <button
+                  className="collect-icon-button"
+                  aria-label="关闭资产详情"
+                  onClick={() => setDetailAsset(undefined)}
+                >
+                  ×
+                </button>
+              </header>
+              <AssetBaseline
+                customerId={customerId}
+                token={token}
+                onUnauthorized={onUnauthorized}
+                assetId={detailAsset.id}
+              />
+            </section>
+          </div>
+        </div>
+      )}
       {creating && (
         <div className="modal-backdrop">
           <section

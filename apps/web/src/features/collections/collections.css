@@ -773,3 +773,199 @@
 .collection-page .collect-history table {
   min-width: 620px;
 }
+.asset-baseline {
+  min-width: 0;
+}
+.baseline-overview,
+.baseline-toolbar,
+.baseline-confirm,
+.baseline-layer > header {
+  display: flex;
+  justify-content: space-between;
+  gap: 18px;
+  align-items: center;
+}
+.baseline-overview {
+  padding: 8px 0 20px;
+  border-bottom: 1px solid #e1e9df;
+}
+.baseline-overview p,
+.baseline-confirm p {
+  font-size: 12px;
+  color: #728376;
+  line-height: 1.7;
+  margin: 8px 0;
+}
+.baseline-toolbar {
+  margin: 20px 0;
+  font-size: 12px;
+  flex-wrap: wrap;
+}
+.baseline-toolbar button {
+  margin-right: 8px;
+}
+.baseline-anchors {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin: 18px 0;
+}
+.baseline-anchors a {
+  color: #37634d;
+  background: #eff4eb;
+  border: 1px solid #e1e9dc;
+  padding: 8px 11px;
+  border-radius: 6px;
+  font-size: 12px;
+  text-decoration: none;
+}
+.baseline-anchors b {
+  margin-left: 6px;
+  color: #b46b24;
+}
+.baseline-layer {
+  border: 1px solid #e0e8da;
+  border-radius: 10px;
+  margin: 16px 0;
+  overflow: hidden;
+  scroll-margin-top: 20px;
+}
+.baseline-layer.has-changes {
+  border-left: 3px solid #d0a05b;
+}
+.baseline-layer > header {
+  padding: 16px 20px;
+  background: #f8faf5;
+  border-bottom: 1px solid #e7edde;
+  flex-wrap: wrap;
+}
+.baseline-layer > header > div {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+.baseline-layer > header h3 {
+  margin: 0;
+}
+.baseline-layer > header .collect-check {
+  margin: 0;
+}
+.baseline-layer-content {
+  padding: 16px 20px;
+}
+.baseline-change {
+  display: inline-block;
+  font-size: 11px;
+  padding: 3px 7px;
+  border-radius: 4px;
+  background: #fff4db;
+  color: #9d661e;
+  margin-left: 6px;
+}
+.baseline-change.added {
+  background: #eaf5e5;
+  color: #497838;
+}
+.baseline-change.removed {
+  background: #fbeceb;
+  color: #9f554f;
+}
+.baseline-properties {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+  margin: 0;
+}
+.baseline-properties > div {
+  padding: 12px;
+  border: 1px solid #e6ecdf;
+  border-radius: 7px;
+  min-width: 0;
+}
+.baseline-properties .baseline-field-changed {
+  background: #fffdf5;
+  border-color: #efdfba;
+}
+.baseline-properties dt {
+  font-size: 12px;
+  color: #6e8066;
+  margin-bottom: 10px;
+}
+.baseline-properties dd {
+  margin: 0;
+  font-size: 13px;
+  overflow-wrap: anywhere;
+}
+.baseline-properties dd small {
+  display: block;
+  color: #997b48;
+  font-size: 11px;
+  margin-top: 7px;
+}
+.baseline-list-controls {
+  display: flex;
+  gap: 15px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+.baseline-list-controls > input {
+  max-width: 300px;
+}
+.baseline-layer table {
+  min-width: 500px;
+}
+.baseline-layer pre {
+  max-height: 200px;
+  max-width: 350px;
+}
+.baseline-confirm {
+  position: sticky;
+  bottom: 0;
+  padding: 18px;
+  background: #f0f5e9;
+  border: 1px solid #d7e4ca;
+  border-radius: 10px;
+  z-index: 2;
+}
+.baseline-confirm > div {
+  max-width: 65%;
+  font-size: 13px;
+}
+.baseline-history {
+  padding: 12px 0;
+  display: flex;
+  gap: 12px;
+  justify-content: space-between;
+  font-size: 12px;
+}
+.collect-dialog.baseline-dialog {
+  width: 1100px;
+}
+@media (max-width: 600px) {
+  .baseline-properties {
+    grid-template-columns: 1fr;
+  }
+  .baseline-confirm {
+    position: static;
+    display: block;
+  }
+  .baseline-confirm > div {
+    max-width: 100%;
+  }
+  .baseline-confirm > button {
+    width: 100%;
+  }
+  .baseline-overview {
+    display: block;
+  }
+  .baseline-layer-content {
+    padding: 12px;
+  }
+  .baseline-layer > header {
+    padding: 12px;
+  }
+  .baseline-dialog {
+    padding: 16px;
+  }
+}

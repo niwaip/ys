@@ -332,6 +332,7 @@ export class NetBoxService {
       if (!response.ok) throw new Error("remote");
       const native = this.validate(await boundedJson(response), tenantId);
       if (
+        (update && native.id !== update.externalId) ||
         native.name !== input.name ||
         (input.serial !== undefined && native.serial !== input.serial)
       )
@@ -366,6 +367,7 @@ export class NetBoxService {
     customerId: string,
     assetId: string,
     input: { idempotencyKey: string; name: string; serial?: string },
+    expected?: { name: string; serial?: string },
   ) {
     this.tenant(customerId);
     const mapping = (
@@ -379,6 +381,7 @@ export class NetBoxService {
       customerId,
       `${mapping.object_type}:${mapping.external_id}`,
     );
+    if (expected) await this.verifyBaseline(customerId, assetId, expected);
     return this.create(
       customerId,
       {
@@ -386,6 +389,78 @@ export class NetBoxService {
         objectType: mapping.object_type as z.infer<typeof objectType>,
       },
       { assetId, externalId: Number(mapping.external_id) },
+    );
+  }
+  async updateBaseline(
+    customerId: string,
+    assetId: string,
+    patch: { name?: string; serial?: string },
+    idempotencyKey: string,
+    expected: { name?: string; serial?: string },
+  ) {
+    const native = await this.baselineNative(customerId, assetId);
+    if (
+      (expected.name !== undefined && native.name !== expected.name) ||
+      (expected.serial !== undefined &&
+        (native.serial ?? "") !== expected.serial)
+    )
+      throw new ConflictException("NetBox字段已被修改，请同步并重新确认");
+    return this.update(customerId, assetId, {
+      idempotencyKey,
+      name: patch.name ?? native.name,
+      ...(patch.serial !== undefined ? { serial: patch.serial } : {}),
+    });
+  }
+  private async baselineNative(customerId: string, assetId: string) {
+    const mapping = (
+      await this.db.query(
+        "SELECT object_type,external_id FROM netbox_assets WHERE customer_id=$1 AND asset_id=$2 AND instance=$3 AND active=true",
+        [customerId, assetId, this.config?.baseUrl],
+      )
+    ).rows[0];
+    if (!mapping) throw new ConflictException("当前NetBox映射不可用");
+    const native = this.validate(
+      await this.read(
+        `${paths[mapping.object_type as keyof typeof paths]}${mapping.external_id}/`,
+      ),
+      this.tenant(customerId),
+    );
+    if (native.id !== Number(mapping.external_id))
+      throw new ConflictException("NetBox对象身份已变化");
+    return native;
+  }
+  async verifyBaseline(
+    customerId: string,
+    assetId: string,
+    expected: { name?: string; serial?: string },
+  ) {
+    const mapping = (
+      await this.db.query(
+        "SELECT object_type,external_id FROM netbox_assets WHERE customer_id=$1 AND asset_id=$2 AND instance=$3 AND active=true",
+        [customerId, assetId, this.config?.baseUrl],
+      )
+    ).rows[0];
+    if (!mapping) throw new ConflictException("当前NetBox映射不可用");
+    const native = this.validate(
+      await this.read(
+        `${paths[mapping.object_type as keyof typeof paths]}${mapping.external_id}/`,
+      ),
+      this.tenant(customerId),
+    );
+    if (
+      native.id !== Number(mapping.external_id) ||
+      (expected.name !== undefined && native.name !== expected.name) ||
+      (expected.serial !== undefined && native.serial !== expected.serial)
+    )
+      throw new ConflictException("NetBox当前值与确认内容不一致，基线未更新");
+    await this.db.transaction((tx) =>
+      this.cache(
+        tx,
+        customerId,
+        mapping.object_type as keyof typeof paths,
+        native,
+        assetId,
+      ),
     );
   }
   async operations(customerId: string) {

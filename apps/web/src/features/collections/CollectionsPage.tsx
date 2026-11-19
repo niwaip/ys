@@ -1,3 +1,4 @@
+import { AssetBaseline } from "./AssetBaseline";
 import "./collections.css";
 import { ConnectionEditor } from "./ConnectionEditor";
 import { VersionLinks } from "./VersionLinks";
@@ -25,25 +26,6 @@ type Profile = {
   host?: string;
   transport?: string;
   credentialName?: string;
-};
-type Section = {
-  status: string;
-  issues: string[];
-  data?: unknown;
-  items: unknown[];
-  total: number | null;
-  limit: number;
-  offset: number;
-};
-const names: Record<string, string> = {
-  os: "操作系统",
-  packages: "系统包",
-  hardware: "硬件",
-  network: "网络",
-  dockerClient: "Docker客户端",
-  dockerDaemon: "运行Docker引擎",
-  containers: "容器目录",
-  images: "镜像目录",
 };
 const statuses: Record<string, string> = {
   acquired: "已取得",
@@ -80,9 +62,6 @@ export function CollectionsPage({
   const [offset, setOffset] = useState(0);
   const [jobs, setJobs] = useState<Job[]>([]);
   const [selected, setSelected] = useState<CollectionSnapshot>();
-  const [section, setSection] = useState<Section>();
-  const [sectionKey, setSectionKey] = useState("os");
-  const [sectionOffset, setSectionOffset] = useState(0);
   const [raw, setRaw] = useState<string>();
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
@@ -164,23 +143,6 @@ export function CollectionsPage({
       clearTimeout(timer);
     };
   }, [base, token, revision, onUnauthorized]);
-  useEffect(() => {
-    setSection(undefined);
-    setRaw(undefined);
-    if (!selected) return;
-    const controller = new AbortController();
-    api<Section>(
-      `${base}/snapshots/${selected.id}/sections/${sectionKey}?limit=50&offset=${sectionOffset}`,
-      token,
-      {},
-      controller.signal,
-    )
-      .then(setSection)
-      .catch((e) => {
-        if (!controller.signal.aborted) fail(e);
-      });
-    return () => controller.abort();
-  }, [base, token, selected, sectionKey, sectionOffset, onUnauthorized]);
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setBusy(true);
@@ -260,8 +222,7 @@ export function CollectionsPage({
       setSelected(
         await api<CollectionSnapshot>(`${base}/snapshots/${id}`, token),
       );
-      setSectionOffset(0);
-      setSectionKey("os");
+      setRaw(undefined);
     } catch (e) {
       fail(e);
     }
@@ -715,7 +676,7 @@ export function CollectionsPage({
                             className="text-button"
                             onClick={() => {
                               setSelected(snapshot);
-                              setSectionOffset(0);
+                              setRaw(undefined);
                             }}
                           >
                             查看资料 →
@@ -815,7 +776,7 @@ export function CollectionsPage({
       {selected && (
         <div className="collect-overlay">
           <section
-            className="collect-dialog collect-detail"
+            className="collect-dialog collect-detail baseline-dialog"
             role="dialog"
             aria-modal="true"
             aria-label="采集资料详情"
@@ -834,113 +795,14 @@ export function CollectionsPage({
                 ×
               </button>
             </header>
-            <label>
-              资料分层
-              <select
-                value={sectionKey}
-                onChange={(e) => {
-                  setSectionKey(e.target.value);
-                  setSectionOffset(0);
-                }}
-              >
-                {Object.entries(names).map(([key, label]) => (
-                  <option key={key} value={key}>
-                    {label} ·{" "}
-                    {
-                      statuses[
-                        selected.sections[key as keyof typeof selected.sections]
-                          .status
-                      ]
-                    }
-                  </option>
-                ))}
-              </select>
-            </label>
-            {section && (
-              <div className="collect-section-data">
-                <p>
-                  <span className="collect-pill">
-                    {statuses[section.status]}
-                  </span>{" "}
-                  {section.total !== null ? `${section.total} 项` : ""}
-                </p>
-                {section.issues.map((issue, index) => (
-                  <p key={index} className="collect-muted">
-                    {issue}
-                  </p>
-                ))}
-                {sectionKey === "os" &&
-                section.data &&
-                typeof section.data === "object" ? (
-                  <dl className="collect-properties">
-                    {Object.entries(section.data).map(([key, value]) => (
-                      <div key={key}>
-                        <dt>
-                          {{
-                            id: "发行版",
-                            version: "版本",
-                            kernel: "运行内核",
-                            architecture: "架构",
-                          }[key] ?? key}
-                        </dt>
-                        <dd>{String(value ?? "未知")}</dd>
-                      </div>
-                    ))}
-                  </dl>
-                ) : sectionKey === "packages" ? (
-                  <div className="table-scroll">
-                    <table>
-                      <thead>
-                        <tr>
-                          <th>包名称</th>
-                          <th>完整版本</th>
-                          <th>架构</th>
-                          <th>安装状态</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {section.items.map((item, index) => {
-                          const value = item as Record<string, unknown>;
-                          return (
-                            <tr key={index}>
-                              <td>{String(value.name)}</td>
-                              <td>{String(value.version ?? "未知")}</td>
-                              <td>{String(value.architecture ?? "未知")}</td>
-                              <td>{String(value.state)}</td>
-                            </tr>
-                          );
-                        })}
-                      </tbody>
-                    </table>
-                  </div>
-                ) : (
-                  <details>
-                    <summary>查看资料详情</summary>
-                    <pre>
-                      {JSON.stringify(section.data ?? section.items, null, 2)}
-                    </pre>
-                  </details>
-                )}
-                {section.total !== null && section.total > 50 && (
-                  <div className="pagination">
-                    <button
-                      className="secondary"
-                      disabled={!sectionOffset}
-                      onClick={() => setSectionOffset((value) => value - 50)}
-                    >
-                      上一批
-                    </button>
-                    <button
-                      className="secondary"
-                      disabled={sectionOffset + 50 >= section.total}
-                      onClick={() => setSectionOffset((value) => value + 50)}
-                    >
-                      下一批
-                    </button>
-                  </div>
-                )}
-              </div>
-            )}
+            <AssetBaseline
+              customerId={customerId}
+              token={token}
+              onUnauthorized={onUnauthorized}
+              assetId={selected.assetId}
+              snapshotId={selected.id}
+              onConfirmed={() => setRevision((v) => v + 1)}
+            />
             <details className="collect-options">
               <summary>关联软件 / 镜像SBOM版本</summary>
               <VersionLinks
