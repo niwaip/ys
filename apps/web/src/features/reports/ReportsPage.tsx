@@ -1,3 +1,4 @@
+import { ReportReviewPanel } from "./ReportReviewPanel";
 import { useEffect, useRef, useState } from "react";
 import type { AssessmentPage } from "../../../../../packages/contracts/assessments";
 import type { LifecycleAssessment } from "../../../../../packages/contracts/lifecycle";
@@ -58,10 +59,13 @@ export function ReportsPage({
     }
   }
   async function preview(selected: Report) {
-    const response = await fetch(`/api${base}/reports/${selected.id}/preview`, {
-      headers: { Authorization: `Bearer ${token}` },
-      signal: controller.current.signal,
-    });
+    const response = await fetch(
+      `/api${base}/reports/${selected.id}/revisions/${selected.revision.id}/preview`,
+      {
+        headers: { Authorization: `Bearer ${token}` },
+        signal: controller.current.signal,
+      },
+    );
     if (!response.ok) throw new ApiError("报告预览失败", response.status);
     setHtml(await response.text());
     setReport(selected);
@@ -177,9 +181,17 @@ export function ReportsPage({
             报告 {report.id} · 修订 {report.revision.id} ·{" "}
             {report.revision.status} · SHA-256 {report.revision.factHash}
           </p>
-          <p>
-            仅受控段落与保护事实；本片不提供自由事实编辑、AI生成或正式交付。
-          </p>
+          <p>仅受控段落与保护事实；正式交付需通过内部复核并绑定明确修订。</p>
+          <ReportReviewPanel
+            report={report}
+            customerId={customerId}
+            token={token}
+            onUnauthorized={onUnauthorized}
+            onRevision={async (revision) => {
+              await preview({ ...report, revision });
+              await refresh();
+            }}
+          />
           <iframe
             title="事实报告草稿"
             sandbox=""

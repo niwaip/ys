@@ -16,6 +16,10 @@ export const DATABASE = Symbol("DATABASE");
 // Numbered migrations are applied atomically; new features append migrations here.
 const migrations = [
   {
+    version: 15,
+    sql: `ALTER TABLE report_revisions ADD CONSTRAINT report_revision_scope UNIQUE(customer_id,report_id,id); CREATE TABLE report_audit(sequence bigserial PRIMARY KEY,id uuid UNIQUE NOT NULL,customer_id text NOT NULL,report_id uuid NOT NULL,revision_id uuid NOT NULL,action text NOT NULL,actor jsonb NOT NULL,details jsonb NOT NULL,created_at timestamptz NOT NULL DEFAULT now(),FOREIGN KEY(customer_id,report_id,revision_id) REFERENCES report_revisions(customer_id,report_id,id)); CREATE TABLE report_deliveries(id uuid PRIMARY KEY,customer_id text NOT NULL,report_id uuid NOT NULL,revision_id uuid NOT NULL,html text NOT NULL,result jsonb NOT NULL,UNIQUE(customer_id,revision_id),FOREIGN KEY(customer_id,report_id,revision_id) REFERENCES report_revisions(customer_id,report_id,id));`,
+  },
+  {
     version: 13,
     sql: `CREATE TABLE reports(id uuid PRIMARY KEY,customer_id text NOT NULL REFERENCES customers(id),created_at timestamptz NOT NULL,created_by text NOT NULL,UNIQUE(customer_id,id)); CREATE TABLE report_revisions(id uuid PRIMARY KEY,customer_id text NOT NULL,report_id uuid NOT NULL,number integer NOT NULL,result jsonb NOT NULL,UNIQUE(customer_id,id),UNIQUE(customer_id,report_id,number),FOREIGN KEY(customer_id,report_id) REFERENCES reports(customer_id,id)); CREATE INDEX reports_customer ON reports(customer_id,created_at DESC,id);`,
   },

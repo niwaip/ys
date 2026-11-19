@@ -1,3 +1,4 @@
+import { ReportReviewService, ReportReviewController } from "./review";
 import {
   BadRequestException,
   ConflictException,
@@ -389,8 +390,13 @@ export class ReportsModule {
         SoftwareModule,
         ImportsModule,
       ],
-      controllers: [ReportsController],
+      controllers: [ReportsController, ReportReviewController],
       providers: [
+        {
+          provide: ReportReviewService,
+          inject: [DATABASE],
+          useFactory: (db: Database) => new ReportReviewService(db),
+        },
         {
           provide: ReportsService,
           inject: [
@@ -409,7 +415,7 @@ export class ReportsModule {
           ) => new ReportsService(db, a, l, s, i),
         },
       ],
-      exports: [ReportsService],
+      exports: [ReportsService, ReportReviewService],
     };
   }
 }
