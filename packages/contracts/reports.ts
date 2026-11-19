@@ -1,0 +1,73 @@
+import type { Assessment } from "./assessments";
+import type { LifecycleAssessment } from "./lifecycle";
+export type ReportScopeTarget = {
+  kind: string;
+  objectId: string;
+  versionId?: string;
+  name: string;
+  version: string | null;
+};
+export type ReportFacts = {
+  schemaVersion: "report-facts-v1";
+  customerId: string;
+  generatedAt: string;
+  scope: ReportScopeTarget[];
+  assessmentSnapshots: Assessment[];
+  lifecycleSnapshots: LifecycleAssessment[];
+  sourceRefs: {
+    kind: "cve" | "lifecycle";
+    id: string;
+    inputId: string;
+    contentHash: string;
+    ruleVersion: string;
+    importedAt: string;
+    collectedAt: string | null;
+    evaluatedAt: string | null;
+    toolVersion: string | null;
+  }[];
+  statistics: {
+    findingInstances: number | null;
+    uniqueCveCount: number | null;
+    severityCounts: Record<string, number>;
+    lifecycleExact: number | null;
+    lifecycleWeak: number | null;
+    lifecycleUnmatched: number | null;
+  };
+  coverageIssues: string[];
+};
+export type ReportBlock = {
+  templateId: "scope" | "assessment" | "lifecycle" | "coverage" | "evidence";
+  factRef?: string;
+  wording: "standard" | "concise";
+};
+export type ReportNarrative = {
+  schemaVersion: "controlled-paragraphs-v1";
+  blocks: ReportBlock[];
+  density: "standard" | "compact";
+};
+export type ReportRevision = {
+  id: string;
+  reportId: string;
+  customerId: string;
+  number: number;
+  createdAt: string;
+  createdBy: string;
+  status: "draft";
+  factHash: string;
+  facts: ReportFacts;
+  narrative: ReportNarrative;
+  templateVersion: "fixed-report-v1";
+};
+export type Report = {
+  id: string;
+  customerId: string;
+  createdAt: string;
+  createdBy: string;
+  revision: ReportRevision;
+};
+export type ReportSummary = Omit<Report, "revision"> & {
+  revisionId: string;
+  revisionNumber: number;
+  status: ReportRevision["status"];
+  factHash: string;
+};
