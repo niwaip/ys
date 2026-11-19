@@ -1,3 +1,4 @@
+import { ReportReviewService, ReportReviewController } from "./review";
 import type { WindowsAssessment } from "../../../../packages/contracts/windows-assessments";
 import {
   ContainersModule,
@@ -220,8 +221,6 @@ export class ReportsService {
         );
     }
     for (const a of assessmentSnapshots) {
-      if (a.target.kind !== "software")
-        throw new BadRequestException("此报告适配器仅支持软件目标");
       if (!a.result)
         coverageIssues.push(
           `CVE评估 ${a.id}：${a.status}，无可用结果，不是零漏洞`,
@@ -505,8 +504,13 @@ export class ReportsModule {
         WindowsModule,
         WindowsAssessmentsModule,
       ],
-      controllers: [ReportsController],
+      controllers: [ReportsController, ReportReviewController],
       providers: [
+        {
+          provide: ReportReviewService,
+          inject: [DATABASE],
+          useFactory: (db: Database) => new ReportReviewService(db),
+        },
         {
           provide: ReportsService,
           inject: [
@@ -531,7 +535,7 @@ export class ReportsModule {
           ) => new ReportsService(db, a, l, s, i, c, w, wa),
         },
       ],
-      exports: [ReportsService],
+      exports: [ReportsService, ReportReviewService],
     };
   }
 }

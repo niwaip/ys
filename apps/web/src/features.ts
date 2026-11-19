@@ -1,8 +1,9 @@
 import { SoftwareHistoryPage } from "./features/software-history/SoftwareHistoryPage";
+import { ConversationsPage } from "./features/conversations/ConversationsPage";
+import { WindowsAssessmentsPage } from "./features/windows-assessments/WindowsAssessmentsPage";
 import { ContainersPage } from "./features/containers/ContainersPage";
 import { AgentPage } from "./features/agent/AgentPage";
 import { ReportsPage } from "./features/reports/ReportsPage";
-import { WindowsAssessmentsPage } from "./features/windows-assessments/WindowsAssessmentsPage";
 import { AssessmentsPage } from "./features/assessments/AssessmentsPage";
 import { LifecyclePage } from "./features/lifecycle/LifecyclePage";
 import { SoftwarePage } from "./features/software/SoftwarePage";
@@ -37,6 +38,12 @@ export const features: Feature[] = [
     component: WindowsAssessmentsPage,
   },
   { id: "containers", label: "容器镜像", icon: "⬡", component: ContainersPage },
+  {
+    id: "customer-chat",
+    label: "客户风险对话",
+    icon: "◌",
+    component: ConversationsPage,
+  },
   {
     id: "public-intelligence",
     label: "公开 CVE 对话",
