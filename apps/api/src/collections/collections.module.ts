@@ -18,7 +18,11 @@ import {
   type CollectionSnapshot,
   type HostCollection,
 } from "../../../../packages/contracts/collections";
-import { DATABASE, type Database } from "../persistence/database";
+import {
+  DATABASE,
+  type Database,
+  type Queryable,
+} from "../persistence/database";
 import type { AuthorizedRequest } from "../auth/auth";
 import { NetBoxService } from "../netbox/netbox.module";
 const pagination = z
@@ -80,18 +84,23 @@ export class CollectionsService {
     private readonly db: Database,
     private readonly netbox: NetBoxService,
   ) {}
-  async assertTarget(customerId: string, assetId: string) {
+  private async checkedTarget(
+    customerId: string,
+    assetId: string,
+    session: Queryable = this.db,
+  ) {
     const asset = (
-      await this.db.query(
-        "SELECT id FROM assets WHERE customer_id=$1 AND id=$2",
+      await session.query(
+        "SELECT id,name,source,source_ref,attributes FROM assets WHERE customer_id=$1 AND id=$2",
         [customerId, assetId],
       )
     ).rows[0];
     if (!asset) throw new NotFoundException("该客户下未找到目标资产");
+    let mapping: Record<string, unknown> | undefined;
     if (this.netbox.enabled) {
-      const mapping = (
-        await this.db.query(
-          "SELECT tenant_id,instance,active FROM netbox_assets WHERE customer_id=$1 AND asset_id=$2",
+      mapping = (
+        await session.query(
+          "SELECT tenant_id,instance,active,object_type,external_id FROM netbox_assets WHERE customer_id=$1 AND asset_id=$2",
           [customerId, assetId],
         )
       ).rows[0];
@@ -104,6 +113,15 @@ export class CollectionsService {
           "采集目标未映射至当前客户NetBox，请先同步或关联",
         );
     }
+    return { asset, mapping };
+  }
+  async assertTarget(customerId: string, assetId: string) {
+    const { mapping } = await this.checkedTarget(customerId, assetId);
+    if (mapping)
+      await this.netbox.resolveReference(
+        customerId,
+        `${mapping.object_type}:${mapping.external_id}`,
+      );
   }
   async save(
     customerId: string,
@@ -130,28 +148,9 @@ export class CollectionsService {
       );
     const data = parsed.data;
     const hash = createHash("sha256").update(content).digest("hex");
+    await this.assertTarget(customerId, assetId);
     return this.db.transaction(async (session) => {
-      const asset = (
-        await session.query(
-          "SELECT id,name,source,source_ref,attributes FROM assets WHERE customer_id=$1 AND id=$2",
-          [customerId, assetId],
-        )
-      ).rows[0];
-      if (!asset) throw new NotFoundException("该客户下未找到目标资产");
-      if (this.netbox.enabled) {
-        const mapping = (
-          await session.query(
-            "SELECT tenant_id,instance,active FROM netbox_assets WHERE customer_id=$1 AND asset_id=$2",
-            [customerId, assetId],
-          )
-        ).rows[0];
-        if (
-          !mapping ||
-          !mapping.active ||
-          !this.netbox.acceptsMapping(customerId, mapping)
-        )
-          throw new ConflictException("请先同步或映射该客户的NetBox资产");
-      }
+      const { asset } = await this.checkedTarget(customerId, assetId, session);
       const attrs = asset.attributes as Record<string, unknown>;
       if (
         data.identity.serial &&

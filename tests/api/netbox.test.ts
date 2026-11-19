@@ -390,3 +390,76 @@ test("修改NetBox资产保留历史编号且不把离线资产强制启用", as
       .name,
   ).toBe("YS-new");
 });
+
+test("资产迁出Tenant后，即使缓存未同步也拒绝新快照和Pi任务", async () => {
+  directory = await mkdtemp(join(tmpdir(), "ys-live-tenant-"));
+  let tenantId = 7;
+  server = createServer((req, res) => {
+    res.setHeader("Content-Type", "application/json");
+    const asset = { id: 42, name: "YS", tenant: { id: tenantId } };
+    res.end(
+      JSON.stringify(
+        req.url?.includes("virtual-machines")
+          ? { count: 0, next: null, results: [] }
+          : req.url?.includes("/42/")
+            ? asset
+            : { count: 1, next: null, results: [asset] },
+      ),
+    );
+  });
+  await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+  app = await createApp({
+    databaseUrl: `pglite://${directory}`,
+    customers: [{ id: "acme", name: "A" }],
+    operators: [
+      { token: "test-netbox-operator", name: "test", customerIds: ["acme"] },
+    ],
+    netbox: {
+      baseUrl: `http://127.0.0.1:${(server.address() as { port: number }).port}/api/`,
+      token: "private",
+      tenantIds: { acme: 7 },
+    },
+  });
+  const http = request(app.getHttpServer());
+  await http
+    .post("/api/customers/acme/netbox/sync")
+    .set(auth)
+    .send({})
+    .expect(201);
+  const asset = (await http.get("/api/customers/acme/assets").set(auth)).body
+    .items[0];
+  tenantId = 8;
+  await http
+    .post("/api/customers/acme/collections/manual")
+    .set(auth)
+    .send({
+      assetId: asset.id,
+      note: "旧客户",
+      data: {
+        schemaVersion: "ys-host/1",
+        identity: { hostname: "ys" },
+        collectedAt: null,
+        sections: {},
+      },
+    })
+    .expect(502);
+  await http
+    .post("/api/customers/acme/collections/jobs")
+    .set(auth)
+    .send({
+      assetId: asset.id,
+      idempotencyKey: "no-run",
+      profileId: "read",
+      scope: "basic",
+      message: "采集",
+    })
+    .expect(502);
+  expect(
+    (await http.get("/api/customers/acme/collections/snapshots").set(auth)).body
+      .total,
+  ).toBe(0);
+  expect(
+    (await http.get("/api/customers/acme/collections/jobs").set(auth)).body
+      .items,
+  ).toEqual([]);
+});

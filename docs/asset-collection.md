@@ -6,7 +6,7 @@
 
 配置见`.env.example`：`YS_NETBOX_URL`必须指向`/api/`，私有`YS_NETBOX_TOKEN`及`YS_NETBOX_TENANTS`只由服务器读取。Tenant必须唯一对应已登记客户。配置后客户资产页提供同步、新增Device/VM、修改名称/序列号、历史ID映射；Device要求设备类型/角色/站点原生ID，VM要求站点或集群。没有重建NetBox的站点/IPAM编辑器；其他配置可继续在NetBox维护。
 
-先对需要保留的历史YS编号建立映射，再同步。若已经同步成另一个YS编号，会明确冲突，不自动合并历史。接口`GET /netbox/mappings`最多列100项，可直接填写完整历史资产UUID映射。同步按完整分页读取Device及VM后在事务中更新缓存；不匹配Tenant、重复/不完整分页、远端失败不会留下半批结果。删除/移出客户的对象保留非活动映射。台账为缓存，来源详情中有同步时间，映射面板显示活动状态。
+先对需要保留的历史YS编号建立映射，再同步。若已经同步成另一个YS编号，会明确冲突，不自动合并历史。接口`GET /netbox/mappings`最多列100项，可直接填写完整历史资产UUID映射。同步按完整分页读取Device及VM后在事务中更新缓存；不匹配Tenant、重复/不完整分页、远端失败不会留下半批结果。删除/移出客户的对象保留非活动映射；提交快照及Pi执行前会重新读取原生详情校验Tenant，缓存尚未刷新也不能绕过。台账为缓存，来源详情中有同步时间，映射面板显示活动状态。
 
 NetBox模式下：
 
@@ -37,7 +37,7 @@ NetBox模式下：
 
 配置`YS_PI_EXECUTABLE`及`YS_COLLECTION_PROFILES`后，网页选择受控连接，`POST /collections/jobs`提交`{assetId,profileId,scope,message,idempotencyKey}`。连接绑定客户和YS资产UUID，服务器配置地址/账号/密钥文件/可信主机文件；不会从需求文本提取命令或目标。私钥需仅属主可读的普通文件。工具响应/任务不返回这些配置或私钥。
 
-Pi使用独立RPC会话，仅开放`ys_host_collect`，工具参数为空。固定工具通过版本化脚本获取资料，后台检查工具完成事件及产物中的任务/客户/目标/连接/范围。未执行工具、产物不匹配、输出超限和超时均不会建立成功快照。单后端worker持久保存queued/running/succeeded/partial/failed/unavailable/timed_out/interrupted，刷新可回读；运行任务重启标记中断，不自动重连。`GET /collections/jobs`最多100项；`.../jobs/:id`读取任务。未配置Pi时API保存unavailable任务；页面没有连接时明确要求管理员配置或改用离线入口。
+Pi使用独立RPC会话，仅开放`ys_host_collect`，工具参数为空。固定工具通过版本化脚本获取资料，后台检查工具完成事件及产物中的任务/客户/目标/连接/范围。未执行工具、产物不匹配、输出超限和超时均不会建立成功快照。SSH主机身份、登录、连接、超时、输出超限和协议失败通过绑定任务的固定错误代码返回，原始SSH错误文本不进入模型或任务。单后端worker持久保存queued/running/succeeded/partial/failed/unavailable/timed_out/interrupted，刷新可回读；运行任务重启标记中断，不自动重连。`GET /collections/jobs`最多100项；`.../jobs/:id`读取任务。未配置Pi时API保存unavailable任务；页面没有连接时明确要求管理员配置或改用离线入口。
 
 SSH强制BatchMode、StrictHostKeyChecking、专用known_hosts、指定身份文件、禁用agent及用户SSH配置，设置连接/执行期限与8MB输出上限。固定POSIX shell使用现有`uname`、`cat`、`dpkg-query`或`rpm`、`df`、`ip`等读取；目标不需要Trivy/Python/Node。Linux包数据库直接支持Debian/Ubuntu及RPM系；其他平台/缺命令保留不支持或失败，真实发行版兼容尚未验证。
 

@@ -33,6 +33,9 @@ const daemon = String.raw`emit dockerDaemon docker --host unix:///var/run/docker
 const inventory = String.raw`emit containers sh -c 'ids=$(docker --host unix:///var/run/docker.sock ps -aq --no-trunc) || exit $?; for id in $ids; do case "$id" in ""|*[!0-9a-f]*) exit 1;; esac; docker --host unix:///var/run/docker.sock inspect --type container --format '\''{"containerId":{{json .Id}},"imageId":{{json .Image}},"name":{{json .Name}},"state":{{json .State.Status}}}'\'' "$id" || exit $?; done'
 emit images docker --host unix:///var/run/docker.sock image ls --no-trunc --digests --format '{{json .}}'
 `;
+function collectionError(code, message) {
+  return Object.assign(new Error(message), { code });
+}
 function execute(profile, script, signal) {
   return new Promise((resolve, reject) => {
     const args = [
@@ -83,21 +86,30 @@ function execute(profile, script, signal) {
       if (error) child.kill("SIGKILL");
       error ? reject(error) : resolve(value);
     };
-    const abort = () => finish(new Error("SSH采集超时或中止，未自动重试"));
+    const abort = () =>
+      finish(collectionError("timed_out", "SSH采集超时或中止，未自动重试"));
     const timer = setTimeout(abort, profile.timeoutMs ?? 60000);
     if (signal?.aborted) abort();
     else signal?.addEventListener("abort", abort, { once: true });
-    child.on("error", () => finish(new Error("SSH执行程序或连接不可用")));
-    child.stdin.on("error", () => finish(new Error("SSH输入通道关闭")));
+    child.on("error", () =>
+      finish(collectionError("connection_failed", "SSH执行程序或连接不可用")),
+    );
+    child.stdin.on("error", () => {});
     child.stdout.on("data", (chunk) => {
       bytes += chunk.length;
       if (bytes > 8000000)
-        finish(new Error("SSH输出超出8000000字节，未保存截断清单"));
+        finish(
+          collectionError(
+            "output_limit",
+            "SSH输出超出8000000字节，未保存截断清单",
+          ),
+        );
       else out.push(chunk);
     });
     child.stderr.on("data", (chunk) => {
       bytes += chunk.length;
-      if (bytes > 8000000) finish(new Error("SSH输出超限"));
+      if (bytes > 8000000)
+        finish(collectionError("output_limit", "SSH输出超限"));
       else if (stderr.length < 8192) stderr += chunk.toString();
     });
     child.on("close", (code) => {
@@ -107,7 +119,12 @@ function execute(profile, script, signal) {
           : /permission denied/i.test(stderr)
             ? "SSH登录被拒绝"
             : "SSH连接或固定脚本失败";
-        finish(new Error(reason));
+        const failureCode = /host key|identification has changed/i.test(stderr)
+          ? "host_key_failed"
+          : /permission denied/i.test(stderr)
+            ? "login_failed"
+            : "connection_failed";
+        finish(collectionError(failureCode, reason));
       } else finish(undefined, Buffer.concat(out).toString("utf8"));
     });
     child.stdin.end(script);
@@ -181,8 +198,17 @@ export async function collect(profile, scope, signal) {
         const match = /^([A-Z0-9_]+)=(.*)$/.exec(line);
         if (match) info[match[1]] = match[2].replace(/^["']|["']$/g, "");
       }
+    const osIssues = [];
+    if (values.os?.code !== 0)
+      osIssues.push(`发行版查询未取得：${section(values.os).status}`);
+    if (!info.ID) osIssues.push("发行版ID未知");
+    if (!info.VERSION_ID) osIssues.push("发行版版本未知");
+    if (values.kernel?.code !== 0 || !values.kernel.text.trim())
+      osIssues.push(`运行内核未取得：${section(values.kernel).status}`);
+    if (values.architecture?.code !== 0 || !values.architecture.text.trim())
+      osIssues.push(`架构未取得：${section(values.architecture).status}`);
     sections.os = {
-      status: values.os?.code === 0 ? "acquired" : "partial",
+      status: osIssues.length ? "partial" : "acquired",
       data: {
         id: info.ID ?? null,
         version: info.VERSION_ID ?? null,
@@ -190,7 +216,7 @@ export async function collect(profile, scope, signal) {
         architecture:
           values.architecture?.code === 0 ? values.architecture.text : null,
       },
-      issues: values.os?.code === 0 ? [] : ["发行版信息未取得"],
+      issues: osIssues,
     };
     sections.packages = section(values.packages, (text) =>
       text

@@ -73,20 +73,66 @@ export class PiCollectionExecutor implements CollectionExecutor {
       }),
       { mode: 0o600, flag: "wx" },
     );
-    await runPiCapability(
-      { ...this.config, executable: this.config.executable },
-      {
-        jobDir,
-        requestFile,
-        extension: join(root, "tools/pi/host-collection-extension.mjs"),
-        skill: join(root, "tools/pi/skills/host-collection/SKILL.md"),
-        tools: ["ys_host_collect"],
-        requiredTools: ["ys_host_collect"],
-        prompt: `/skill:ys-host-collection 执行本次已授权固定采集。以下是需求资料：${JSON.stringify({ customerId: input.customerId, assetId: input.assetId, scope: input.scope, message: input.message })}`,
-      },
-      emit,
-      signal,
-    );
+    try {
+      await runPiCapability(
+        { ...this.config, executable: this.config.executable },
+        {
+          jobDir,
+          requestFile,
+          extension: join(root, "tools/pi/host-collection-extension.mjs"),
+          skill: join(root, "tools/pi/skills/host-collection/SKILL.md"),
+          tools: ["ys_host_collect"],
+          requiredTools: ["ys_host_collect"],
+          prompt: `/skill:ys-host-collection 执行本次已授权固定采集。以下是需求资料：${JSON.stringify({ customerId: input.customerId, assetId: input.assetId, scope: input.scope, message: input.message })}`,
+        },
+        emit,
+        signal,
+      );
+    } catch (error) {
+      const failureFile = join(jobDir, "failure.json");
+      const messages = {
+        host_key_failed: "SSH主机身份校验失败，未连接未知身份",
+        login_failed: "SSH登录被拒绝",
+        timed_out: "SSH采集超时，未自动重试",
+        connection_failed: "SSH连接或固定脚本执行失败",
+        output_limit: "SSH输出超限，未保存截断清单",
+        protocol_invalid: "固定采集协议或产物格式不兼容",
+      };
+      let code: keyof typeof messages | undefined;
+      try {
+        if (
+          (await realpath(failureFile)) !==
+            join(await realpath(jobDir), "failure.json") ||
+          (await stat(failureFile)).size > 4096
+        )
+          throw new Error("failure artifact");
+        const failure = z
+          .object({
+            jobId: z.literal(input.id),
+            customerId: z.literal(input.customerId),
+            assetId: z.literal(input.assetId),
+            profileId: z.literal(input.profileId),
+            scope: z.literal(input.scope),
+            code: z.enum([
+              "host_key_failed",
+              "login_failed",
+              "timed_out",
+              "connection_failed",
+              "output_limit",
+              "protocol_invalid",
+            ]),
+          })
+          .strict()
+          .parse(JSON.parse(await readFile(failureFile, "utf8")));
+        code = failure.code;
+      } catch {}
+      if (code)
+        throw new AgentExecutionError(
+          code === "timed_out" ? "timed_out" : "failed",
+          messages[code],
+        );
+      throw error;
+    }
     const file = join(jobDir, "collection.json");
     try {
       if (

@@ -17,7 +17,34 @@ export default function (pi) {
       );
       if (request.capability !== "host-collection")
         throw new Error("能力不匹配");
-      const data = await collect(request.profile, request.scope, _signal);
+      let data;
+      try {
+        data = await collect(request.profile, request.scope, _signal);
+      } catch (error) {
+        const allowed = [
+          "host_key_failed",
+          "login_failed",
+          "timed_out",
+          "connection_failed",
+          "output_limit",
+        ];
+        const code = allowed.includes(error?.code)
+          ? error.code
+          : "protocol_invalid";
+        await writeFile(
+          join(request.jobDir, "failure.json"),
+          JSON.stringify({
+            jobId: request.id,
+            customerId: request.customerId,
+            assetId: request.assetId,
+            profileId: request.profile.id,
+            scope: request.scope,
+            code,
+          }),
+          { mode: 0o600, flag: "wx" },
+        );
+        throw new Error("固定采集失败，已保存受控错误代码");
+      }
       await writeFile(
         join(request.jobDir, "collection.json"),
         JSON.stringify({

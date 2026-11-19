@@ -258,6 +258,7 @@ test("网页Pi固定工具通过SSH替身取得OS/包，基础采集不会读取
           identityFile: key,
           knownHostsFile: known,
           sshExecutable: ssh,
+          timeoutMs: 500,
           allowDocker: false,
         },
       ],
@@ -318,6 +319,77 @@ test("网页Pi固定工具通过SSH替身取得OS/包，基础采集不会读取
     dockerDaemon: { status: "not_collected" },
   });
   expect(JSON.stringify(result)).not.toContain(key);
+  const runAnother = async (key: string) => {
+    const submitted = (
+      await http
+        .post("/api/customers/acme/collections/jobs")
+        .set(auth)
+        .send({ ...body, idempotencyKey: key })
+        .expect(201)
+    ).body;
+    let current = submitted;
+    for (
+      let i = 0;
+      i < 150 && ["queued", "running"].includes(current.status);
+      i++
+    ) {
+      await new Promise((resolve) => setTimeout(resolve, 50));
+      current = (
+        await http
+          .get(`/api/customers/acme/collections/jobs/${submitted.id}`)
+          .set(auth)
+      ).body;
+    }
+    return current;
+  };
+  const partialLines = lines
+    .replace(
+      /^kernel\|.*$/m,
+      `kernel|1|${Buffer.from("Permission denied").toString("base64")}`,
+    )
+    .replace(/^architecture\|.*\n/m, "");
+  await writeFile(
+    ssh,
+    `#!${process.execPath}\nprocess.stdin.resume();process.stdin.on("end",()=>process.stdout.write(${JSON.stringify(partialLines)}));`,
+  );
+  const partial = await runAnother("partial-os");
+  expect(partial.status).toBe("partial");
+  const partialSnapshot = (
+    await http
+      .get(`/api/customers/acme/collections/snapshots/${partial.snapshotId}`)
+      .set(auth)
+  ).body;
+  expect(partialSnapshot.sections.os.status).toBe("partial");
+  expect(partialSnapshot.sections.os.issues.join(" ")).toContain("内核");
+  expect(partialSnapshot.sections.os.issues.join(" ")).toContain("架构");
+  for (const [caseName, program, status, message] of [
+    [
+      "host-key",
+      'process.stderr.write("Host key verification failed.");process.exit(255);',
+      "failed",
+      "主机身份",
+    ],
+    [
+      "login",
+      'process.stderr.write("Permission denied (publickey).");process.exit(255);',
+      "failed",
+      "登录",
+    ],
+    [
+      "timeout",
+      "process.stdin.resume();setTimeout(()=>{},5000);",
+      "timed_out",
+      "超时",
+    ],
+  ]) {
+    await writeFile(ssh, `#!${process.execPath}\n${program}`);
+    const failed = await runAnother(caseName);
+    expect(failed, JSON.stringify(failed)).toMatchObject({
+      status,
+      snapshotId: null,
+    });
+    expect(failed.error).toContain(message);
+  }
 });
 
 test("显式软件版本关联绑定固定主机快照，独立评估及报告冻结来源链", async () => {
