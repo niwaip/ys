@@ -59,6 +59,10 @@ export class ReportsService {
     const assessmentSnapshots = await Promise.all(
       input.assessmentRefs.map((id) => this.assessments.get(customer, id)),
     );
+    if (assessmentSnapshots.some((a) => a.target.kind !== "software"))
+      throw new BadRequestException(
+        "本片报告仅支持软件CVE评估；其他目标需使用对应的报告适配器",
+      );
     if (
       assessmentSnapshots.some(
         (a) => a.status === "queued" || a.status === "running",
@@ -200,7 +204,11 @@ export class ReportsService {
           ? findings.length
           : null,
         uniqueCveCount: assessmentSnapshots.some((a) => a.result)
-          ? new Set(findings.map((v) => v.vulnerabilityId)).size
+          ? new Set(
+              findings
+                .filter((v) => /^CVE-\d{4}-\d{4,}$/.test(v.vulnerabilityId))
+                .map((v) => v.vulnerabilityId),
+            ).size
           : null,
         severityCounts,
         lifecycleExact: lifecycleSnapshots.length

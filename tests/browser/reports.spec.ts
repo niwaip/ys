@@ -53,7 +53,9 @@ test("select lifecycle facts, preview protected draft, inspect evidence and swit
   await expect(
     preview.getByText("草稿 · 尚未内部复核，不代表正式交付"),
   ).toBeVisible();
-  await expect(preview.getByText(/未选择CVE评估，未评估/)).toBeVisible();
+  await expect(
+    preview.getByText(/未选择CVE评估，未评估/).first(),
+  ).toBeVisible();
   await page
     .getByRole("button", { name: `lifecycle 依据 ${assessment.id}` })
     .click();

@@ -28,16 +28,22 @@ export function defaultNarrative(facts: ReportFacts): ReportNarrative {
     density: "standard",
     blocks: [
       { templateId: "scope", wording: "standard" },
-      ...facts.assessmentSnapshots.map((a) => ({
-        templateId: "assessment" as const,
-        factRef: a.id,
-        wording: "standard" as const,
-      })),
-      ...facts.lifecycleSnapshots.map((a) => ({
-        templateId: "lifecycle" as const,
-        factRef: a.id,
-        wording: "standard" as const,
-      })),
+      ...(facts.assessmentSnapshots.length
+        ? facts.assessmentSnapshots.map((a) => ({
+            templateId: "assessment" as const,
+            factRef: a.id,
+            wording: "standard" as const,
+          }))
+        : [
+            { templateId: "assessment" as const, wording: "standard" as const },
+          ]),
+      ...(facts.lifecycleSnapshots.length
+        ? facts.lifecycleSnapshots.map((a) => ({
+            templateId: "lifecycle" as const,
+            factRef: a.id,
+            wording: "standard" as const,
+          }))
+        : [{ templateId: "lifecycle" as const, wording: "standard" as const }]),
       { templateId: "coverage", wording: "standard" },
       { templateId: "evidence", wording: "standard" },
     ],
@@ -103,11 +109,15 @@ export function renderReport(revision: ReportRevision): string {
       if (block.templateId === "scope")
         return `<section><h2>明确报告范围</h2><p>客户 ${h(f.customerId)}；事实生成时间 ${h(f.generatedAt)}。</p><ul>${f.scope.map((t) => `<li>${h(t.kind)} ${h(t.name)} / ${h(t.version)}；对象 ${h(t.objectId)}；输入版本 ${h(t.versionId)}</li>`).join("")}</ul><p>工具发现条目 ${h(f.statistics.findingInstances)}；唯一 CVE 标识 ${h(f.statistics.uniqueCveCount)}。这些数字仅统计所选评估记录，不能解释为已确认受影响资产数。</p><p>严重程度（工具原值）：${h(JSON.stringify(f.statistics.severityCounts))}。生命周期匹配：精确 ${h(f.statistics.lifecycleExact)} / 弱 ${h(f.statistics.lifecycleWeak)} / 未匹配 ${h(f.statistics.lifecycleUnmatched)}。</p></section>`;
       if (block.templateId === "assessment") {
-        const a = f.assessmentSnapshots.find((a) => a.id === block.factRef)!;
+        const a = f.assessmentSnapshots.find((a) => a.id === block.factRef);
+        if (!a)
+          return "<section><h2>CVE 软件评估</h2><p>未选择CVE评估，未评估；发现数量未知，不能解释为零漏洞。</p></section>";
         return `<section><h2>${block.wording === "concise" ? "CVE 结果" : "CVE 软件评估"}</h2><p>评估 ${h(a.id)}；执行状态 ${h(a.status)}；输入版本 ${h(a.target.versionId)} / ${h(a.input.version)}；执行时间 ${h(a.finishedAt)}。</p>${a.result ? `<p>覆盖 ${h(a.result.coverage.status)}，输入组件 ${a.result.coverage.inputComponents} / 匹配组件 ${a.result.coverage.matchedComponents}；库新鲜度 ${h(a.result.database.freshness)}；库更新时间 ${h(a.result.database.updatedAt)}；下次更新 ${h(a.result.database.nextUpdate)}。零发现仅表示该输入与覆盖范围内未返回条目。</p><ul>${a.result.findings.map((v) => `<li><strong>${h(v.vulnerabilityId)}</strong> · ${h(v.severity)} · ${h(v.packageName)} / ${h(v.installedVersion)}；修复版本资料 ${h(v.fixedVersion)}；适用性 ${h(v.applicability)}；组件 ${h(v.componentId)}。工具返回不等于人工确认受影响。</li>`).join("")}</ul>` : `<p>未取得可用 CVE 结果；不能解释为零漏洞。${h(a.error)}</p>`}</section>`;
       }
       if (block.templateId === "lifecycle") {
-        const a = f.lifecycleSnapshots.find((a) => a.id === block.factRef)!;
+        const a = f.lifecycleSnapshots.find((a) => a.id === block.factRef);
+        if (!a)
+          return "<section><h2>EOS/EOL 独立评估</h2><p>未选择生命周期评估，未评估；不能使用CVE结果或评估时间填补阶段日期。</p></section>";
         return `<section><h2>${block.wording === "concise" ? "生命周期结果" : "EOS/EOL 独立评估"}</h2><p>评估 ${h(a.id)}；批次 ${h(a.batchId)}；时间 ${h(a.evaluatedAt)}；规则 ${h(a.ruleVersion)}。</p>${a.items.map((item) => `<article><h3>${h(item.name)} / ${h(item.version)}</h3><p>产品 ${h(item.product)}；匹配 ${h(item.match)}；核实 ${h(item.verification)}；${h(item.basis)}。版本未知或弱匹配不能解释为已核实阶段状态。</p>${item.evidence.map((e) => `<p>来源 ${h(e.source)} / ${h(e.sourceRef)}，来源行 ${e.row}。EOS：${h(e.eos.name)}，日期 ${h(e.eos.date)}，日期状态 ${h(e.eos.dateStatus)}，原值 ${h(e.eos.rawDate)}，阶段 ${h(e.eos.status)}。EOL：${h(e.eol.name)}，日期 ${h(e.eol.date)}，日期状态 ${h(e.eol.dateStatus)}，原值 ${h(e.eol.rawDate)}，阶段 ${h(e.eol.status)}。${h(e.issues.join("；"))}</p>`).join("")}</article>`).join("")}</section>`;
       }
       if (block.templateId === "coverage")

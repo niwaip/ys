@@ -54,6 +54,12 @@ test("report binds explicit CVE and lifecycle snapshots, protected facts, indepe
                   FixedVersion: "2",
                   Severity: "HIGH",
                 },
+                {
+                  VulnerabilityID: "GHSA-fixture-only",
+                  PkgName: "widget-lib",
+                  InstalledVersion: "1",
+                  Severity: "HIGH",
+                },
               ],
             },
           ],
@@ -133,9 +139,9 @@ test("report binds explicit CVE and lifecycle snapshots, protected facts, indepe
     createdBy: "Report author",
     facts: {
       statistics: {
-        findingInstances: 1,
+        findingInstances: 2,
         uniqueCveCount: 1,
-        severityCounts: { HIGH: 1 },
+        severityCounts: { HIGH: 2 },
       },
       assessmentSnapshots: [{ id: job.id, status: "succeeded" }],
       lifecycleSnapshots: [{ id: lifecycle.id }],
@@ -263,6 +269,10 @@ test("missing and failed assessment coverage never becomes a zero-risk report, a
     (await http.get(`/api/customers/a/reports/${report.id}/preview`).set(auth))
       .text,
   ).toContain("未取得可用 CVE 结果");
+  expect(
+    (await http.get(`/api/customers/a/reports/${report.id}/preview`).set(auth))
+      .text,
+  ).toContain("<h2>EOS/EOL 独立评估</h2>");
   const another = await submit("new-unavailable");
   await expect
     .poll(
