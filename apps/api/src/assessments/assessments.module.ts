@@ -187,6 +187,8 @@ export class AssessmentService {
       limit?: number;
       offset?: number;
       targetKind?: "software" | "container" | "windows";
+      targetId?: string;
+      versionId?: string;
     } = {},
   ): Promise<AnyAssessmentPage> {
     const limit = page.limit ?? 50,
@@ -200,16 +202,36 @@ export class AssessmentService {
       offset > 1000000
     )
       throw new BadRequestException("分页无效");
-    const filter = page.targetKind ? " AND details#>>'{target,kind}'=$4" : "";
+    const params: unknown[] = [customer];
+    let where = "customer_id=$1";
+    if (page.targetKind) {
+      params.push(page.targetKind);
+      where += ` AND details#>>'{target,kind}'=$${params.length}`;
+    }
+    for (const [name, expression] of [
+      [
+        "targetId",
+        "COALESCE(details#>>'{target,softwareId}',details#>>'{target,containerId}',details#>>'{target,assetId}')",
+      ],
+      [
+        "versionId",
+        "COALESCE(details#>>'{target,versionId}',details#>>'{target,snapshotId}')",
+      ],
+    ] as const) {
+      if (page[name]) {
+        if (!z.uuid().safeParse(page[name]).success)
+          throw new BadRequestException("目标筛选编号无效");
+        params.push(page[name]);
+        where += ` AND ${expression}=$${params.length}`;
+      }
+    }
     const r = await this.db.query(
-      `SELECT id,customer_id AS "customerId",status,details - 'execution' - 'result' AS details, details#>'{result,coverage}' AS coverage,details#>'{result,database}' AS database,jsonb_array_length(details#>'{result,findings}') AS "findingCount" FROM vulnerability_jobs WHERE customer_id=$1${filter} ORDER BY created_at DESC,id LIMIT $2 OFFSET $3`,
-      page.targetKind
-        ? [customer, limit, offset, page.targetKind]
-        : [customer, limit, offset],
+      `SELECT id,customer_id AS "customerId",status,details - 'execution' - 'result' AS details,details#>'{result,coverage}' AS coverage,details#>'{result,database}' AS database,jsonb_array_length(details#>'{result,findings}') AS "findingCount" FROM vulnerability_jobs WHERE ${where} ORDER BY created_at DESC,id LIMIT $${params.length + 1} OFFSET $${params.length + 2}`,
+      [...params, limit, offset],
     );
     const count = await this.db.query(
-      `SELECT count(*)::int AS total FROM vulnerability_jobs WHERE customer_id=$1${page.targetKind ? " AND details#>>'{target,kind}'=$2" : ""}`,
-      page.targetKind ? [customer, page.targetKind] : [customer],
+      `SELECT count(*)::int AS total FROM vulnerability_jobs WHERE ${where}`,
+      params,
     );
     return {
       items: r.rows.map((row) => {
@@ -319,6 +341,8 @@ class AssessmentsController {
       .object({
         limit: z.coerce.number().int().min(1).max(100).optional(),
         targetKind: z.enum(["software", "container", "windows"]).optional(),
+        targetId: z.uuid().optional(),
+        versionId: z.uuid().optional(),
         offset: z.coerce.number().int().min(0).max(1000000).optional(),
       })
       .strict()

@@ -1,4 +1,5 @@
 import { WindowsAssessmentsPage } from "./features/windows-assessments/WindowsAssessmentsPage";
+import { ContainersPage } from "./features/containers/ContainersPage";
 import { AgentPage } from "./features/agent/AgentPage";
 import { ReportsPage } from "./features/reports/ReportsPage";
 import { AssessmentsPage } from "./features/assessments/AssessmentsPage";
@@ -28,6 +29,7 @@ export const features: Feature[] = [
     component: WindowsAssessmentsPage,
   },
   { id: "assets", label: "资产台账", icon: "▦", component: AssetsPage },
+  { id: "containers", label: "容器镜像", icon: "⬡", component: ContainersPage },
   {
     id: "public-intelligence",
     label: "公开 CVE 对话",
