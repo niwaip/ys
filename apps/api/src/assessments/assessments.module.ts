@@ -1,4 +1,8 @@
 import {
+  CollectionLinksModule,
+  CollectionLinksService,
+} from "../collections/links.module";
+import {
   ContainersModule,
   ContainerService,
 } from "../containers/containers.module";
@@ -42,6 +46,7 @@ const submitSchema = z.union([
     .object({
       softwareId: z.uuid(),
       versionId: z.uuid(),
+      linkId: z.uuid().optional(),
       idempotencyKey: z.string().trim().min(1).max(200),
     })
     .strict(),
@@ -49,6 +54,7 @@ const submitSchema = z.union([
     .object({
       containerId: z.uuid(),
       versionId: z.uuid(),
+      linkId: z.uuid().optional(),
       idempotencyKey: z.string().trim().min(1).max(200),
     })
     .strict(),
@@ -75,6 +81,7 @@ export class AssessmentService {
     private readonly containers: ContainerService,
     private readonly imports: ImportsService,
     private readonly executor: TrivyExecutor,
+    private readonly links: CollectionLinksService,
   ) {}
   async onModuleInit() {
     await this.db.query(
@@ -134,6 +141,15 @@ export class AssessmentService {
       material.content === undefined
     )
       throw new BadRequestException("该输入不是可评估的软件 SBOM");
+    const provenance = input.linkId
+      ? await this.links.forVersion(
+          customer,
+          input.linkId,
+          target.kind,
+          "containerId" in target ? target.containerId : target.softwareId,
+          target.versionId,
+        )
+      : undefined;
     const record: Assessment = {
       id: randomUUID(),
       customerId: customer,
@@ -144,6 +160,7 @@ export class AssessmentService {
         importId: snapshot.importId,
         contentHash: material.contentHash,
         version: snapshot.version,
+        ...(provenance ? { provenance } : {}),
       },
       createdAt: new Date().toISOString(),
     };
@@ -159,6 +176,7 @@ export class AssessmentService {
       );
       const old = serialize(existing.rows[0]);
       if (
+        (old.input as Assessment["input"]).provenance?.id !== provenance?.id ||
         old.target.kind !== target.kind ||
         old.target.versionId !== target.versionId ||
         ("containerId" in old.target
@@ -368,6 +386,7 @@ export class AssessmentsModule {
     return {
       module: AssessmentsModule,
       imports: [
+        CollectionLinksModule,
         SoftwareModule,
         ContainersModule,
         ImportsModule,
@@ -384,6 +403,7 @@ export class AssessmentsModule {
             ContainerService,
             ImportsService,
             EXECUTOR,
+            CollectionLinksService,
           ],
           useFactory: (
             db: Database,
@@ -391,7 +411,16 @@ export class AssessmentsModule {
             containers: ContainerService,
             imports: ImportsService,
             runner: TrivyExecutor,
-          ) => new AssessmentService(db, software, containers, imports, runner),
+            links: CollectionLinksService,
+          ) =>
+            new AssessmentService(
+              db,
+              software,
+              containers,
+              imports,
+              runner,
+              links,
+            ),
         },
       ],
       exports: [AssessmentService],

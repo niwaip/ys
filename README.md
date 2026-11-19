@@ -57,7 +57,7 @@ API 测试通过真实 HTTP 边界使用临时 PGlite 数据目录，结束自�
 - `apps/api/src/persistence/database.ts`：导出 DATABASE 注入令牌和参数化 query 接口。现提供串行 transaction 回调，普通 query 同样排队；只在回调内使用 session，不能跨异步请求直接拼接 BEGIN/COMMIT。迁移在 migrations 数组末尾追加版本，禁止修改已发布迁移。首片单进程启动，生产横向扩容前需加入迁移互斥。
 - `apps/web/src/features.ts`：可组合页面注册，页面得到已授权客户上下文与 API 凭据；客户切换时重挂载页面，取消旧请求，避免旧资料留在新客户视图。
 
-资产主数据选择及边界见 [ADR 001](docs/adr/001-local-asset-master.md)。
+资产主数据选择及边界见 [ADR 001](docs/adr/001-local-asset-master.md)与后续[NetBox权威来源决定](docs/adr/002-netbox-asset-authority.md)。配置NetBox时本地手工资产写入关闭，使用NetBox资产入口；网页三入口、连接配置与范围限制见[资产采集契约](docs/asset-collection.md)。
 
 ## CSV 资料导入
 

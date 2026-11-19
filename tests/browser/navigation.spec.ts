@@ -16,7 +16,7 @@ test("HTTP兼容模式下所有菜单往返切换仍显示内容且无浏览器�
   await page.getByRole("button", { name: "进入工作台" }).click();
   await expect(page.getByRole("heading", { name: "资产台账" })).toBeVisible();
   const labels = await page.locator("nav button").allTextContents();
-  expect(labels).toHaveLength(13);
+  expect(labels).toHaveLength(14);
   for (const label of [...labels, ...[...labels].reverse()]) {
     await page.locator("nav button").filter({ hasText: label }).click();
     await expect(page.locator("main h1, main h2").first(), label).toBeVisible();

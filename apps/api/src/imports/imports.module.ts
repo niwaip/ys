@@ -1,3 +1,4 @@
+import { NetBoxService } from "../netbox/netbox.module";
 import {
   BadRequestException,
   ConflictException,
@@ -35,7 +36,10 @@ function serialize(row: Record<string, unknown>): ImportMaterial {
   } as ImportMaterial;
 }
 export class ImportsService {
-  constructor(private readonly db: Database) {}
+  constructor(
+    private readonly db: Database,
+    private readonly netbox: NetBoxService,
+  ) {}
   async get(
     customer: string,
     id: string,
@@ -109,6 +113,19 @@ export class ImportsService {
     });
   }
   async commit(customer: string, id: string) {
+    const resolved = new Map<number, string>();
+    if (this.netbox.enabled) {
+      const material = await this.get(customer, id);
+      if (material.status === "committed")
+        return { ...material, replayed: true };
+      if (material.format !== "csv" || !material.canCommit)
+        throw new ConflictException("整批提交被阻止，请检查CSV资料");
+      for (const row of material.rows)
+        resolved.set(
+          row.row,
+          await this.netbox.resolveReference(customer, row.mapped!.sourceRef),
+        );
+    }
     return this.db.transaction(async (session) => {
       // Lock also protects duplicate commits from independent PostgreSQL connections.
       await session.query(
@@ -124,6 +141,12 @@ export class ImportsService {
         throw new ConflictException("整批提交被阻止：请修正问题记录后重新预览");
       for (const row of material.rows) {
         const m = row.mapped!;
+        const linked = resolved.get(row.row);
+        if (linked) {
+          row.status = "imported";
+          row.assetId = linked;
+          continue;
+        }
         const assetId = randomUUID();
         const inserted = await session.query(
           `INSERT INTO assets(id,customer_id,name,kind,source,source_ref,attributes,import_id,collected_at) VALUES($1,$2,$3,$4,$5,$6,$7::jsonb,$8,$9) ON CONFLICT DO NOTHING RETURNING id`,
@@ -201,8 +224,9 @@ Inject(ImportsService)(ImportsController, undefined, 0);
   providers: [
     {
       provide: ImportsService,
-      inject: [DATABASE],
-      useFactory: (db: Database) => new ImportsService(db),
+      inject: [DATABASE, NetBoxService],
+      useFactory: (db: Database, netbox: NetBoxService) =>
+        new ImportsService(db, netbox),
     },
   ],
   exports: [ImportsService],

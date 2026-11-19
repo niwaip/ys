@@ -160,9 +160,7 @@ export async function runPiCapability(
             started.get(message.toolCallId) !== message.toolName ||
             message.isError
           ) {
-            finish(
-              new AgentExecutionError("failed", "固定 CVE 查询脚本执行失败"),
-            );
+            finish(new AgentExecutionError("failed", "固定工具执行失败"));
             return;
           }
           completed.add(message.toolName);

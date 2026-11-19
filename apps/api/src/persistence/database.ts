@@ -16,6 +16,30 @@ export const DATABASE = Symbol("DATABASE");
 // Numbered migrations are applied atomically; new features append migrations here.
 const migrations = [
   {
+    version: 21,
+    sql: `ALTER TABLE collection_snapshots ADD COLUMN summary jsonb;`,
+  },
+  {
+    version: 20,
+    sql: `CREATE TABLE asset_version_links(id uuid PRIMARY KEY,customer_id text NOT NULL,asset_id uuid NOT NULL,snapshot_id uuid NOT NULL,input_hash text NOT NULL,details jsonb NOT NULL,created_at timestamptz NOT NULL DEFAULT now(),UNIQUE(customer_id,id),UNIQUE(customer_id,input_hash),FOREIGN KEY(customer_id,asset_id) REFERENCES assets(customer_id,id),FOREIGN KEY(customer_id,snapshot_id) REFERENCES collection_snapshots(customer_id,id));`,
+  },
+  {
+    version: 19,
+    sql: `CREATE TABLE collection_jobs(id uuid PRIMARY KEY,customer_id text NOT NULL,asset_id uuid NOT NULL,idempotency_key text NOT NULL,input_hash text NOT NULL,status text NOT NULL,details jsonb NOT NULL,created_at timestamptz NOT NULL DEFAULT now(),UNIQUE(customer_id,id),UNIQUE(customer_id,idempotency_key),FOREIGN KEY(customer_id,asset_id) REFERENCES assets(customer_id,id));CREATE INDEX collection_jobs_customer ON collection_jobs(customer_id,created_at DESC,id);`,
+  },
+  {
+    version: 18,
+    sql: `CREATE TABLE collection_snapshots(id uuid PRIMARY KEY,customer_id text NOT NULL,asset_id uuid NOT NULL,entry text NOT NULL,file_name text NOT NULL,content text NOT NULL,content_hash text NOT NULL,note text,normalized jsonb NOT NULL,target jsonb NOT NULL,created_at timestamptz NOT NULL DEFAULT now(),UNIQUE(customer_id,id),UNIQUE(customer_id,entry,content_hash),FOREIGN KEY(customer_id,asset_id) REFERENCES assets(customer_id,id));CREATE INDEX collection_asset ON collection_snapshots(customer_id,asset_id,created_at DESC,id);`,
+  },
+  {
+    version: 17,
+    sql: `CREATE TABLE netbox_operations(id uuid PRIMARY KEY,customer_id text NOT NULL REFERENCES customers(id),idempotency_key text NOT NULL,input_hash text NOT NULL,status text NOT NULL,input jsonb NOT NULL,result jsonb,created_at timestamptz NOT NULL DEFAULT now(),UNIQUE(customer_id,idempotency_key));`,
+  },
+  {
+    version: 16,
+    sql: `CREATE TABLE netbox_assets(customer_id text NOT NULL,asset_id uuid PRIMARY KEY,instance text NOT NULL,object_type text NOT NULL CHECK(object_type IN ('device','virtual-machine')),external_id integer NOT NULL,tenant_id integer NOT NULL,synced_at timestamptz NOT NULL,active boolean NOT NULL DEFAULT true,UNIQUE(instance,object_type,external_id),FOREIGN KEY(customer_id,asset_id) REFERENCES assets(customer_id,id));`,
+  },
+  {
     version: 14,
     sql: `CREATE TABLE report_narrations(id uuid PRIMARY KEY,customer_id text NOT NULL,report_id uuid NOT NULL,base_revision_id uuid NOT NULL,idempotency_key text NOT NULL,actor_key text NOT NULL,status text NOT NULL,details jsonb NOT NULL,created_at timestamptz NOT NULL DEFAULT now(),UNIQUE(customer_id,report_id,idempotency_key),FOREIGN KEY(customer_id,report_id) REFERENCES reports(customer_id,id),FOREIGN KEY(customer_id,base_revision_id) REFERENCES report_revisions(customer_id,id));CREATE INDEX report_narration_scope ON report_narrations(customer_id,report_id,created_at DESC,id);`,
   },

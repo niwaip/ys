@@ -1,3 +1,4 @@
+import { NetBoxService } from "../netbox/netbox.module";
 import {
   BadRequestException,
   Controller,
@@ -29,7 +30,10 @@ function serialize(r: Record<string, unknown>): Record<string, unknown> {
   };
 }
 export class WindowsService {
-  constructor(private db: Database) {}
+  constructor(
+    private db: Database,
+    private readonly netbox: NetBoxService,
+  ) {}
   async get(customer: string, id: string) {
     const r = await this.db.query(
       `SELECT ${cols} FROM import_materials WHERE customer_id=$1 AND id=$2 AND format='windows-json'`,
@@ -64,6 +68,11 @@ export class WindowsService {
       throw new BadRequestException("JSON 最多 500000 UTF-8 字节且不能含 NUL");
     const snapshot = parseCollector(content),
       hash = createHash("sha256").update(content).digest("hex");
+    const linked =
+      this.netbox.enabled &&
+      (snapshot.collectorVersion === null || snapshot.collectorVersion === "1")
+        ? await this.netbox.resolveSerial(customer, snapshot.serial)
+        : null;
     return this.db.transaction(async (s) => {
       const old = await s.query(
         `SELECT ${cols} FROM import_materials WHERE customer_id=$1 AND format='windows-json' AND content_hash=$2`,
@@ -71,7 +80,7 @@ export class WindowsService {
       );
       if (old.rows.length) return { ...serialize(old.rows[0]), replayed: true };
       const id = randomUUID();
-      let assetId: string | null = null;
+      let assetId: string | null = linked;
       const matches = snapshot.serial
         ? (
             await s.query(
@@ -80,7 +89,8 @@ export class WindowsService {
             )
           ).rows
         : [];
-      if (matches.length === 1) assetId = String(matches[0].asset_id);
+      if (!this.netbox.enabled && matches.length === 1)
+        assetId = String(matches[0].asset_id);
       const names = await s.query(
         "SELECT id FROM assets WHERE customer_id=$1 AND name=$2",
         [customer, snapshot.hostname],
@@ -89,6 +99,7 @@ export class WindowsService {
         snapshot.collectorVersion !== null && snapshot.collectorVersion !== "1";
       const ambiguous =
         unsupported ||
+        (this.netbox.enabled && !assetId) ||
         (!assetId && (!snapshot.serial || names.rows.length > 0));
       const result = {
         status: unsupported
@@ -184,8 +195,9 @@ Inject(WindowsService)(WindowsController, undefined, 0);
   providers: [
     {
       provide: WindowsService,
-      inject: [DATABASE],
-      useFactory: (db: Database) => new WindowsService(db),
+      inject: [DATABASE, NetBoxService],
+      useFactory: (db: Database, netbox: NetBoxService) =>
+        new WindowsService(db, netbox),
     },
   ],
   exports: [WindowsService],

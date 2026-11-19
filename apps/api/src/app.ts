@@ -1,3 +1,7 @@
+import { CollectionJobsModule } from "./collections/jobs.module";
+import type { CollectionExecutor } from "./collections/pi-collection";
+import { CollectionsModule } from "./collections/collections.module";
+import { NetBoxModule, NetBoxService } from "./netbox/netbox.module";
 import { DashboardModule } from "./dashboard/dashboard.module";
 import { configuredReportNarrator } from "./reports/pi-narration";
 import type { ReportNarrationExecutor } from "./reports/narration";
@@ -58,9 +62,11 @@ export class CoreModule {
   providers: [
     {
       provide: AssetsService,
-      inject: [DATABASE],
-      useFactory: (db: Awaited<ReturnType<typeof openDatabase>>) =>
-        new AssetsService(db),
+      inject: [DATABASE, NetBoxService],
+      useFactory: (
+        db: Awaited<ReturnType<typeof openDatabase>>,
+        netbox: NetBoxService,
+      ) => new AssetsService(db, netbox),
     },
   ],
   exports: [AssetsService],
@@ -70,6 +76,7 @@ export async function createApp(
   input: AppConfig,
   features: DynamicModule["imports"] = [],
   runtime: {
+    collectionExecutor?: CollectionExecutor;
     trivyExecutor?: TrivyExecutor;
     reportNarrationExecutor?: ReportNarrationExecutor;
     reportNarrationTimeoutMs?: number;
@@ -93,7 +100,10 @@ export async function createApp(
         module: ApplicationModule,
         imports: [
           CoreModule.register(config, database),
+          NetBoxModule.register(config.netbox),
           AssetsModule,
+          CollectionsModule,
+          CollectionJobsModule.register(config, runtime.collectionExecutor),
           ImportsModule,
           LifecycleModule,
           SoftwareModule,
@@ -135,6 +145,7 @@ export async function createApp(
       },
       { logger: false, bodyParser: false },
     );
+    app.use("/api/customers/:customerId/collections", json({ limit: "8mb" }));
     app.use(json({ limit: "1mb" }));
     await app.init();
     return app;

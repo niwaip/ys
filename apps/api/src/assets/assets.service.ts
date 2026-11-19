@@ -1,5 +1,6 @@
+import { NetBoxService } from "../netbox/netbox.module";
 import { randomUUID } from "node:crypto";
-import { NotFoundException } from "@nestjs/common";
+import { ConflictException, NotFoundException } from "@nestjs/common";
 import type {
   Asset,
   AssetPage,
@@ -19,8 +20,15 @@ function serialize(row: Record<string, unknown>): Asset {
   } as Asset;
 }
 export class AssetsService {
-  constructor(private readonly db: Database) {}
+  constructor(
+    private readonly db: Database,
+    private readonly netbox: NetBoxService,
+  ) {}
   async create(customerId: string, input: CreateAsset): Promise<Asset> {
+    if (this.netbox.enabled)
+      throw new ConflictException(
+        "NetBox模式下请在NetBox建档后同步，不能建立第二份本地主数据",
+      );
     const result = await this.db.query(
       `INSERT INTO assets (id, customer_id, name, kind, source, source_ref, attributes) VALUES ($1,$2,$3,$4,'manual',$5,$6::jsonb) RETURNING ${columns}`,
       [

@@ -60,7 +60,12 @@ export type Assessment = {
   target:
     | { kind: "software"; softwareId: string; versionId: string }
     | { kind: "container"; containerId: string; versionId: string };
-  input: { importId: string; contentHash: string; version: string | null };
+  input: {
+    importId: string;
+    contentHash: string;
+    version: string | null;
+    provenance?: import("./collections").AssetVersionLink;
+  };
   createdAt: string;
   startedAt?: string;
   finishedAt?: string;

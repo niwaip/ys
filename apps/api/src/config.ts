@@ -2,6 +2,48 @@ import { z } from "zod";
 const identity = z.string().regex(/^[a-zA-Z0-9_-]{1,80}$/);
 export const configSchema = z
   .object({
+    collection: z
+      .object({
+        profiles: z
+          .array(
+            z.object({
+              id: identity,
+              label: z.string().min(1).max(100),
+              customerId: identity,
+              assetId: z.uuid(),
+              host: z.string().regex(/^[a-zA-Z0-9][a-zA-Z0-9.:-]*$/),
+              port: z.number().int().min(1).max(65535).optional(),
+              username: z.string().regex(/^[a-zA-Z_][a-zA-Z0-9_-]*$/),
+              knownHostsFile: z.string().startsWith("/"),
+              identityFile: z.string().startsWith("/"),
+              sshExecutable: z.string().startsWith("/").optional(),
+              timeoutMs: z.number().int().min(50).max(300000).optional(),
+              allowDocker: z.boolean().default(false),
+            }),
+          )
+          .max(1000),
+      })
+      .optional(),
+    netbox: z
+      .object({
+        baseUrl: z
+          .url()
+          .transform((value) => value.replace(/\/+$/, "") + "/")
+          .refine(
+            (value) =>
+              /^https?:\/\//.test(value) &&
+              new URL(value).pathname.endsWith("/api/") &&
+              !new URL(value).username &&
+              !new URL(value).password &&
+              !new URL(value).search &&
+              !new URL(value).hash,
+            "NetBox URL必须指向/api/且不包含凭据、查询或片段",
+          ),
+        token: z.string().min(1),
+        timeoutMs: z.number().int().min(50).max(120000).optional(),
+        tenantIds: z.record(z.string(), z.number().int().positive()),
+      })
+      .optional(),
     pi: z
       .object({
         executable: z.string().min(1).optional(),
@@ -39,6 +81,23 @@ export const configSchema = z
   .superRefine((config, ctx) => {
     const ids = config.customers.map((c) => c.id);
     if (
+      config.collection &&
+      (new Set(config.collection.profiles.map((p) => p.id)).size !==
+        config.collection.profiles.length ||
+        config.collection.profiles.some((p) => !ids.includes(p.customerId)))
+    )
+      ctx.addIssue({ code: "custom", message: "采集连接引用重复或客户未登记" });
+    if (
+      config.netbox &&
+      (Object.keys(config.netbox.tenantIds).some((id) => !ids.includes(id)) ||
+        new Set(Object.values(config.netbox.tenantIds)).size !==
+          Object.values(config.netbox.tenantIds).length)
+    )
+      ctx.addIssue({
+        code: "custom",
+        message: "NetBox Tenant必须唯一绑定已登记客户",
+      });
+    if (
       new Set(ids).size !== ids.length ||
       new Set(config.operators.map((o) => o.token)).size !==
         config.operators.length
@@ -54,6 +113,22 @@ export const configSchema = z
 export type AppConfig = z.infer<typeof configSchema>;
 export function loadConfig(): AppConfig {
   return configSchema.parse({
+    collection: process.env.YS_COLLECTION_PROFILES
+      ? { profiles: JSON.parse(process.env.YS_COLLECTION_PROFILES) }
+      : undefined,
+    netbox:
+      process.env.YS_NETBOX_URL ||
+      process.env.YS_NETBOX_TOKEN ||
+      process.env.YS_NETBOX_TENANTS
+        ? {
+            baseUrl: process.env.YS_NETBOX_URL,
+            token: process.env.YS_NETBOX_TOKEN,
+            tenantIds: JSON.parse(process.env.YS_NETBOX_TENANTS ?? "{}"),
+            timeoutMs: process.env.YS_NETBOX_TIMEOUT_MS
+              ? Number(process.env.YS_NETBOX_TIMEOUT_MS)
+              : undefined,
+          }
+        : undefined,
     pi: {
       executable: process.env.YS_PI_EXECUTABLE || undefined,
       timeoutMs: process.env.YS_PI_TIMEOUT_MS

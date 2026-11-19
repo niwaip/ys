@@ -1,4 +1,5 @@
-import { useEffect, useState, type FormEvent } from "react";
+import { NetBoxPanel } from "./NetBoxPanel";
+import { useCallback, useEffect, useState, type FormEvent } from "react";
 import type { AssetPage } from "../../../../../packages/contracts";
 import { api, ApiError } from "../../api";
 import type { FeatureProps } from "../../features";
@@ -7,6 +8,8 @@ export function AssetsPage({
   token,
   onUnauthorized,
 }: FeatureProps) {
+  const [netboxMode, setNetboxMode] = useState<boolean | undefined>();
+  const refresh = useCallback(() => setRevision((x) => x + 1), []);
   const [data, setData] = useState<AssetPage>();
   const [error, setError] = useState("");
   const [creating, setCreating] = useState(false);
@@ -75,6 +78,7 @@ export function AssetsPage({
         </div>
         <button
           className="primary"
+          disabled={netboxMode !== false}
           onClick={() => {
             setCreating(true);
             setError("");
@@ -83,6 +87,14 @@ export function AssetsPage({
           ＋ 新建资产
         </button>
       </div>
+      <NetBoxPanel
+        key={customerId}
+        customerId={customerId}
+        token={token}
+        onUnauthorized={onUnauthorized}
+        onMode={setNetboxMode}
+        onChange={refresh}
+      />
       <div className="stats">
         <div className="stat">
           <span>纳管资产</span>
@@ -139,7 +151,11 @@ export function AssetsPage({
               <br />
               名称、来源标识和扩展资料将一并保存。
             </p>
-            <button className="secondary" onClick={() => setCreating(true)}>
+            <button
+              className="secondary"
+              disabled={netboxMode !== false}
+              onClick={() => setCreating(true)}
+            >
               建立第一项资产
             </button>
           </div>
