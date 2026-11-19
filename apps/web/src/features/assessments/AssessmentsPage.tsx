@@ -64,7 +64,7 @@ export function AssessmentsPage({
     try {
       const pageOffset = offset.current;
       const page = await call<AssessmentPage>(
-        `${base}/assessments?limit=20&offset=${pageOffset}`,
+        `${base}/assessments?targetKind=software&limit=20&offset=${pageOffset}`,
       );
       if (pageOffset === offset.current) setHistory(page);
       const id = selectedJob.current;
@@ -241,7 +241,7 @@ export function AssessmentsPage({
           </p>
           <p>任务编号：{job.id}</p>
           <p>
-            软件对象：{job.target.softwareId} · 输入版本：{job.target.versionId}
+            对象（{job.target.kind}）：{job.target.kind==="software"?job.target.softwareId:job.target.containerId} · 输入版本：{job.target.versionId}
           </p>
           <p>
             来源资料：{job.input.importId} · SHA-256：{job.input.contentHash}
