@@ -1,8 +1,10 @@
 import { test, expect } from "@playwright/test";
-test("台账打开全部资料区块，用户确认基线，再采集突出版本变化并保留旧基线", async ({
+test("台账Tab展示容量和网络摘要，用户确认基线，再采集突出版本变化并保留旧基线", async ({
   page,
   request,
 }) => {
+  const errors: string[] = [];
+  page.on("pageerror", (e) => errors.push(e.message));
   const headers = { Authorization: "Bearer browser-test-secret-token" },
     base = "http://127.0.0.1:3101/api/customers/acme";
   const name = `baseline-${Date.now()}`;
@@ -32,6 +34,42 @@ test("台账打开全部资料区块，用户确认基线，再采集突出版�
                 architecture: "x86_64",
               },
             },
+            hardware: {
+              status: "acquired",
+              data: {
+                cpu: {
+                  status: "acquired",
+                  data: `processor : 0\ncpu MHz : ${version}\nprocessor : 1`,
+                },
+                memory: {
+                  status: "acquired",
+                  data: `MemTotal: 16777216 kB\nMemAvailable: ${version} kB`,
+                },
+                disks: {
+                  status: "acquired",
+                  data: `Filesystem 1024-blocks Used Available Capacity Mounted on\n/dev/vda1 104857600 ${version} 1000 1% /`,
+                },
+              },
+            },
+            network: {
+              status: "acquired",
+              data: Array.from(
+                { length: version === "12" ? 51 : 50 },
+                (_, i) => ({
+                  ifname: `eth${i}`,
+                  operstate: "UP",
+                  addr_info: [
+                    {
+                      family: "inet",
+                      local: `192.0.2.${i + 10}`,
+                      prefixlen: 24,
+                    },
+                  ],
+                  stats64: { rx: { bytes: version } },
+                  promiscuity: 0,
+                }),
+              ),
+            },
             packages: {
               status: "acquired",
               data: [
@@ -55,9 +93,28 @@ test("台账打开全部资料区块，用户确认基线，再采集突出版�
   await page.getByRole("button", { name: "进入工作台" }).click();
   await page.getByRole("button", { name, exact: true }).click();
   const dialog = page.getByRole("dialog", { name: "资产详情", exact: true });
+  await dialog.getByRole("tab", { name: /^硬件/ }).click();
+  await expect(dialog.locator("#baseline-hardware")).toContainText("2 核");
+  await expect(dialog.locator("#baseline-hardware")).toContainText("16.0 GiB");
+  await expect(dialog.locator("#baseline-hardware")).toContainText("100.0 GiB");
+  await expect(dialog.locator("#baseline-hardware pre")).toHaveCount(0);
+  await dialog.getByRole("tab", { name: /^网络/ }).click();
+  await expect(dialog.locator("#baseline-network")).toContainText(
+    "192.0.2.10/24",
+  );
+  await dialog
+    .locator("#baseline-network")
+    .getByRole("button", { name: "下一批" })
+    .click();
+  await expect(dialog.locator("#baseline-network")).toContainText("eth50");
+  await expect(dialog.locator("#baseline-network")).not.toContainText(
+    "promiscuity",
+  );
+  await dialog.getByRole("tab", { name: /^操作系统/ }).click();
   await expect(
     dialog.getByRole("heading", { name: "操作系统", exact: true }),
   ).toBeVisible();
+  await dialog.getByRole("tab", { name: /^系统包/ }).click();
   await expect(
     dialog.getByRole("heading", { name: "系统包", exact: true }),
   ).toBeVisible();
@@ -70,11 +127,23 @@ test("台账打开全部资料区块，用户确认基线，再采集突出版�
   expect((await upload("13")).ok()).toBe(true);
   await page.getByRole("button", { name, exact: true }).click();
   await expect(
+    dialog.getByRole("tab", { name: "硬件", exact: true }),
+  ).toBeVisible();
+  await dialog.getByRole("tab", { name: /^网络/ }).click();
+  await dialog.locator("#baseline-network").getByLabel("仅显示变化").check();
+  await expect(dialog.locator("#baseline-network")).toContainText("eth50");
+  await expect(dialog.locator("#baseline-network")).toContainText("删除");
+  await expect(dialog.locator("#baseline-network")).toContainText(
+    "192.0.2.60/24",
+  );
+  await dialog.getByRole("tab", { name: /^操作系统/ }).click();
+  await expect(
     dialog
       .locator("#baseline-os .baseline-field-changed")
       .filter({ hasText: "版本" }),
   ).toContainText("13");
   await expect(dialog.locator("#baseline-os")).toContainText("基线：12");
+  await dialog.getByRole("tab", { name: /^系统包/ }).click();
   await dialog.locator("#baseline-packages").getByLabel("仅显示变化").check();
   await expect(dialog.locator("#baseline-packages tbody")).toContainText(
     "变更",
@@ -82,12 +151,14 @@ test("台账打开全部资料区块，用户确认基线，再采集突出版�
   await dialog
     .getByRole("button", { name: "已确认基础数据", exact: true })
     .click();
+  await dialog.getByRole("tab", { name: /^操作系统/ }).click();
   await expect(dialog.locator("#baseline-os")).toContainText("12");
   await dialog.getByRole("button", { name: "本次采集与变更" }).click();
   await page.screenshot({ path: "output/deployment/baseline-desktop.png" });
   await page.setViewportSize({ width: 390, height: 844 });
   await expect(page.locator("aside.sidebar")).toHaveCSS("position", "static");
   await page.screenshot({ path: "output/deployment/baseline-mobile.png" });
+  expect(errors).toEqual([]);
   expect(
     await page.evaluate(
       () => document.documentElement.scrollWidth <= innerWidth,

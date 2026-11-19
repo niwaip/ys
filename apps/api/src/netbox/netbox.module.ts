@@ -95,6 +95,7 @@ const page = z.object({
   next: z.string().nullable(),
   results: z.array(nativeAsset),
 });
+export class NetBoxPrewriteError extends ConflictException {}
 export class NetBoxService {
   constructor(
     private readonly db: Database,
@@ -398,19 +399,55 @@ export class NetBoxService {
     idempotencyKey: string,
     expected: { name?: string; serial?: string },
   ) {
-    const native = await this.baselineNative(customerId, assetId);
-    if (
-      (expected.name !== undefined && native.name !== expected.name) ||
-      (expected.serial !== undefined &&
-        (native.serial ?? "") !== expected.serial)
-    )
-      throw new ConflictException("NetBox字段已被修改，请同步并重新确认");
-    return this.update(customerId, assetId, {
-      idempotencyKey,
-      name: patch.name ?? native.name,
-      ...(patch.serial !== undefined ? { serial: patch.serial } : {}),
-    });
+    let native: NativeAsset;
+    let mapping: { object_type: keyof typeof paths; external_id: number };
+    try {
+      const prepared = await this.baselineNative(customerId, assetId);
+      native = prepared.native;
+      mapping = prepared.mapping;
+      const nameDone = patch.name === undefined || native.name === patch.name;
+      const serialDone =
+        patch.serial === undefined || (native.serial ?? "") === patch.serial;
+      if (nameDone && serialDone) {
+        await this.verifyBaseline(customerId, assetId, patch);
+        return { unchanged: true };
+      }
+      if (
+        (!nameDone &&
+          expected.name !== undefined &&
+          native.name !== expected.name) ||
+        (!serialDone &&
+          expected.serial !== undefined &&
+          (native.serial ?? "") !== expected.serial)
+      )
+        throw new NetBoxPrewriteError(
+          "NetBox字段与采集时不同，本次未执行写回；请重新采集后确认",
+        );
+    } catch (e) {
+      if (e instanceof NetBoxPrewriteError) throw e;
+      throw new NetBoxPrewriteError(
+        "无法核对NetBox当前资料，本次未执行写回；请检查连接或权限后重试",
+      );
+    }
+    try {
+      return await this.create(
+        customerId,
+        {
+          idempotencyKey,
+          objectType: mapping.object_type,
+          name: patch.name ?? native.name,
+          ...(patch.serial !== undefined ? { serial: patch.serial } : {}),
+        },
+        { assetId, externalId: Number(mapping.external_id) },
+      );
+    } catch (error) {
+      if (error instanceof BadGatewayException) throw error;
+      throw new NetBoxPrewriteError(
+        "无法准备NetBox写回，本次未执行；请刷新后重试",
+      );
+    }
   }
+
   private async baselineNative(customerId: string, assetId: string) {
     const mapping = (
       await this.db.query(
@@ -427,7 +464,13 @@ export class NetBoxService {
     );
     if (native.id !== Number(mapping.external_id))
       throw new ConflictException("NetBox对象身份已变化");
-    return native;
+    return {
+      native,
+      mapping: mapping as {
+        object_type: keyof typeof paths;
+        external_id: number;
+      },
+    };
   }
   async verifyBaseline(
     customerId: string,

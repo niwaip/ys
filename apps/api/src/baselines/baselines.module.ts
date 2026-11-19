@@ -17,7 +17,7 @@ import {
   CollectionsModule,
   CollectionsService,
 } from "../collections/collections.module";
-import { NetBoxService } from "../netbox/netbox.module";
+import { NetBoxService, NetBoxPrewriteError } from "../netbox/netbox.module";
 import {
   collectionSectionNames,
   type HostCollection,
@@ -372,7 +372,18 @@ export class BaselinesService {
           `baseline:${approval.id}`,
           approval.plan.remoteExpected ?? {},
         );
-    } catch {
+    } catch (error) {
+      if (error instanceof NetBoxPrewriteError) {
+        await this.db.query(
+          "UPDATE asset_baselines SET status='rejected' WHERE id=$1 AND status='pending'",
+          [approval.id],
+        );
+        return {
+          ...this.result(approval),
+          status: "rejected",
+          message: error.message,
+        };
+      }
       await this.db.query(
         "UPDATE asset_baselines SET status='unknown' WHERE id=$1 AND status='pending'",
         [approval.id],

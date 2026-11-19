@@ -1,3 +1,7 @@
+import {
+  hardwareSummary,
+  networkSummary,
+} from "../../../../../packages/contracts/collection-display";
 import "./collections.css";
 import { useEffect, useState } from "react";
 import { api, ApiError } from "../../api";
@@ -79,6 +83,89 @@ function valueText(v: unknown): string {
   if (typeof v === "string") return v;
   return JSON.stringify(v, null, 2);
 }
+function capacity(value: number | null | undefined) {
+  return value == null ? "未知" : `${(value / 1024 ** 3).toFixed(1)} GiB`;
+}
+function HardwareView({
+  value,
+  changes,
+  excluded,
+  onExclude,
+  canSelect,
+}: {
+  value: unknown;
+  changes: Changes[];
+  excluded: string[];
+  onExclude: (key: string, value: boolean) => void;
+  canSelect: boolean;
+}) {
+  const h = hardwareSummary(value);
+  return (
+    <div className="baseline-capacity">
+      <div
+        className={
+          changes.some((c) => c.key === "cpu") ? "baseline-field-changed" : ""
+        }
+      >
+        <span>CPU核数</span>
+        <strong>
+          {h.cpu.cores ?? "未知"}
+          {h.cpu.cores ? " 核" : ""}
+        </strong>
+        {canSelect && (
+          <label className="collect-check">
+            <input
+              type="checkbox"
+              checked={!excluded.includes("hardware.cpu")}
+              onChange={(e) => onExclude("hardware.cpu", !e.target.checked)}
+            />
+            采纳
+          </label>
+        )}
+      </div>
+      <div
+        className={
+          changes.some((c) => c.key === "memory")
+            ? "baseline-field-changed"
+            : ""
+        }
+      >
+        <span>内存容量</span>
+        <strong>{capacity(h.memory.bytes)}</strong>
+        {canSelect && (
+          <label className="collect-check">
+            <input
+              type="checkbox"
+              checked={!excluded.includes("hardware.memory")}
+              onChange={(e) => onExclude("hardware.memory", !e.target.checked)}
+            />
+            采纳
+          </label>
+        )}
+      </div>
+      <div
+        className={
+          changes.some((c) => c.key === "disks") ? "baseline-field-changed" : ""
+        }
+      >
+        <span title="已挂载本地文件系统容量之和，不代表未挂载物理磁盘容量">
+          磁盘容量
+        </span>
+        <strong>{capacity(h.disks.bytes)}</strong>
+        {canSelect && (
+          <label className="collect-check">
+            <input
+              type="checkbox"
+              checked={!excluded.includes("hardware.disks")}
+              onChange={(e) => onExclude("hardware.disks", !e.target.checked)}
+            />
+            采纳
+          </label>
+        )}
+      </div>
+    </div>
+  );
+}
 function DiffValue({ value }: { value: unknown }) {
   if (value == null) return <span>无</span>;
   if (typeof value !== "object" || Array.isArray(value))
@@ -132,6 +219,9 @@ function Layer({
     setOffset(0);
   }, [q, changesOnly, view, snapshotId]);
   useEffect(() => {
+    setChangesOnly(false);
+  }, [view, snapshotId]);
+  useEffect(() => {
     const c = new AbortController();
     const params = new URLSearchParams({
       snapshotId,
@@ -149,6 +239,35 @@ function Layer({
       });
     return () => c.abort();
   }, [base, snapshotId, view, offset, q, changesOnly, token, name]);
+  type NetworkRow = {
+    ifname: string;
+    addresses: string[] | null;
+    status: string | null;
+    change?: Changes;
+  };
+  const networkRows: NetworkRow[] =
+    name === "network"
+      ? changesOnly
+        ? (page?.items ?? [])
+            .filter(
+              (item) =>
+                item !== null && typeof item === "object" && "kind" in item,
+            )
+            .map((item) => {
+              const change = item as Changes;
+              return {
+                ...((change.after ?? change.before) as NetworkRow),
+                change,
+              };
+            })
+        : networkSummary(page?.items).map((v) => ({
+            ...v,
+            change:
+              view === "observed"
+                ? info.changes.find((c) => c.key === v.ifname)
+                : undefined,
+          }))
+      : [];
   const list = ["packages", "network", "containers", "images"].includes(name);
   return (
     <div className="baseline-layer-content">
@@ -157,7 +276,99 @@ function Layer({
           {issue}
         </p>
       ))}
-      {list ? (
+      {name === "hardware" ? (
+        <HardwareView
+          value={page?.data}
+          excluded={excluded}
+          onExclude={onExclude}
+          canSelect={view === "observed"}
+          changes={view === "observed" ? info.changes : []}
+        />
+      ) : name === "network" ? (
+        <>
+          {view === "observed" && info.comparable && (
+            <label className="collect-check">
+              <input
+                type="checkbox"
+                checked={changesOnly}
+                onChange={(e) => {
+                  setPage(undefined);
+                  setChangesOnly(e.target.checked);
+                }}
+              />
+              仅显示变化
+            </label>
+          )}
+
+          <div className="table-scroll">
+            <table>
+              <thead>
+                <tr>
+                  <th>接口</th>
+                  <th>IP地址</th>
+                  <th>状态</th>
+                </tr>
+              </thead>
+              <tbody>
+                {networkRows.map((v, i) => {
+                  const change = v.change;
+                  const old = change?.before as
+                    { addresses?: string[]; status?: string } | undefined;
+                  return (
+                    <tr
+                      key={i}
+                      className={change ? "baseline-field-changed" : ""}
+                    >
+                      <td>
+                        {v.ifname}
+                        {change && (
+                          <span className="baseline-change changed">
+                            {change.kind === "added"
+                              ? "新增"
+                              : change.kind === "removed"
+                                ? "删除"
+                                : "变更"}
+                          </span>
+                        )}
+                      </td>
+                      <td>
+                        {v.addresses == null
+                          ? "未知"
+                          : v.addresses.length
+                            ? v.addresses.join(" · ")
+                            : "无地址"}
+                        {old && (
+                          <small className="block subtle">
+                            基线：{old.addresses?.join(" · ") ?? "未知"}
+                          </small>
+                        )}
+                      </td>
+                      <td>{v.status ?? "未知"}</td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+          <div className="pagination">
+            <span>共 {page?.total ?? 0} 项</span>
+            <button
+              className="secondary"
+              disabled={!offset}
+              onClick={() => setOffset(Math.max(0, offset - 50))}
+            >
+              上一批
+            </button>
+            <button
+              className="secondary"
+              disabled={!page || offset + 50 >= page.total}
+              onClick={() => setOffset(offset + 50)}
+            >
+              下一批
+            </button>
+          </div>
+        </>
+      ) : list ? (
         <>
           <div className="baseline-list-controls">
             <input
@@ -171,7 +382,10 @@ function Layer({
                 <input
                   type="checkbox"
                   checked={changesOnly}
-                  onChange={(e) => setChangesOnly(e.target.checked)}
+                  onChange={(e) => {
+                    setPage(undefined);
+                    setChangesOnly(e.target.checked);
+                  }}
                 />
                 仅显示变化
               </label>
@@ -356,6 +570,7 @@ export function AssetBaseline({
   snapshotId?: string;
   onConfirmed?: () => void;
 } & FeatureProps) {
+  const [activeTab, setActiveTab] = useState("identity");
   const [data, setData] = useState<Preview>(),
     [selected, setSelected] = useState<string[]>([]),
     [excluded, setExcluded] = useState<string[]>([]),
@@ -371,7 +586,6 @@ export function AssetBaseline({
   }
   useEffect(() => {
     const c = new AbortController();
-    setError("");
     api<Preview>(
       `${base}${snapshotId ? "?snapshotId=" + snapshotId : ""}`,
       token,
@@ -412,11 +626,11 @@ export function AssetBaseline({
           }),
         },
       );
-      setNotice(
-        r.status === "confirmed"
-          ? "已确认并更新资产基线"
-          : (r.message ?? "写回待核对"),
-      );
+      if (r.status === "confirmed") setNotice("已确认并更新资产基线");
+      else {
+        setNotice("");
+        setError(r.message ?? "写回待核对");
+      }
       setRevision((v) => v + 1);
       onConfirmed?.();
     } catch (e) {
@@ -528,84 +742,100 @@ export function AssetBaseline({
               项待比较变化
             </strong>
           </div>
-          <nav className="baseline-anchors" aria-label="资产资料分区">
+          <div
+            className="baseline-tabs"
+            role="tablist"
+            aria-label="资产资料分区"
+          >
             {Object.entries(labels).map(([key, label]) => (
-              <a key={key} href={`#baseline-${key}`}>
+              <button
+                type="button"
+                key={key}
+                role="tab"
+                aria-selected={activeTab === key}
+                aria-controls={`baseline-${key}`}
+                onClick={() => setActiveTab(key)}
+              >
                 {label}
                 {data.sections[key]?.totalChanges ? (
                   <b>{data.sections[key].totalChanges}</b>
                 ) : null}
-              </a>
+              </button>
             ))}
-          </nav>
+          </div>
           {view === "observed" && (
             <p className="collect-muted">
               勾选完整取得的区块，展开可排除字段。未取得或部分取得的区块保留原基线；清单仅在完整取得时比较删除。
             </p>
           )}
-          {Object.entries(labels).map(([name, label]) => {
-            const info = data.sections[name];
-            return (
-              <section
-                className={
-                  "baseline-layer " + (info.totalChanges ? "has-changes" : "")
-                }
-                id={`baseline-${name}`}
-                key={name}
-              >
-                <header>
-                  <div>
-                    <h3>{label}</h3>
-                    <span className="collect-pill">
-                      {view === "baseline" ? "已确认资料" : states[info.status]}
-                    </span>
-                  </div>
-                  <div>
-                    {info.totalChanges > 0 && view === "observed" && (
-                      <span className="baseline-change changed">
-                        新增 {info.counts.added} · 变更 {info.counts.changed} ·
-                        删除 {info.counts.removed}
-                      </span>
-                    )}
-                    {view === "observed" && (
-                      <label className="collect-check">
-                        <input
-                          aria-label={`采纳${label}`}
-                          type="checkbox"
-                          disabled={!info.comparable || busy}
-                          checked={selected.includes(name)}
-                          onChange={(e) =>
-                            setSelected((v) =>
-                              e.target.checked
-                                ? [...v, name]
-                                : v.filter((n) => n !== name),
-                            )
-                          }
-                        />
-                        采纳
-                      </label>
-                    )}
-                  </div>
-                </header>
-                <Layer
-                  key={`${name}:${revision}`}
-                  name={name}
-                  base={base}
-                  snapshotId={data.snapshot!.id}
-                  token={token}
-                  info={info}
-                  view={view}
-                  excluded={excluded}
-                  onExclude={(path, value) =>
-                    setExcluded((v) =>
-                      value ? [...v, path] : v.filter((p) => p !== path),
-                    )
+          {Object.entries(labels)
+            .filter(([name]) => name === activeTab)
+            .map(([name, label]) => {
+              const info = data.sections[name];
+              return (
+                <section
+                  className={
+                    "baseline-layer " + (info.totalChanges ? "has-changes" : "")
                   }
-                  onError={fail}
-                />
-              </section>
-            );
-          })}
+                  role="tabpanel"
+                  id={`baseline-${name}`}
+                  key={name}
+                >
+                  <header>
+                    <div>
+                      <h3>{label}</h3>
+                      <span className="collect-pill">
+                        {view === "baseline"
+                          ? "已确认资料"
+                          : states[info.status]}
+                      </span>
+                    </div>
+                    <div>
+                      {info.totalChanges > 0 && view === "observed" && (
+                        <span className="baseline-change changed">
+                          新增 {info.counts.added} · 变更 {info.counts.changed}{" "}
+                          · 删除 {info.counts.removed}
+                        </span>
+                      )}
+                      {view === "observed" && (
+                        <label className="collect-check">
+                          <input
+                            aria-label={`采纳${label}`}
+                            type="checkbox"
+                            disabled={!info.comparable || busy}
+                            checked={selected.includes(name)}
+                            onChange={(e) =>
+                              setSelected((v) =>
+                                e.target.checked
+                                  ? [...v, name]
+                                  : v.filter((n) => n !== name),
+                              )
+                            }
+                          />
+                          采纳
+                        </label>
+                      )}
+                    </div>
+                  </header>
+                  <Layer
+                    key={`${name}:${revision}`}
+                    name={name}
+                    base={base}
+                    snapshotId={data.snapshot!.id}
+                    token={token}
+                    info={info}
+                    view={view}
+                    excluded={excluded}
+                    onExclude={(path, value) =>
+                      setExcluded((v) =>
+                        value ? [...v, path] : v.filter((p) => p !== path),
+                      )
+                    }
+                    onError={fail}
+                  />
+                </section>
+              );
+            })}
           {view === "observed" && (
             <div className="baseline-confirm">
               <div>
@@ -645,6 +875,7 @@ export function AssetBaseline({
                   confirmed: "已确认",
                   pending: "写回处理中",
                   cancelled: "已放弃采纳",
+                  rejected: "未执行写回",
                   unknown: "写回未获确认",
                 }[h.status] ?? h.status}
               </span>

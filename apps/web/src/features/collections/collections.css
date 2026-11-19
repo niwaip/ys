@@ -990,3 +990,74 @@
   font-size: 12px;
   overflow-wrap: anywhere;
 }
+.baseline-tabs {
+  display: flex;
+  gap: 4px;
+  overflow-x: auto;
+  border-bottom: 1px solid #dce5d7;
+  margin: 18px 0;
+}
+.collection-page .baseline-tabs > button {
+  flex-shrink: 0;
+  border: 0;
+  border-bottom: 2px solid transparent;
+  border-radius: 0;
+  background: transparent;
+  color: #7c8f76;
+  padding: 12px 15px;
+  font-size: 12px;
+  white-space: nowrap;
+}
+.collection-page .baseline-tabs > button[aria-selected="true"] {
+  color: #216d56;
+  border-bottom-color: #216d56;
+  background: #f4f8ef;
+  font-weight: 600;
+}
+.baseline-tabs b {
+  display: inline-block;
+  margin-left: 6px;
+  background: #f8eace;
+  color: #a56e25;
+  padding: 2px 5px;
+  border-radius: 4px;
+  font-size: 10px;
+}
+.baseline-capacity {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 14px;
+}
+.baseline-capacity > div {
+  padding: 22px;
+  background: #f8faf3;
+  border: 1px solid #e3ebda;
+  border-radius: 8px;
+}
+.baseline-capacity span {
+  display: block;
+  color: #819474;
+  font-size: 12px;
+  margin-bottom: 12px;
+}
+.baseline-capacity strong {
+  font-size: 24px;
+  color: #3d6235;
+}
+@media (max-width: 600px) {
+  .baseline-capacity {
+    grid-template-columns: 1fr;
+  }
+  .baseline-capacity > div {
+    padding: 16px;
+  }
+  .baseline-tabs {
+    margin: 12px 0;
+  }
+}
+
+.baseline-capacity > div.baseline-field-changed,
+.baseline-layer tr.baseline-field-changed {
+  background: #fffaf0;
+  border-color: #e6d1a7;
+}

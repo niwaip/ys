@@ -44,6 +44,16 @@ test("采集不自动更新基线；采纳后比较包版本，缺失层不删�
           architecture: "x86_64",
         },
       },
+      network: {
+        status: "acquired",
+        data: [
+          {
+            ifname: "eth0",
+            operstate: "UP",
+            addr_info: [{ family: "inet", local: "192.0.2.1", prefixlen: 24 }],
+          },
+        ],
+      },
       packages: {
         status: "acquired",
         data: [
@@ -89,7 +99,7 @@ test("采集不自动更新基线；采纳后比较包版本，缺失层不删�
         snapshotId: first.id,
         expectedBaselineId: null,
         idempotencyKey: "first",
-        sections: ["identity", "os", "packages"],
+        sections: ["identity", "os", "packages", "network"],
         excludeFields: [],
       })
       .expect(201)
@@ -144,7 +154,15 @@ test("采集不自动更新基线；采纳后比较包版本，缺失层不删�
   const unknown = data("3.0");
   unknown.sections.os.data.kernel = "9.0";
   unknown.sections.packages.data[0].version = null as any;
+  (unknown.sections as any).network = {
+    status: "acquired",
+    data: [{ ifname: "eth0" }],
+  };
   const fourth = await upload(unknown);
+  expect(
+    (await http.get(path + `?snapshotId=${fourth.id}`).set(auth)).body.sections
+      .network.totalChanges,
+  ).toBe(0);
   await http
     .post(path + "/confirm")
     .set(auth)
@@ -291,6 +309,135 @@ test("NetBox写回响应丢失不更新基线、不重复写入；核对远端�
       .send({})
       .expect(201);
     expect((await http.get(path).set(auth)).body.current.id).toBe(approval.id);
+    expect(writes).toBe(1);
+  } finally {
+    await new Promise<void>((r) => server.close(() => r()));
+  }
+});
+
+test("同一快照再次确认：NetBox已是目标值时不误报冲突或重复PATCH", async () => {
+  const { createServer } = await import("node:http");
+  let native = { id: 42, name: "old", tenant: { id: 7 } },
+    writes = 0;
+  let failRead = false,
+    failReadCount = 0;
+  const server = createServer(async (req, res) => {
+    res.setHeader("Content-Type", "application/json");
+    if (failRead && req.method !== "PATCH" && ++failReadCount > 1) {
+      res.statusCode = 503;
+      res.end("{}");
+      return;
+    }
+    if (req.method === "PATCH") {
+      let body = "";
+      for await (const c of req) body += c;
+      native = { ...native, ...JSON.parse(body), tenant: { id: 7 } };
+      writes++;
+    }
+    res.end(
+      JSON.stringify(
+        req.url === "/api/dcim/devices/42/"
+          ? native
+          : {
+              count: req.url?.includes("dcim") ? 1 : 0,
+              next: null,
+              results: req.url?.includes("dcim") ? [native] : [],
+            },
+      ),
+    );
+  });
+  await new Promise<void>((r) => server.listen(0, "127.0.0.1", r));
+  try {
+    dir = await mkdtemp(join(tmpdir(), "ys-baseline-repeat-"));
+    app = await createApp({
+      databaseUrl: `pglite://${dir}`,
+      customers: [{ id: "a", name: "A" }],
+      operators: [
+        { name: "测试", token: "baseline-test-token", customerIds: ["a"] },
+      ],
+      netbox: {
+        baseUrl: `http://127.0.0.1:${(server.address() as { port: number }).port}/api/`,
+        token: "private-test-token",
+        tenantIds: { a: 7 },
+      },
+    });
+    const http = request(app.getHttpServer()),
+      auth = { Authorization: "Bearer baseline-test-token" },
+      base = "/api/customers/a";
+    await http
+      .post(base + "/netbox/sync")
+      .set(auth)
+      .send({});
+    const asset = (await http.get(base + "/assets").set(auth)).body.items[0];
+    const snap = (
+      await http
+        .post(base + "/collections/manual")
+        .set(auth)
+        .send({
+          assetId: asset.id,
+          note: "测试",
+          data: {
+            schemaVersion: "ys-host/1",
+            identity: { hostname: "new", serial: null, machineId: "one" },
+            collectedAt: null,
+            sections: {},
+            extensions: {},
+          },
+        })
+    ).body;
+    const path = base + `/assets/${asset.id}/baseline`;
+    const input = {
+      snapshotId: snap.id,
+      expectedBaselineId: null,
+      idempotencyKey: "first",
+      sections: ["identity"],
+      excludeFields: [],
+    };
+    const first = (
+      await http
+        .post(path + "/confirm")
+        .set(auth)
+        .send(input)
+    ).body;
+    expect(first.status).toBe("confirmed");
+    const second = (
+      await http
+        .post(path + "/confirm")
+        .set(auth)
+        .send({
+          ...input,
+          expectedBaselineId: first.id,
+          idempotencyKey: "again",
+        })
+    ).body;
+    expect(second.status).toBe("confirmed");
+    expect(writes).toBe(1);
+    native.name = "external-edit";
+    const conflict = (
+      await http
+        .post(path + "/confirm")
+        .set(auth)
+        .send({
+          ...input,
+          expectedBaselineId: second.id,
+          idempotencyKey: "conflict",
+        })
+    ).body;
+    expect(conflict.status).toBe("rejected");
+    expect(conflict.message).toContain("未执行");
+    expect(writes).toBe(1);
+    failRead = true;
+    const unavailable = (
+      await http
+        .post(path + "/confirm")
+        .set(auth)
+        .send({
+          ...input,
+          expectedBaselineId: second.id,
+          idempotencyKey: "read-failed",
+        })
+    ).body;
+    expect(unavailable.status).toBe("rejected");
     expect(writes).toBe(1);
   } finally {
     await new Promise<void>((r) => server.close(() => r()));

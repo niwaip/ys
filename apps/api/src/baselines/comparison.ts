@@ -1,3 +1,7 @@
+import {
+  hardwareSummary,
+  networkSummary,
+} from "../../../../packages/contracts/collection-display";
 import { ConflictException } from "@nestjs/common";
 export type Values = Record<string, unknown>;
 export type Change = {
@@ -41,6 +45,14 @@ export function compare(
   before: unknown,
   after: unknown,
 ): Change[] {
+  if (name === "hardware") {
+    before = before == null ? undefined : hardwareSummary(before);
+    after = hardwareSummary(after);
+  }
+  if (name === "network") {
+    before = networkSummary(before);
+    after = networkSummary(after);
+  }
   const old = records(name, before),
     next = records(name, adopt(name, before, after, {}, "comparison").value),
     changes: Change[] = [];

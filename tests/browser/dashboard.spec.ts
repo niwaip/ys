@@ -85,6 +85,29 @@ test("客户概览选择固定版本、同scope下钻和趋势覆盖，刷新及
   await page.getByLabel("操作员访问令牌").fill("browser-test-secret-token");
   await page.getByRole("button", { name: "进入工作台" }).click();
   await page.getByRole("button", { name: "客户风险概览" }).click();
+  const catalogSelect = page.getByLabel("概览对象");
+  await expect
+    .poll(() => catalogSelect.locator("option").count())
+    .toBeGreaterThan(1);
+  for (
+    let i = 0;
+    i < 20 &&
+    !(await catalogSelect
+      .locator(`option[value="software:${object.id}"]`)
+      .count());
+    i++
+  ) {
+    const next = page.getByRole("button", { name: "下一页对象", exact: true });
+    await expect(next).toBeEnabled();
+    const response = page.waitForResponse((r) =>
+      r.url().includes("/dashboard/catalog?"),
+    );
+    await next.click();
+    const catalog = await (await response).json();
+    await expect(
+      page.locator("p").filter({ hasText: /^对象目录/ }),
+    ).toContainText(`${catalog.objectOffset + 1}–`);
+  }
   await page.getByLabel("概览对象").selectOption(`software:${object.id}`);
   const appliedResponse = page.waitForResponse(
     (response) =>
