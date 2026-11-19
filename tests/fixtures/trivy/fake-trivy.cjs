@@ -25,6 +25,47 @@ if (
 }
 const container = input.metadata?.component?.type === "container";
 const output = args[args.indexOf("--output") + 1];
+if (input.fixtureMode === "history") {
+  const version = input.components[0].version;
+  const purl = input.components[0].purl;
+  const ids =
+    version === "1"
+      ? ["CVE-HISTORY-A", "CVE-HISTORY-A", "CVE-HISTORY-B"]
+      : ["CVE-HISTORY-A", "CVE-HISTORY-C"];
+  fs.writeFileSync(
+    output,
+    JSON.stringify({
+      SchemaVersion: 2,
+      Results: [
+        {
+          Target: "fixture-lock",
+          Class: "lang-pkgs",
+          Type: "npm",
+          Packages:
+            version === "1"
+              ? [
+                  {
+                    Name: "express",
+                    Version: version,
+                    Identifier: { PURL: purl },
+                  },
+                ]
+              : [],
+          Vulnerabilities: ids.map((id) => ({
+            VulnerabilityID: id,
+            PkgName: "express",
+            InstalledVersion: version,
+            PkgIdentifier: { PURL: purl },
+            Severity: "HIGH",
+          })),
+        },
+      ],
+    }),
+  );
+  console.error("history fixture only");
+  process.exit(0);
+}
+
 fs.writeFileSync(
   output,
   JSON.stringify({

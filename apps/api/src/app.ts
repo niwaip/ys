@@ -18,7 +18,7 @@ import { AssessmentsModule } from "./assessments/assessments.module";
 import { ProcessTrivyExecutor, type TrivyExecutor } from "./assessments/trivy";
 import { ContainersModule } from "./containers/containers.module";
 import { ReportsModule } from "./reports/reports.module";
-import {SoftwareHistoryModule} from "./software-history/software-history.module";
+import { SoftwareHistoryModule } from "./software-history/software-history.module";
 const CONFIG = Symbol("APP_CONFIG");
 Inject(CONFIG)(OperatorGuard, undefined, 0);
 Inject(CONFIG)(CustomersController, undefined, 0);
