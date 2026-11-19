@@ -123,6 +123,7 @@ export function DashboardPage({
       const result = await call<FindingsPage>("/dashboard/findings", {
         method: "POST",
         body: JSON.stringify({
+          object: data.scope.object ?? undefined,
           assessmentRefs: data.scope.assessmentRefs,
           from: data.scope.from ?? undefined,
           to: data.scope.to ?? undefined,
