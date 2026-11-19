@@ -105,7 +105,7 @@ export type CollectionSnapshot = {
   id: string;
   customerId: string;
   assetId: string;
-  entry: "manual" | "upload" | "pi";
+  entry: "manual" | "upload" | "pi" | "ssh";
   fileName: string;
   contentHash: string;
   note: string | null;

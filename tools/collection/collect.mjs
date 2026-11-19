@@ -69,11 +69,16 @@ function execute(profile, script, signal) {
       profile.host,
       "sh -s",
     ];
-    const child = spawn(profile.sshExecutable ?? "/usr/bin/ssh", args, {
-      shell: false,
-      env: { PATH: "/usr/bin:/bin" },
-      stdio: ["pipe", "pipe", "pipe"],
-    });
+    const local = profile.transport === "local";
+    const child = spawn(
+      local ? "/bin/sh" : (profile.sshExecutable ?? "/usr/bin/ssh"),
+      local ? ["-s"] : args,
+      {
+        shell: false,
+        env: { PATH: "/usr/bin:/bin" },
+        stdio: ["pipe", "pipe", "pipe"],
+      },
+    );
     let out = [],
       bytes = 0,
       done = false,

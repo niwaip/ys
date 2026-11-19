@@ -56,3 +56,15 @@ SSH强制BatchMode、StrictHostKeyChecking、专用known_hosts、指定身份文
 完整N01–N13不能标记全部结束：CSV自动创建原生对象、Windows待确认资料的网页重新关联、NetBox更多原生字段编辑/选项检索、大SBOM扩容、远端Trivy image产物生成，以及真实NetBox/Pi/只读SSH环境兼容验收仍待后续完成。现有代码和菜单可用不代表这些能力已经上线；本轮未部署8001服务。
 
 官方模型依据：[NetBox Device](https://netboxlabs.com/docs/netbox/models/dcim/device/)、[VirtualMachine](https://netboxlabs.com/docs/netbox/models/virtualization/virtualmachine/)、[REST API](https://netboxlabs.com/docs/netbox/integrations/rest-api/)。这些文档描述原生模型，不替代对YS现有NetBox版本的兼容验收。
+
+## 网页主机访问（2026-11-19追加）
+
+资产采集页默认使用“连接采集”：选择可读资产名称，再选择已关联连接或新建连接。手动与脚本上传保留独立页签，范围、Pi与来源细节折叠展示。基础采集直接调用固定采集器，无需Pi或目标安装Trivy；Pi为可选调用方式。容器目录仍需单独选择已授权范围。
+
+新建连接将当前客户的资产、地址、端口、账号、SSH凭证、公钥关联。凭证目前支持无口令SSH私钥，可在同客户内复用；不回显私钥。公钥读取只发现身份，操作员核对指纹并确认后才能保存；执行严格校验公钥。连接支持后台停用，停用后新任务拒绝执行。
+
+新增接口：`GET/POST /collections/credentials`，`POST /collections/connections`，`DELETE /collections/connections/:id`，`POST /collections/connections/host-key`。`POST /collections/jobs`显式传`method=ssh|pi`，旧客户端默认Pi。连接在执行时再次校验客户、资产及范围。
+
+凭证采用AES-256-GCM，AAD绑定客户和凭证编号；数据库保存密文，访问存储中的`master.key`权限0600。任务短暂生成独立0600私钥与固定known_hosts，结束清理，重启清理中断任务目录。必须连同数据库备份master.key；丢失后无法恢复已保存凭证。`YS_COLLECTION_STORE`可指定持久路径；默认PGlite数据目录内access子目录。该实现按现有单实例队列运行。
+
+静态连接支持`transport=local`，仅由服务端配置，用服务账号读取部署主机自身；网页不能创建本机执行连接、修改命令或传入密钥文件路径。YS测试连接使用该方式，容器授权默认关闭。此处仅基础资料收集，不代表漏洞评估已完成。

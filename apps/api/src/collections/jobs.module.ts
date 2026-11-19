@@ -1,3 +1,5 @@
+import { DirectCollectionExecutor } from "./direct-collection";
+import { CollectionAccessService, CollectionAccessController } from "./access";
 import {
   BadRequestException,
   ConflictException,
@@ -25,6 +27,7 @@ import {
 } from "./pi-collection";
 const submit = z
   .object({
+    method: z.enum(["ssh", "pi"]).default("pi"),
     assetId: z.uuid(),
     idempotencyKey: z.string().min(1).max(100),
     profileId: z.string().min(1).max(80),
@@ -49,8 +52,11 @@ export class CollectionJobsService {
     private readonly collections: CollectionsService,
     private readonly config: AppConfig,
     private readonly executor: CollectionExecutor,
+    private readonly access: CollectionAccessService,
+    private readonly direct: CollectionExecutor,
   ) {}
   async onModuleInit() {
+    await this.access.cleanInterrupted();
     const running = await this.db.query(
       "SELECT id,customer_id,details FROM collection_jobs WHERE status='running'",
     );
@@ -67,32 +73,27 @@ export class CollectionJobsService {
     this.controller?.abort();
     await this.draining;
   }
-  profiles(customerId: string) {
+  async profiles(customerId: string) {
     return {
       piConfigured: Boolean(this.config.pi?.executable),
-      items: (this.config.collection?.profiles ?? [])
-        .filter((p) => p.customerId === customerId)
-        .map((p) => ({
-          id: p.id,
-          label: p.label,
-          assetId: p.assetId,
-          scopes: p.allowDocker ? ["basic", "container-inventory"] : ["basic"],
-        })),
+      items: [
+        ...(await this.access.list(customerId)),
+        ...(this.config.collection?.profiles ?? [])
+          .filter((p) => p.customerId === customerId)
+          .map((p) => ({
+            id: p.id,
+            label: p.label,
+            assetId: p.assetId,
+            scopes: p.allowDocker
+              ? ["basic", "container-inventory"]
+              : ["basic"],
+            transport: p.transport ?? "ssh",
+            host: p.host,
+            credentialName:
+              p.transport === "local" ? "本机服务身份" : "服务器预配置",
+          })),
+      ],
     };
-  }
-  private profile(job: CollectionTaskInput) {
-    const profile = this.config.collection?.profiles.find(
-      (p) =>
-        p.id === job.profileId &&
-        p.customerId === job.customerId &&
-        p.assetId === job.assetId,
-    );
-    if (
-      !profile ||
-      (job.scope === "container-inventory" && !profile.allowDocker)
-    )
-      throw new ForbiddenException("连接引用未授权当前客户、目标或采集范围");
-    return profile;
   }
   private async persist(job: Job) {
     await this.db.query(
@@ -131,17 +132,22 @@ export class CollectionJobsService {
       customerId,
       assetId: input.assetId,
       profileId: input.profileId,
+      method: input.method,
       scope: input.scope,
       message: input.message,
-      status: this.config.pi?.executable ? "queued" : "unavailable",
+      status:
+        input.method === "ssh" || this.config.pi?.executable
+          ? "queued"
+          : "unavailable",
       snapshotId: null,
-      error: this.config.pi?.executable
-        ? null
-        : "Pi未配置；未连接目标，可使用手工或上传入口",
+      error:
+        input.method === "ssh" || this.config.pi?.executable
+          ? null
+          : "Pi未配置；未连接目标，可使用手工或上传入口",
       events: [],
       createdAt: new Date().toISOString(),
     };
-    if (job.status === "queued") this.profile(job);
+    if (job.status === "queued") await this.access.authorized(job);
     const saved = await this.db.query(
       "INSERT INTO collection_jobs(id,customer_id,asset_id,idempotency_key,input_hash,status,details) VALUES($1,$2,$3,$4,$5,$6,$7::jsonb) ON CONFLICT(customer_id,idempotency_key) DO NOTHING RETURNING id",
       [
@@ -189,10 +195,14 @@ export class CollectionJobsService {
         () => this.controller?.abort(),
         this.config.pi?.timeoutMs ?? 120000,
       );
+      let cleanup: () => Promise<void> = async () => {};
       try {
         await this.collections.assertTarget(job.customerId, job.assetId);
-        const profile = this.profile(job);
-        const data = await this.executor.execute(
+        const resolved = await this.access.resolve(job);
+        cleanup = resolved.cleanup;
+        const profile = resolved.profile;
+        const executor = job.method === "ssh" ? this.direct : this.executor;
+        const data = await executor.execute(
           job,
           profile,
           async (type, message) => {
@@ -207,7 +217,7 @@ export class CollectionJobsService {
         const snapshot = await this.collections.save(
           job.customerId,
           job.assetId,
-          "pi",
+          job.method === "ssh" ? "ssh" : "pi",
           `${job.id}.json`,
           JSON.stringify(data),
         );
@@ -231,6 +241,10 @@ export class CollectionJobsService {
             ? error.message
             : "固定采集工具失败或产物与目标冲突，未保存成功快照";
       } finally {
+        await cleanup().catch(() => {
+          job.error = "采集已结束，临时凭证文件清理失败，请管理员检查访问存储";
+          job.status = "failed";
+        });
         clearTimeout(timer);
         this.controller = undefined;
         await this.persist(job);
@@ -291,17 +305,28 @@ export class CollectionJobsModule {
     return {
       module: CollectionJobsModule,
       imports: [CollectionsModule],
-      controllers: [JobsController],
+      controllers: [JobsController, CollectionAccessController],
       providers: [
         {
+          provide: CollectionAccessService,
+          inject: [DATABASE],
+          useFactory: (db: Database) => new CollectionAccessService(db, config),
+        },
+        {
           provide: CollectionJobsService,
-          inject: [DATABASE, CollectionsService],
-          useFactory: (db: Database, collections: CollectionsService) =>
+          inject: [DATABASE, CollectionsService, CollectionAccessService],
+          useFactory: (
+            db: Database,
+            collections: CollectionsService,
+            access: CollectionAccessService,
+          ) =>
             new CollectionJobsService(
               db,
               collections,
               config,
               executor ?? new PiCollectionExecutor(config.pi ?? {}),
+              access,
+              executor ?? new DirectCollectionExecutor(),
             ),
         },
       ],

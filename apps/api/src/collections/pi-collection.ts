@@ -19,6 +19,7 @@ export type CollectionTaskInput = {
   profileId: string;
   scope: "basic" | "container-inventory";
   message: string;
+  method?: "ssh" | "pi";
 };
 export interface CollectionExecutor {
   execute(
@@ -38,21 +39,22 @@ export class PiCollectionExecutor implements CollectionExecutor {
   ) {
     if (!this.config.executable)
       throw new AgentExecutionError("unavailable", "Pi未配置，未执行采集");
-    for (const [path, secret] of [
-      [profile.identityFile, true],
-      [profile.knownHostsFile, false],
-    ] as const) {
-      try {
-        const file = await stat(path);
-        if (!file.isFile() || (secret && (file.mode & 0o077) !== 0))
-          throw new Error("mode");
-      } catch {
-        throw new AgentExecutionError(
-          "unavailable",
-          "SSH认证或可信主机文件不可用；请由管理员检查受控连接配置",
-        );
+    if (profile.transport !== "local")
+      for (const [path, secret] of [
+        [profile.identityFile, true],
+        [profile.knownHostsFile, false],
+      ] as const) {
+        try {
+          const file = await stat(path);
+          if (!file.isFile() || (secret && (file.mode & 0o077) !== 0))
+            throw new Error("mode");
+        } catch {
+          throw new AgentExecutionError(
+            "unavailable",
+            "SSH认证或可信主机文件不可用；请由管理员检查受控连接配置",
+          );
+        }
       }
-    }
     const root = resolve(
       dirname(fileURLToPath(import.meta.url)),
       "../../../..",

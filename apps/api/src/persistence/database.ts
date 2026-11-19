@@ -123,6 +123,10 @@ CREATE TABLE windows_snapshots(id uuid PRIMARY KEY,customer_id text NOT NULL,ass
     version: 21,
     sql: `ALTER TABLE collection_snapshots ADD COLUMN summary jsonb;`,
   },
+  {
+    version: 22,
+    sql: `CREATE TABLE access_credentials(id uuid PRIMARY KEY,customer_id text NOT NULL REFERENCES customers(id),name text NOT NULL,sealed jsonb NOT NULL,created_by text NOT NULL,created_at timestamptz NOT NULL DEFAULT now(),UNIQUE(customer_id,id));CREATE TABLE asset_connections(id uuid PRIMARY KEY,customer_id text NOT NULL,asset_id uuid NOT NULL,credential_id uuid NOT NULL,name text NOT NULL,host text NOT NULL,port integer NOT NULL,username text NOT NULL,host_key text NOT NULL,allow_docker boolean NOT NULL DEFAULT false,active boolean NOT NULL DEFAULT true,created_by text NOT NULL,created_at timestamptz NOT NULL DEFAULT now(),UNIQUE(customer_id,id),FOREIGN KEY(customer_id,asset_id) REFERENCES assets(customer_id,id),FOREIGN KEY(customer_id,credential_id) REFERENCES access_credentials(customer_id,id));`,
+  },
 ];
 export async function openDatabase(url: string): Promise<Database> {
   let raw: Queryable & { close(): Promise<void> };

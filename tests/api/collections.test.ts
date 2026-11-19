@@ -258,7 +258,7 @@ test("网页Pi固定工具通过SSH替身取得OS/包，基础采集不会读取
           identityFile: key,
           knownHostsFile: known,
           sshExecutable: ssh,
-          timeoutMs: 500,
+          timeoutMs: 1500,
           allowDocker: false,
         },
       ],

@@ -4,9 +4,11 @@ export const configSchema = z
   .object({
     collection: z
       .object({
+        storeDir: z.string().min(1).optional(),
         profiles: z
           .array(
             z.object({
+              transport: z.enum(["ssh", "local"]).optional(),
               id: identity,
               label: z.string().min(1).max(100),
               customerId: identity,
@@ -113,9 +115,13 @@ export const configSchema = z
 export type AppConfig = z.infer<typeof configSchema>;
 export function loadConfig(): AppConfig {
   return configSchema.parse({
-    collection: process.env.YS_COLLECTION_PROFILES
-      ? { profiles: JSON.parse(process.env.YS_COLLECTION_PROFILES) }
-      : undefined,
+    collection:
+      process.env.YS_COLLECTION_PROFILES || process.env.YS_COLLECTION_STORE
+        ? {
+            profiles: JSON.parse(process.env.YS_COLLECTION_PROFILES ?? "[]"),
+            storeDir: process.env.YS_COLLECTION_STORE,
+          }
+        : undefined,
     netbox:
       process.env.YS_NETBOX_URL ||
       process.env.YS_NETBOX_TOKEN ||
