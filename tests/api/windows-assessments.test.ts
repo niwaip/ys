@@ -267,3 +267,49 @@ test("规则来源哈希校验、客户限制、幂等冲突与重启历史", as
   expect(reloaded.result).toEqual(finished.result);
   expect(reloaded.input.ruleHash).toBe(rule.contentHash);
 });
+
+test("关闭页面与后端不会丢失已排队的固定Windows任务", async () => {
+  const http = await start(),
+    snapshotId = await seed(http),
+    rule = await rules(http);
+  const job = (
+    await http
+      .post("/api/customers/acme/assessments")
+      .set(auth)
+      .send({
+        snapshotId,
+        ruleImportId: rule.id,
+        idempotencyKey: "queued-restart",
+      })
+      .expect(202)
+  ).body;
+  await app.close();
+  app = await createApp({ ...config, databaseUrl: `pglite://${directory}` });
+  const result = await done(request(app.getHttpServer()), job.id);
+  expect(result).toMatchObject({
+    status: "succeeded",
+    target: { kind: "windows", snapshotId },
+    input: { ruleImportId: rule.id },
+    result: { findings: [{ applicability: "fixed" }] },
+  });
+});
+
+test("同一快照FullBuild与Build/UBR冲突时保留未知而不确认修复", async () => {
+  const http = await start(),
+    rule = await rules(http),
+    snapshotId = await seed(http, { ...host, FullBuild: "10.0.25398.2700" });
+  const job = (
+    await http
+      .post("/api/customers/acme/assessments")
+      .set(auth)
+      .send({
+        snapshotId,
+        ruleImportId: rule.id,
+        idempotencyKey: "contradiction",
+      })
+      .expect(202)
+  ).body;
+  expect((await done(http, job.id)).result.findings[0].applicability).toBe(
+    "unknown",
+  );
+});

@@ -29,7 +29,7 @@
 
 ## 判定规则
 
-产品名称只接受 `Windows Server 2022`，允许 Microsoft 前缀、Standard/Datacenter 及其 Evaluation 后缀；Build 必须精确字符串 `20348`，架构接受 x64/amd64/64-bit。其他或未知产品/分支/架构返回未知，不进行跨分支数值比较。
+产品名称只接受 `Windows Server 2022`，允许 Microsoft 前缀、Standard/Datacenter 及其 Evaluation 后缀；Build 必须精确字符串 `20348`，架构接受 x64/amd64/64-bit。其他或未知产品/分支/架构返回未知，不进行跨分支数值比较。提供 FullBuild 时只接受 20348.UBR 或 10.0.20348.UBR，并要求与 OSBuild/已知 UBR 一致；冲突或未知格式保持未知。
 
 完成修复确认还必须同时具备：采集时间已知；来源 Overall 为 COMPLETE/SUCCESS/SUCCEEDED；没有 FAILED/PARTIAL 子状态；KB 清单存在（可以明确为空）；KBInventoryComplete=true；RebootPending=false。缺失重启状态保持未知，不能当作 false；部分或失败采集不确认 fixed。
 
