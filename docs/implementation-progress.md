@@ -17,11 +17,13 @@
 | T09 | [通过 Pi 对话完成一次公开 PHP CVE 查询](https://github.com/niwaip/ys/issues/10) | 已集成 | `6059ec4` |
 | T10 | [通过客户对话查询和解释已有评估](https://github.com/niwaip/ys/issues/11) | 已集成 | `1743c4c` |
 | T11 | [重扫后查看历史并比较评估版本](https://github.com/niwaip/ys/issues/12) | 已集成 | `084977d` |
-| T12 | [按客户查看可下钻的风险 Dashboard](https://github.com/niwaip/ys/issues/13) | 待实现 | — |
+| T12 | [按客户查看可下钻的风险 Dashboard](https://github.com/niwaip/ys/issues/13) | 已集成；审查修复中 | `173794c` |
 | T13 | [生成绑定评估依据的事实报告草稿](https://github.com/niwaip/ys/issues/14) | 已集成 | `ce49de8` |
-| T14 | [用 Pi 生成并校验报告叙述](https://github.com/niwaip/ys/issues/15) | 待实现 | — |
+| T14 | [用 Pi 生成并校验报告叙述](https://github.com/niwaip/ys/issues/15) | 已集成；审查修复中 | `2877c31` |
 | T15 | [内部复核报告并导出正式修订](https://github.com/niwaip/ys/issues/16) | 已集成 | `41c8aa1` |
 
 运行约束：T03 起工具返回 `agent thread limit reached`，新代理及唤醒均被拒绝。主代理接手合并，仍在运行的实现代理在新工作树及分支继续后续票；无法继续保证每票全新代理上下文。独立分支、TDD、集成验证及最终审查要求保留。T03/T04 合并后 11 API 测试与构建通过，T04 工作树完整 4 浏览器流程通过。
 
 后续限制恢复：已有代理可继续工作，但仍无法创建新代理；按独立分支继续，并由主代理处理集成。曾两次因额度中断；未完成工作保留在工作树，恢复后复验，不计作已完成。当前T15+T10整合后38项测试与构建通过；T11另3项API、构建及浏览器流程通过，已集成。
+
+全部15票合入后的业务基线为 `8ca43a2`。Node.js 24.22.3 下48项测试、构建及15项默认浏览器流程通过；专用Pi成功替身场景由单独配置执行，默认跳过。独立Standards审查0项，Spec审查3项（报告生成文字、文字编辑、Dashboard对象筛选一致性），进入单独修复分支。此时不可计为最终验收完成。代理容量现已允许新建上下文，修复由新的独立实现代理负责。
