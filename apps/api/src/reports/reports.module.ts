@@ -1,3 +1,10 @@
+import {
+  ReportNarrationService,
+  ReportNarrationController,
+  type ReportNarrationExecutor,
+} from "./narration";
+import type { Operator } from "../auth/auth";
+import { AgentExecutionError } from "../agent/errors";
 import { ReportReviewService, ReportReviewController } from "./review";
 import type { WindowsAssessment } from "../../../../packages/contracts/windows-assessments";
 import {
@@ -492,7 +499,14 @@ for (const method of [
 Inject(ReportsService)(ReportsController, undefined, 0);
 @Module({})
 export class ReportsModule {
-  static register(assessmentsModule: DynamicModule): DynamicModule {
+  static register(
+    assessmentsModule: DynamicModule,
+    options: {
+      executor?: ReportNarrationExecutor;
+      operators?: Operator[];
+      timeoutMs?: number;
+    } = {},
+  ): DynamicModule {
     return {
       module: ReportsModule,
       imports: [
@@ -504,8 +518,36 @@ export class ReportsModule {
         WindowsModule,
         WindowsAssessmentsModule,
       ],
-      controllers: [ReportsController, ReportReviewController],
+      controllers: [
+        ReportsController,
+        ReportReviewController,
+        ReportNarrationController,
+      ],
       providers: [
+        {
+          provide: ReportNarrationService,
+          inject: [DATABASE, ReportsService, ReportReviewService],
+          useFactory: (
+            db: Database,
+            reports: ReportsService,
+            review: ReportReviewService,
+          ) =>
+            new ReportNarrationService(
+              db,
+              reports,
+              review,
+              options.executor ?? {
+                execute: async () => {
+                  throw new AgentExecutionError(
+                    "unavailable",
+                    "Pi报告叙述未配置，固定事实草稿保留",
+                  );
+                },
+              },
+              options.operators ?? [],
+              options.timeoutMs,
+            ),
+        },
         {
           provide: ReportReviewService,
           inject: [DATABASE],
@@ -535,7 +577,7 @@ export class ReportsModule {
           ) => new ReportsService(db, a, l, s, i, c, w, wa),
         },
       ],
-      exports: [ReportsService, ReportReviewService],
+      exports: [ReportsService, ReportReviewService, ReportNarrationService],
     };
   }
 }

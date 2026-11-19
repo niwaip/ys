@@ -65,3 +65,7 @@ CVE引用必须是终态任务。queued/running 返回409，避免把尚在变�
 HTML已在本片明确为首个正式交付格式，不调用外部转换器。下载请求在授权API取得文件，访问令牌不进入URL或交付文件；正文为转义后的保护事实和受控段落，独立HTML不运行脚本、加载外部素材。预览与正式输出使用同一renderer和完整性验证，正式文件标记已内部复核，保留范围/来源/未知/覆盖缺口、复核及交付时间。Word/Excel/PDF未扩展。
 
 `ReportReviewService` 导出 `revise/transition/history/audits/export`，T14经过校验的AI段落应调用同一 `revise(customer,reportId,baseRevisionId,narrative,operator)`，不能直接改DB事实或覆盖当前修订。异步生成期间已有新修订时409，调用方保留诊断而非覆盖。所有服务调用前仍需已授权客户上下文。未来新增受控模板必须保持事实引用完整性与同一复核状态机。
+
+## T14：受控AI提案
+
+固定草稿、内部复核与正式交付均可独立使用。可选AI任务绑定明确baseRevision/factHash，模型只组织保护段落；成功仍生成新draft，失败保留原稿。summary/recommendations为最多各一个的受控可选模板，正文由服务端固定事实及核查建议生成，不接受任意文字覆盖。任务API、工具/脚本/skill及本地假Pi验证见 [报告AI叙述](report-narration.md)。

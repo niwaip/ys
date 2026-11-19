@@ -5,6 +5,7 @@ export const configSchema = z
     pi: z
       .object({
         executable: z.string().min(1).optional(),
+        timeoutMs: z.number().int().min(50).max(3600000).optional(),
         scriptPath: z.string().min(1).optional(),
         artifactRoot: z.string().min(1).optional(),
         pythonExecutable: z.string().min(1).optional(),
@@ -55,6 +56,9 @@ export function loadConfig(): AppConfig {
   return configSchema.parse({
     pi: {
       executable: process.env.YS_PI_EXECUTABLE || undefined,
+      timeoutMs: process.env.YS_PI_TIMEOUT_MS
+        ? Number(process.env.YS_PI_TIMEOUT_MS)
+        : undefined,
       scriptPath: process.env.YS_CVE_SCRIPT || undefined,
       artifactRoot: process.env.YS_AGENT_ARTIFACT_ROOT || undefined,
       pythonExecutable: process.env.YS_PYTHON_EXECUTABLE || undefined,

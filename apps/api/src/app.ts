@@ -1,4 +1,6 @@
 import { DashboardModule } from "./dashboard/dashboard.module";
+import { configuredReportNarrator } from "./reports/pi-narration";
+import type { ReportNarrationExecutor } from "./reports/narration";
 import "reflect-metadata";
 import { Inject, Module, type DynamicModule } from "@nestjs/common";
 import { APP_GUARD, NestFactory } from "@nestjs/core";
@@ -69,6 +71,8 @@ export async function createApp(
   features: DynamicModule["imports"] = [],
   runtime: {
     trivyExecutor?: TrivyExecutor;
+    reportNarrationExecutor?: ReportNarrationExecutor;
+    reportNarrationTimeoutMs?: number;
     customerReadExecutor?: CustomerReadExecutor;
   } = {},
 ) {
@@ -105,7 +109,13 @@ export async function createApp(
             ? [AgentModule.register(configuredPublicExecutor(config.pi))]
             : []),
           assessments,
-          ReportsModule.register(assessments),
+          ReportsModule.register(assessments, {
+            executor:
+              runtime.reportNarrationExecutor ??
+              configuredReportNarrator(config.pi),
+            operators: config.operators,
+            timeoutMs: runtime.reportNarrationTimeoutMs ?? config.pi?.timeoutMs,
+          }),
           history,
           DashboardModule.register(assessments, history),
           ConversationsModule.register(

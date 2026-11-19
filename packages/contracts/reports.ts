@@ -39,7 +39,14 @@ export type ReportFacts = {
   coverageIssues: string[];
 };
 export type ReportBlock = {
-  templateId: "scope" | "assessment" | "lifecycle" | "coverage" | "evidence";
+  templateId:
+    | "scope"
+    | "assessment"
+    | "lifecycle"
+    | "coverage"
+    | "evidence"
+    | "summary"
+    | "recommendations";
   factRef?: string;
   wording: "standard" | "concise";
 };
