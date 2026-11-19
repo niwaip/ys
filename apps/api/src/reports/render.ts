@@ -68,13 +68,15 @@ export function validateNarrative(
                 "lifecycle",
                 "coverage",
                 "evidence",
+                "summary",
+                "recommendations",
               ]),
               factRef: z.uuid().optional(),
               wording: z.enum(["standard", "concise"]),
             })
             .strict(),
         )
-        .max(43),
+        .max(45),
     })
     .strict()
     .safeParse(input);
@@ -83,7 +85,22 @@ export function validateNarrative(
   const key = (x: { templateId: string; factRef?: string }) =>
     `${x.templateId}:${x.factRef ?? ""}`;
   const expected = defaultNarrative(facts).blocks.map(key).sort();
-  const actual = parsed.data.blocks.map(key).sort();
+  const extra = parsed.data.blocks.filter(
+    (b) => b.templateId === "summary" || b.templateId === "recommendations",
+  );
+  if (
+    extra.some((b) => b.factRef !== undefined) ||
+    new Set(extra.map((b) => b.templateId)).size !== extra.length
+  )
+    throw new BadRequestException(
+      "摘要/建议只能使用无事实覆盖的受控模板且不重复",
+    );
+  const actual = parsed.data.blocks
+    .filter(
+      (b) => b.templateId !== "summary" && b.templateId !== "recommendations",
+    )
+    .map(key)
+    .sort();
   if (JSON.stringify(actual) !== JSON.stringify(expected))
     throw new BadRequestException(
       "段落事实引用不符、重复或缺少必要范围/覆盖/证据",
@@ -106,6 +123,10 @@ export function renderReport(revision: ReportRevision): string {
   const h = escapeHtml;
   const sections = narrative.blocks
     .map((block) => {
+      if (block.templateId === "summary")
+        return `<section><h2>事实摘要</h2><p>明确范围包含 ${f.scope.length} 个对象输入版本；结果条目 ${h(f.statistics.findingInstances)}；唯一CVE ${h(f.statistics.uniqueCveCount)}。未知、失败、弱匹配和覆盖缺口需结合下方明细解读，不能据摘要判断无风险。</p></section>`;
+      if (block.templateId === "recommendations")
+        return "<section><h2>后续核查建议</h2><p>依据选定版本、来源和覆盖缺口安排核查；补充未知版本、日期及完整性证据后重新评估。修复资料须经变更评审验证，本建议不表示已经修复或已确认安全。</p></section>";
       if (block.templateId === "scope")
         return `<section><h2>明确报告范围</h2><p>客户 ${h(f.customerId)}；事实生成时间 ${h(f.generatedAt)}。</p><ul>${f.scope.map((t) => `<li>${h(t.kind)} ${h(t.name)} / ${h(t.version)}；对象 ${h(t.objectId)}；输入版本 ${h(t.versionId)}；来源身份 ${h(t.sourceIdentity ? JSON.stringify(t.sourceIdentity) : "未提供附加身份")}</li>`).join("")}</ul><p>评估结果条目 ${h(f.statistics.findingInstances)}；唯一 CVE 标识 ${h(f.statistics.uniqueCveCount)}。这些数字仅统计所选评估记录，不能解释为已确认受影响资产数。</p><p>适用性分布 ${h(JSON.stringify(f.statistics.applicabilityCounts ?? {}))}；明确affected条目 ${h(f.statistics.confirmedAffectedCount)}（其他状态不计入，不表示其无风险）。严重程度（评估原值）：${h(JSON.stringify(f.statistics.severityCounts))}。生命周期匹配：精确 ${h(f.statistics.lifecycleExact)} / 弱 ${h(f.statistics.lifecycleWeak)} / 未匹配 ${h(f.statistics.lifecycleUnmatched)}。</p></section>`;
       if (block.templateId === "assessment") {

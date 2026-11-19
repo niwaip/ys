@@ -1,3 +1,4 @@
+import { ReportNarrationPanel } from "./ReportNarrationPanel";
 import { ReportReviewPanel } from "./ReportReviewPanel";
 import { useEffect, useRef, useState } from "react";
 import type { AnyAssessmentPage as AssessmentPage } from "../../../../../packages/contracts/assessments";
@@ -104,7 +105,8 @@ export function ReportsPage({
               }
             />
             {a.id} · {a.status} · 输入版本 {JSON.stringify(a.target)} /{" "}
-            {("version" in a.input ? a.input.version : null) ?? "未知版本"} · 发现 {a.findingCount ?? "未知"} ·{" "}
+            {("version" in a.input ? a.input.version : null) ?? "未知版本"} ·
+            发现 {a.findingCount ?? "未知"} ·{" "}
             {a.coverage?.status ?? "无可用结果"}
           </label>
         ))}
@@ -182,6 +184,16 @@ export function ReportsPage({
             {report.revision.status} · SHA-256 {report.revision.factHash}
           </p>
           <p>仅受控段落与保护事实；正式交付需通过内部复核并绑定明确修订。</p>
+          <ReportNarrationPanel
+            report={report}
+            customerId={customerId}
+            token={token}
+            onUnauthorized={onUnauthorized}
+            onRevision={async (revision) => {
+              await preview({ ...report, revision });
+              await refresh();
+            }}
+          />
           <ReportReviewPanel
             report={report}
             customerId={customerId}

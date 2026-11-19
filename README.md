@@ -95,3 +95,5 @@ API 测试通过真实 HTTP 边界使用临时 PGlite 数据目录，结束自�
 ## Windows 补丁证据评估
 
 “Windows 补丁评估”选择固定主机快照和来源规则，通过共用任务接口离线判定。首片限定 Windows Server 2022 LTSC / 20348 / x64；上传的人工整理规则范围始终标记部分覆盖。采集不完整、未知或待重启时不会确认已修复。来源 JSON、判定语义和消费者边界见 [Windows 评估契约](docs/windows-assessments.md)。
+
+报告可选“AI 受控叙述”后台任务，基于明确修订生成保护事实不变的新草稿；失败保留固定模板，成功仍需内部复核。Pi固定工具、任务幂等与专用本地替身测试见 [报告AI叙述](docs/report-narration.md)。
