@@ -49,6 +49,7 @@ export type ReportBlock = {
     | "recommendations";
   factRef?: string;
   wording: "standard" | "concise";
+  text?: string;
 };
 export type ReportNarrative = {
   schemaVersion: "controlled-paragraphs-v1";

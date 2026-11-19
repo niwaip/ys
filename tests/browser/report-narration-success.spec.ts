@@ -62,6 +62,11 @@ test("fixed local Pi fixture creates an AI draft that still requires internal re
   await expect(
     page.getByRole("button", { name: "下载正式 HTML" }),
   ).toBeDisabled();
+  await expect(
+    page
+      .frameLocator('iframe[title="事实报告草稿"]')
+      .getByText(/建议复核来源证据，以便保留复核依据/),
+  ).toBeVisible();
   const current = await (
     await request.get(`${base}/reports/${report.id}`, { headers })
   ).json();

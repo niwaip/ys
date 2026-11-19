@@ -52,7 +52,7 @@ CVE引用必须是终态任务。queued/running 返回409，避免把尚在变�
 
 | 接口（报告前缀 `/:reportId`） | 行为 |
 | --- | --- |
-| POST `/revisions` `{baseRevisionId,narrative}` | 新草稿修订，保护事实由服务端复制；只允许受控段落/措辞/密度，不接受facts；基于过期修订409 |
+| POST `/revisions` `{baseRevisionId,narrative}` | 新草稿修订，保护事实由服务端复制；允许受控文字/段落/措辞/密度，不接受facts；基于过期修订409 |
 | GET `/revisions` | 同客户报告的修订历史，按修订号升序 |
 | POST `/revisions/:revisionId/submit-review` `{}` | draft→in_review，记录提交人/时间 |
 | POST `/revisions/:revisionId/approve` `{}` | in_review→approved，记录复核人/时间 |
@@ -68,4 +68,19 @@ HTML已在本片明确为首个正式交付格式，不调用外部转换器。�
 
 ## T14：受控AI提案
 
-固定草稿、内部复核与正式交付均可独立使用。可选AI任务绑定明确baseRevision/factHash，模型只组织保护段落；成功仍生成新draft，失败保留原稿。summary/recommendations为最多各一个的受控可选模板，正文由服务端固定事实及核查建议生成，不接受任意文字覆盖。任务API、工具/脚本/skill及本地假Pi验证见 [报告AI叙述](report-narration.md)。
+固定草稿、内部复核与正式交付均可独立使用。可选AI任务绑定明确baseRevision/factHash，模型组织保护段落及引用绑定的文字；成功仍生成新draft，失败保留原稿。summary/recommendations为最多各一个的受控可选模板，保护正文由服务端生成；text 接受下述有限中文句法文字，插值绑定事实。任务API、工具/脚本/skill及本地假Pi验证见 [报告AI叙述](report-narration.md)。
+
+
+## 受控文字通道
+
+`ReportBlock.text?: string`（最多4000字符）是 AI 和人员共用的实际文字字段；原有无 text 修订保持兼容，事实hash与评估不变。页面每段有文字输入框，并展示本报告可用引用、允许说明与句法目录。输入可以组合、重排多句，也可改连接词、说明短语、动作与目的；保存后服务端解析并形成新draft，必须重新复核。保护事实正文始终保留。
+
+语法与引用唯一实现为 `packages/contracts/report-language.ts`：说明句为 `<围绕|针对|结合>【token】，<该引用允许的说明短语>。`；建议句为 `<因此，|接下来，|空>建议<目录动作>，以便<目录目的>。`。例如：
+
+```
+结合【coverage】，这些缺口限制结果解释，需补充证据后复评。因此，建议补充覆盖资料，以便完善后续评估输入。
+```
+
+服务器从绑定的完整事实生成引用目录并插值，模型或人员无法提供替代值。scope展开明确对象与输入身份；findings仅在结果数已知时存在；coverage仅在覆盖缺口非空时存在；assessment/lifecycle引用仅包含该报告已选评估。每个引用列出可用解释，覆盖解释只能搭配coverage，发现解释只能搭配findings；补充覆盖建议须先引用coverage，其他保守核查建议须先有引用说明句。未知引用、无依据组合、额外数字/日期/判定、未列入语法的文字或HTML都会拒绝，并返回具体原因。
+
+这是有限语言的完整语法与证据条件校验，不声称能验证任意自然语言语义。当前可表达所选输入、发现的解读限制、覆盖缺口影响及后续核查建议；扩展词法或事实解释时应增加明确证据条件和接口行为测试。不能以去掉数字的正则过滤冒充事实校验。

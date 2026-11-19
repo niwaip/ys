@@ -38,18 +38,23 @@ process.stdin.on("data", async (chunk) => {
         toolName: "ys_report_proposal",
         toolCallId: "proposal",
       });
-      await tools
-        .get("ys_report_proposal")
-        .execute(
-          "proposal",
-          {
-            narrative: {
-              ...input.allowedNarrative,
-              blocks: input.allowedNarrative.blocks.slice().reverse(),
-            },
+      await tools.get("ys_report_proposal").execute(
+        "proposal",
+        {
+          narrative: {
+            ...input.allowedNarrative,
+            blocks: [
+              {
+                templateId: "summary",
+                wording: "standard",
+                text: "针对【scope】，请结合保护事实解读。接下来，建议复核来源证据，以便保留复核依据。",
+              },
+              ...input.allowedNarrative.blocks.slice().reverse(),
+            ],
           },
-          new AbortController().signal,
-        );
+        },
+        new AbortController().signal,
+      );
       send({
         type: "tool_execution_end",
         toolName: "ys_report_proposal",

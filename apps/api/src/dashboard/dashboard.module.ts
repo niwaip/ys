@@ -132,45 +132,17 @@ export class DashboardService {
     customer: string,
     input: DashboardRequest & { limit: number; offset: number },
   ) {
-    if (input.from && input.to && Date.parse(input.from) > Date.parse(input.to))
-      throw new BadRequestException("开始时间不能晚于结束时间");
-    const rows: DashboardObject["findings"] = [],
-      targets = new Set<string>();
-    for (const id of input.assessmentRefs ?? []) {
-      const job = await this.assessments.get(customer, id),
-        target = identity(job),
-        key = `${target.kind}:${target.id}`;
-      if (targets.has(key))
-        throw new BadRequestException("同一对象不能累计多个批次");
-      targets.add(key);
-      if (job.status !== "succeeded" || !job.result) continue;
-      const at = Date.parse(job.createdAt);
-      if (
-        (input.from && at < Date.parse(input.from)) ||
-        (input.to && at > Date.parse(input.to))
-      )
-        continue;
-      rows.push(
-        ...job.result.findings.map((f) => ({
-          assessmentId: job.id,
-          findingId: f.id,
-          cve: f.vulnerabilityId,
-          severity: f.severity,
-          applicability: f.applicability,
-          packageName: f.packageName,
-          installedVersion: f.installedVersion,
-          fixedVersion: f.fixedVersion,
-        })),
-      );
-    }
+    // Use the same object ownership, current-input and time-range resolution as the overview.
+    const view = await this.view(customer, input);
+    const rows = view.objects.flatMap((object) => object.findings);
     return {
       items: rows.slice(input.offset, input.offset + input.limit),
       total: rows.length,
       limit: input.limit,
       offset: input.offset,
-      assessmentRefs: input.assessmentRefs ?? [],
-      from: input.from ?? null,
-      to: input.to ?? null,
+      assessmentRefs: view.scope.assessmentRefs,
+      from: view.scope.from,
+      to: view.scope.to,
     };
   }
   async view(

@@ -1,4 +1,8 @@
 import {
+  narrationGrammar,
+  narrationReferences,
+} from "../../../../packages/contracts/report-language";
+import {
   BadRequestException,
   ConflictException,
   Controller,
@@ -224,6 +228,10 @@ export class ReportNarrationService {
           statistics: revision.facts.statistics,
           coverageIssues: revision.facts.coverageIssues,
           allowedNarrative: revision.narrative,
+          language: {
+            grammar: narrationGrammar,
+            references: narrationReferences(revision.facts),
+          },
           optionalTemplates: ["summary", "recommendations"],
         };
         const raw = await Promise.race([
@@ -254,6 +262,10 @@ export class ReportNarrationService {
           revision.facts,
           parsed.data.narrative,
         );
+        if (!narrative.blocks.some((block) => block.text?.includes("建议")))
+          throw Error(
+            "AI提案须提供引用事实的说明文字和建议句，不能仅返回段落枚举",
+          );
         await emit("validated", "受控模板、事实引用和覆盖段落校验通过");
         const next = await this.review.revise(
           job.customerId,

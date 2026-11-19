@@ -43,7 +43,7 @@ export default function (pi) {
     name: "ys_report_proposal",
     label: "保存受控报告段落提案",
     description:
-      "使用绑定事实引用和固定模板提交段落排列、措辞及密度，后端再校验。",
+      "使用绑定事实引用和language目录句法提交text说明/建议文字、段落排列及密度，后端再校验。",
     parameters: {
       type: "object",
       properties: {
@@ -69,6 +69,7 @@ export default function (pi) {
                     ],
                   },
                   factRef: { type: "string" },
+                  text: { type: "string", maxLength: 4000 },
                   wording: { enum: ["standard", "concise"] },
                 },
                 required: ["templateId", "wording"],
