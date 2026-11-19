@@ -35,3 +35,5 @@
 最终业务提交 `8dbeb24`：48项API/进程测试通过（Node24.22.3）；构建通过；默认浏览器15项通过，专用成功Pi场景默认跳过并通过独立配置另跑1项。报告文字编辑、事实保持、重新复核、固定HTML交付，以及Dashboard双对象范围一致性均已验证。两位新上下文独立审查者复核完整规格与修复，Standards 0项、Spec 0项未解决发现。详细证据和边界见 [集成验收](verification/integration.md) 与 [最终双轴审查](verification/final-review.md)。所有T01–T15已集成；PR未合并，未部署，未进行真实工具或客户扫描验证。截图已复制到集成目录 `output/verification/dashboard.png` 后归档任务工作树。
 
 后续部署及缺陷：用户随后授权远端8001启动服务；版本eed5d66部署为ys.service。真实HTTP菜单验收复现randomUUID不受支持导致React整页空白，修复f3ea656已部署。新增HTTP兼容菜单回归，完整默认browser16通过、独立假Pi成功1通过；远端桌面/手机52次菜单切换无异常。详见 [HTTP页面验收](verification/http-navigation.md)。T01–T15仅代表首片实现完成：真实工具配置/联调、真实资料验收和PR合并仍未完成，不标记整个项目生产收尾。
+
+2026-11-19后续：用户授权更新8001，应用版本1e68dca已部署；原数据库与凭据保留。真实HTTP桌面/手机各28次菜单往返，56次无页面异常，登录和采集接口200。配置仍为本地资产模式，NetBox/Pi/SSH采集/Trivy未配置，未执行真实采集。详见[部署验证](verification/deployment-1e68dca.md)。
