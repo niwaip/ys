@@ -1,6 +1,6 @@
 # YS · 客户资产风险工作台
 
-按客户建立、查看主机资产的最小完整应用。React + Vite 前端、NestJS API、TypeScript 业务契约与 PostgreSQL 持久化按功能组织。当前实现人工主机建档与 CSV 清单预览/原子导入，不展示虚构扫描结果。
+按客户管理资产、软件与容器 SBOM、CVE 和 EOS/EOL 评估，以及报告的生成、内部复核和交付。React + Vite 前端、NestJS API、TypeScript 业务契约与 PostgreSQL 持久化按功能组织。工具结果保存来源与覆盖缺口；Pi 通过限定的 skill 和工具处理查询与报告叙述。
 
 ## 本地运行
 
