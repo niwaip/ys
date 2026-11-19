@@ -20,6 +20,10 @@ const migrations = [
     sql: `CREATE TABLE customer_conversations(id uuid PRIMARY KEY,customer_id text NOT NULL REFERENCES customers(id),idempotency_key text NOT NULL,input_hash text NOT NULL,details jsonb NOT NULL,created_at timestamptz NOT NULL DEFAULT now(),UNIQUE(customer_id,idempotency_key));`,
   },
   {
+    version: 15,
+    sql: `ALTER TABLE report_revisions ADD CONSTRAINT report_revision_scope UNIQUE(customer_id,report_id,id); CREATE TABLE report_audit(sequence bigserial PRIMARY KEY,id uuid UNIQUE NOT NULL,customer_id text NOT NULL,report_id uuid NOT NULL,revision_id uuid NOT NULL,action text NOT NULL,actor jsonb NOT NULL,details jsonb NOT NULL,created_at timestamptz NOT NULL DEFAULT now(),FOREIGN KEY(customer_id,report_id,revision_id) REFERENCES report_revisions(customer_id,report_id,id)); CREATE TABLE report_deliveries(id uuid PRIMARY KEY,customer_id text NOT NULL,report_id uuid NOT NULL,revision_id uuid NOT NULL,html text NOT NULL,result jsonb NOT NULL,UNIQUE(customer_id,revision_id),FOREIGN KEY(customer_id,report_id,revision_id) REFERENCES report_revisions(customer_id,report_id,id));`,
+  },
+  {
     version: 6,
     sql: `CREATE TABLE container_images(id uuid PRIMARY KEY,customer_id text NOT NULL REFERENCES customers(id),name text NOT NULL,source text NOT NULL,created_at timestamptz NOT NULL DEFAULT now(),UNIQUE(customer_id,id));CREATE TABLE container_versions(id uuid PRIMARY KEY,customer_id text NOT NULL,container_id uuid NOT NULL,import_id uuid NOT NULL,version text,details jsonb NOT NULL,created_at timestamptz NOT NULL DEFAULT now(),UNIQUE(customer_id,id),UNIQUE(customer_id,import_id),FOREIGN KEY(customer_id,container_id) REFERENCES container_images(customer_id,id),FOREIGN KEY(customer_id,import_id) REFERENCES import_materials(customer_id,id));CREATE INDEX container_versions_image ON container_versions(customer_id,container_id,created_at DESC);`,
   },
