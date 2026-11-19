@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import type { AssessmentPage } from "../../../../../packages/contracts/assessments";
+import type { AnyAssessmentPage as AssessmentPage } from "../../../../../packages/contracts/assessments";
 import type { LifecycleAssessment } from "../../../../../packages/contracts/lifecycle";
 import type {
   Report,
@@ -100,7 +100,7 @@ export function ReportsPage({
               }
             />
             {a.id} · {a.status} · 输入版本 {JSON.stringify(a.target)} /{" "}
-            {a.input.version ?? "未知版本"} · 发现 {a.findingCount ?? "未知"} ·{" "}
+            {("version" in a.input ? a.input.version : null) ?? "未知版本"} · 发现 {a.findingCount ?? "未知"} ·{" "}
             {a.coverage?.status ?? "无可用结果"}
           </label>
         ))}

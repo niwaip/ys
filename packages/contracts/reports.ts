@@ -1,5 +1,4 @@
-import type { WindowsAssessment } from "./windows-assessments";
-import type { Assessment } from "./assessments";
+import type { AnyAssessment } from "./assessments";
 import type { LifecycleAssessment } from "./lifecycle";
 export type ReportScopeTarget = {
   kind: string;
@@ -14,7 +13,7 @@ export type ReportFacts = {
   customerId: string;
   generatedAt: string;
   scope: ReportScopeTarget[];
-  assessmentSnapshots: (Assessment | WindowsAssessment)[];
+  assessmentSnapshots: AnyAssessment[];
   lifecycleSnapshots: LifecycleAssessment[];
   sourceRefs: {
     kind: "cve" | "lifecycle" | "windows_rules";
