@@ -1,6 +1,7 @@
 import { ContainersPage } from "./features/containers/ContainersPage";
 import { AgentPage } from "./features/agent/AgentPage";
 import { ReportsPage } from "./features/reports/ReportsPage";
+import { WindowsAssessmentsPage } from "./features/windows-assessments/WindowsAssessmentsPage";
 import { AssessmentsPage } from "./features/assessments/AssessmentsPage";
 import { LifecyclePage } from "./features/lifecycle/LifecyclePage";
 import { SoftwarePage } from "./features/software/SoftwarePage";
@@ -21,6 +22,12 @@ export type Feature = {
 };
 // Register implemented customer-scoped pages here; the shell owns identity and navigation.
 export const features: Feature[] = [
+  {
+    id: "windows-assessments",
+    label: "Windows 补丁评估",
+    icon: "◈",
+    component: WindowsAssessmentsPage,
+  },
   { id: "assets", label: "资产台账", icon: "▦", component: AssetsPage },
   { id: "containers", label: "容器镜像", icon: "⬡", component: ContainersPage },
   {

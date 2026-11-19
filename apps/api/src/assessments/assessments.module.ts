@@ -23,12 +23,19 @@ import { ImportsModule, ImportsService } from "../imports/imports.module";
 import type { AuthorizedRequest } from "../auth/auth";
 import type {
   Assessment,
-  AssessmentPage,
+  AnyAssessment,
+  AnyAssessmentPage,
+  AnyAssessmentSummary,
   AssessmentResult,
 } from "../../../../packages/contracts/assessments";
 import type { SoftwareComponent } from "../../../../packages/contracts/software";
 import { ProcessTrivyExecutor, type TrivyExecutor } from "./trivy";
 import { normalizeTrivy } from "./normalize";
+import {
+  WindowsAssessmentsModule,
+  WindowsAssessmentService,
+  windowsSubmitSchema,
+} from "../windows-assessments/windows-assessments.module";
 const EXECUTOR = Symbol("TRIVY_EXECUTOR");
 const submitSchema = z.union([
   z
@@ -48,7 +55,7 @@ const submitSchema = z.union([
 ]);
 type Submission = z.infer<typeof submitSchema>;
 const cols = `id,customer_id AS "customerId",status,details`;
-function serialize(row: Record<string, unknown>): Assessment {
+function serialize(row: Record<string, unknown>): AnyAssessment {
   return {
     ...(row.details as Assessment),
     id: String(row.id),
@@ -183,7 +190,7 @@ export class AssessmentService {
       targetId?: string;
       versionId?: string;
     } = {},
-  ): Promise<AssessmentPage> {
+  ): Promise<AnyAssessmentPage> {
     const limit = page.limit ?? 50,
       offset = page.offset ?? 0;
     if (
@@ -237,7 +244,7 @@ export class AssessmentService {
             AssessmentResult["coverage"] | undefined,
           database: (row.database ?? undefined) as
             AssessmentResult["database"] | undefined,
-        };
+        } as AnyAssessmentSummary;
       }),
       total: Number(count.rows[0].total),
       limit,
@@ -265,7 +272,11 @@ export class AssessmentService {
         `UPDATE vulnerability_jobs SET status='running' WHERE id=(SELECT id FROM vulnerability_jobs WHERE status='queued' AND details#>>'{target,kind}' IN ('software','container') ORDER BY created_at,id LIMIT 1 FOR UPDATE SKIP LOCKED) AND status='queued' RETURNING ${cols}`,
       );
       if (!rows.rows.length) return;
-      const job = serialize(rows.rows[0]);
+      const selected = serialize(rows.rows[0]);
+      // Ownership is enforced by the claim query; retain a runtime guard for future target additions.
+      if (selected.target.kind === "windows")
+        throw Error("Windows task cannot be executed by Trivy");
+      const job = selected as Assessment;
       job.startedAt = new Date().toISOString();
       await this.save(job);
       this.abort = new AbortController();
@@ -309,8 +320,17 @@ export class AssessmentService {
 }
 @Controller("api/customers/:customerId/assessments")
 class AssessmentsController {
-  constructor(private readonly assessments: AssessmentService) {}
+  constructor(
+    private readonly assessments: AssessmentService,
+    private readonly windows: WindowsAssessmentService,
+  ) {}
   @Post() @HttpCode(202) submit(req: AuthorizedRequest) {
+    if (req.body && typeof req.body === "object" && "snapshotId" in req.body) {
+      const windows = windowsSubmitSchema.safeParse(req.body);
+      if (!windows.success)
+        throw new BadRequestException("需固定快照、规则资料 UUID 和幂等键");
+      return this.windows.submit(req.params.customerId, windows.data);
+    }
     const input = submitSchema.safeParse(req.body);
     if (!input.success)
       throw new BadRequestException("需软件/输入版本 UUID 和幂等键");
@@ -339,6 +359,7 @@ class AssessmentsController {
 for (const method of ["submit", "list", "get"] as const)
   Req()(AssessmentsController.prototype, method, 0);
 Inject(AssessmentService)(AssessmentsController, undefined, 0);
+Inject(WindowsAssessmentService)(AssessmentsController, undefined, 1);
 @Module({})
 export class AssessmentsModule {
   static register(
@@ -346,7 +367,12 @@ export class AssessmentsModule {
   ): DynamicModule {
     return {
       module: AssessmentsModule,
-      imports: [SoftwareModule, ContainersModule, ImportsModule],
+      imports: [
+        SoftwareModule,
+        ContainersModule,
+        ImportsModule,
+        WindowsAssessmentsModule,
+      ],
       controllers: [AssessmentsController],
       providers: [
         { provide: EXECUTOR, useValue: executor },

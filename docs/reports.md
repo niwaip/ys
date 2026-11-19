@@ -15,7 +15,7 @@
 | GET `/:reportId/revisions/:revisionId` | 同客户、同报告下明确修订的固定事实 |
 | GET `/:reportId/revisions/:revisionId/preview` | 固定修订HTML，不依赖后续当前修订选择 |
 
-本片CVE来源为T05软件评估；其他目标类型必须经独立报告适配器接入，不能直接套用软件结果或统计。
+CVE来源支持T05软件、T06容器镜像与T07 Windows证据评估，按target.kind使用独立读取适配器。容器保留镜像身份及明确输入版本，不证明运行实例。Windows保留采集快照、规则资料ID/hash、规则来源和offline_curated_rules模式；覆盖保持partial，不能声称完整厂商feed。适用性分布独立列出，confirmedAffectedCount只计affected条目；fixed、unknown、potentially_affected和tool_reported均不计入该确认数，也不因此宣称无风险。
 
 CVE引用必须是终态任务。queued/running 返回409，避免把尚在变化的任务当作固定评估。失败、工具不可用、超时、中断可以纳入事实，但明确没有可用结果。一个软件对象输入版本每类评估只能选择一次；累计同对象同版本的多个CVE或生命周期历史返回409，不隐式挑选“最新”或叠加历史。不同对象/明确输入版本可同时纳入范围。引用重复、空引用及超限400。相同请求再次提交明确生成新报告，首片无报告生成幂等键。
 
@@ -23,7 +23,7 @@ CVE引用必须是终态任务。queued/running 返回409，避免把尚在变�
 
 ## 统计和覆盖
 
-- findingInstances 是所选可用评估结果中的工具发现条目数，保留未关联组件的工具条目；不是确认受影响客户资产数。
+- findingInstances 是所选可用评估结果中的结果条目数（含Windows规则的fixed/unknown等状态），保留未关联组件的工具条目；不是确认受影响客户资产数。
 - uniqueCveCount 仅按符合 `CVE-YYYY-NNNN…` 的标识去重。非CVE漏洞标识仍逐条展示并计入工具发现，不冒充CVE数。
 - severityCounts 为工具发现条目的严重程度原值分布，不是风险评分。库新鲜度、覆盖状态与发现条目分别呈现。
 - 没有可用CVE结果时发现数/CVE数为null（未知），不显示为0；有部分可用结果时只统计已返回条目，同时披露失败/缺失范围。
