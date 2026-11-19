@@ -55,7 +55,14 @@ export type ReportRevision = {
   number: number;
   createdAt: string;
   createdBy: string;
-  status: "draft";
+  parentRevisionId?: string;
+  status: "draft" | "in_review" | "approved" | "delivered";
+  submittedAt?: string;
+  submittedBy?: string;
+  approvedAt?: string;
+  approvedBy?: string;
+  deliveredAt?: string;
+  deliveredBy?: string;
   factHash: string;
   facts: ReportFacts;
   narrative: ReportNarrative;
@@ -73,4 +80,24 @@ export type ReportSummary = Omit<Report, "revision"> & {
   revisionNumber: number;
   status: ReportRevision["status"];
   factHash: string;
+};
+
+export type ReportDelivery = {
+  id: string;
+  reportId: string;
+  revisionId: string;
+  customerId: string;
+  deliveredAt: string;
+  deliveredBy: string;
+  factHash: string;
+  contentHash: string;
+  replayed?: boolean;
+};
+export type ReportAudit = {
+  id: string;
+  revisionId: string;
+  action: "submit_review" | "approve" | "deliver" | "revise";
+  actor: { name: string; operatorId: string };
+  createdAt: string;
+  details: Record<string, unknown>;
 };

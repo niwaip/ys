@@ -1,3 +1,4 @@
+import { ReportReviewService, ReportReviewController } from "./review";
 import type { WindowsAssessment } from "../../../../packages/contracts/windows-assessments";
 import {
   ContainersModule,
@@ -503,8 +504,13 @@ export class ReportsModule {
         WindowsModule,
         WindowsAssessmentsModule,
       ],
-      controllers: [ReportsController],
+      controllers: [ReportsController, ReportReviewController],
       providers: [
+        {
+          provide: ReportReviewService,
+          inject: [DATABASE],
+          useFactory: (db: Database) => new ReportReviewService(db),
+        },
         {
           provide: ReportsService,
           inject: [
@@ -529,7 +535,7 @@ export class ReportsModule {
           ) => new ReportsService(db, a, l, s, i, c, w, wa),
         },
       ],
-      exports: [ReportsService],
+      exports: [ReportsService, ReportReviewService],
     };
   }
 }

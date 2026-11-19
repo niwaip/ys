@@ -28,14 +28,8 @@ export interface PublicQueryExecutor {
     signal: AbortSignal,
   ): Promise<PublicIntelligenceResult>;
 }
-export class AgentExecutionError extends Error {
-  constructor(
-    public status: "failed" | "timed_out" | "unavailable",
-    message: string,
-  ) {
-    super(message);
-  }
-}
+export { AgentExecutionError } from "./errors";
+import { AgentExecutionError } from "./errors";
 const inputSchema = z
   .object({
     message: z.string().trim().min(1).max(4000),
