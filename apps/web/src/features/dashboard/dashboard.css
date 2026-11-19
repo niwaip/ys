@@ -164,3 +164,6 @@
     grid-template-columns: 1fr;
   }
 }
+
+.dashboard-advanced { margin: 16px 0; }
+.dashboard-advanced > summary { color: #365345; cursor: pointer; padding: 12px 0; font-weight: 600; }

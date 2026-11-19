@@ -886,3 +886,5 @@ pre {
 .nav-group .nav-label { margin: 16px 10px 7px; letter-spacing: 1px; }
 .workspace-tabs { display: flex; gap: 8px; overflow-x: auto; margin: 0 0 24px; padding-bottom: 8px; }
 .workspace-tabs button { flex-shrink: 0; }
+
+.workspace-panel { padding: 24px; overflow-wrap: anywhere; }

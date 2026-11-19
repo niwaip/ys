@@ -77,7 +77,7 @@ function AssetAssessment({
     [job, setJob] = useState<Assessment>(),
     [error, setError] = useState(""),
     [busy, setBusy] = useState(false),
-    [name, setName] = useState(assetId);
+    [name, setName] = useState("正在读取资产…");
   const base = `/customers/${props.customerId}`;
   function fail(e: unknown) {
     if (e instanceof ApiError && e.status === 401) props.onUnauthorized();
@@ -148,7 +148,7 @@ function AssetAssessment({
     }
   }
   return (
-    <section className="asset-panel">
+    <section className="asset-panel workspace-panel">
       <h2>资产评估 · {name}</h2>
       <p>Linux主机与网络设备直接CVE评估尚未接入</p>
       <p>

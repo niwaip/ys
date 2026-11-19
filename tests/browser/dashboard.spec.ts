@@ -86,6 +86,7 @@ test("客户概览选择固定版本、同scope下钻和趋势覆盖，刷新及
   await page.getByRole("button", { name: "进入工作台" }).click();
   await page.locator("nav button").filter({ hasText: "资产台账" }).click();
   await page.getByRole("button", { name: "客户风险概览" }).click();
+  await page.getByText("筛选范围与历史批次", { exact: true }).click();
   const catalogSelect = page.getByLabel("概览对象");
   await expect
     .poll(() => catalogSelect.locator("option").count())

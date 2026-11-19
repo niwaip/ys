@@ -8,7 +8,7 @@ import type {
   DashboardObject,
 } from "../../../../../packages/contracts/dashboard";
 import "./dashboard.css";
-const kindLabels = { host: "主机", software: "软件", container: "容器镜像" };
+const kindLabels = { host: "硬件", software: "软件", container: "容器镜像" };
 const statusLabels: Record<string, string> = {
   queued: "等待执行",
   running: "执行中",
@@ -172,159 +172,170 @@ export function DashboardPage({
             固定输入与评估范围。未选择、失败与未知不表示安全。
           </p>
         </div>
-        <span>生成时间 {data?.generatedAt ?? "加载中"}</span>
+        <span>
+          生成时间{" "}
+          {data ? new Date(data.generatedAt).toLocaleString("zh-CN") : "加载中"}
+        </span>
       </header>
       {catalog && (
         <p className="dashboard-directory">
-          客户全目录：主机 {catalog.inventory.host} · 软件{" "}
+          客户全目录：硬件 {catalog.inventory.host} · 软件{" "}
           {catalog.inventory.software} · 容器镜像 {catalog.inventory.container}
-          （SQL 总计，下面指标仅对应已应用范围）
+          （全部在管对象；以下按已应用范围统计）
         </p>
       )}
-      <div className="dashboard-filters">
-        <label className="dashboard-check">
-          <input
-            type="checkbox"
-            checked={autoCurrent}
-            onChange={(e) => setAutoCurrent(e.target.checked)}
-          />
-          按当前对象汇总（优先软件current指针，其余取最近尝试，失败不回退）
-        </label>
-        <label>
-          硬件分类范围
-          <select
-            value={hardwareType}
-            onChange={(e) => {
-              setHardwareType(e.target.value as typeof hardwareType);
-              setObject("");
-              setSelectedObject(undefined);
-              setRefs([]);
-            }}
-          >
-            <option value="">全部对象</option>
-            <option value="server">服务器</option>
-            <option value="network">网络设备</option>
-            <option value="unknown">未分类硬件</option>
-          </select>
-        </label>
-        <label>
-          概览对象
-          <select
-            value={object}
-            onChange={(e) => {
-              setObject(e.target.value);
-              setSelectedObject(
-                objectOptions.find(
-                  (x) => `${x.kind}:${x.id}` === e.target.value,
-                ),
-              );
-              setRefs([]);
-            }}
-          >
-            <option value="">客户全部在管对象</option>
-            {objectOptions.map((x) => (
-              <option key={`${x.kind}:${x.id}`} value={`${x.kind}:${x.id}`}>
-                {kindLabels[x.kind]} · {x.name}
-              </option>
-            ))}
-          </select>
-        </label>
-        <p>
-          对象目录{" "}
-          {catalog
-            ? `${catalog.objectOffset + 1}–${Math.min(catalog.objectOffset + catalog.objectLimit, catalog.objectTotal)} / ${catalog.objectTotal}`
-            : "加载中"}
-          <button
-            disabled={!catalog || catalog.objectOffset === 0}
-            onClick={() =>
-              loadCatalog(Math.max(0, catalogOffset.current - 100)).catch(fail)
-            }
-          >
-            上一页对象
-          </button>
-          <button
-            disabled={
-              !catalog ||
-              catalog.objectOffset + catalog.objectLimit >= catalog.objectTotal
-            }
-            onClick={() => loadCatalog(catalogOffset.current + 100).catch(fail)}
-          >
-            下一页对象
-          </button>
-        </p>
-        <label>
-          显式评估批次（可多对象，每个对象限一个）
-          <select
-            multiple
-            size={4}
-            value={refs}
-            onChange={(e) =>
-              setRefs(Array.from(e.target.selectedOptions, (o) => o.value))
-            }
-          >
-            {catalog?.assessments.map((a) => (
-              <option key={a.id} value={a.id}>
-                {a.target.kind} · {a.id} · {statusLabels[a.status]} ·{" "}
-                {a.createdAt}
-              </option>
-            ))}
-          </select>
-        </label>
-        <p>
-          自动范围按对象解析固定输入及最近尝试，失败不回退。关闭自动汇总后使用手动指定批次。
-          {catalog?.truncated ? "评估选择目录仅列最近1000条，已截断。" : ""}
-        </p>
-        <label>
-          生命周期评估版本
-          <select
-            value={lifecycleId}
-            onChange={(e) => setLifecycleId(e.target.value)}
-          >
-            <option value="">未选择（EOS/EOL 未知）</option>
-            {catalog?.lifecycleAssessments.map((l) => (
-              <option key={l.id} value={l.id}>
-                {l.evaluatedAt} · {l.id} · {l.itemCount} 对象
-              </option>
-            ))}
-          </select>
-        </label>
-        <p>
-          手动选择目录为最近100次；自动汇总按对象匹配固定生命周期评估，均不累计历史。
-        </p>
-        <div className="dashboard-time">
-          <label>
-            评估开始时间
+      <details className="dashboard-advanced">
+        <summary>筛选范围与历史批次</summary>
+        <div className="dashboard-filters">
+          <label className="dashboard-check">
             <input
-              type="datetime-local"
-              value={from}
-              onChange={(e) => setFrom(e.target.value)}
+              type="checkbox"
+              checked={autoCurrent}
+              onChange={(e) => setAutoCurrent(e.target.checked)}
             />
+            按当前对象汇总（优先软件选定版本，其余取最近尝试，失败不回退）
           </label>
           <label>
-            评估结束时间
-            <input
-              type="datetime-local"
-              value={to}
-              onChange={(e) => setTo(e.target.value)}
-            />
+            硬件分类范围
+            <select
+              value={hardwareType}
+              onChange={(e) => {
+                setHardwareType(e.target.value as typeof hardwareType);
+                setObject("");
+                setSelectedObject(undefined);
+                setRefs([]);
+              }}
+            >
+              <option value="">全部对象</option>
+              <option value="server">服务器</option>
+              <option value="network">网络设备</option>
+              <option value="unknown">未分类硬件</option>
+            </select>
           </label>
+          <label>
+            概览对象
+            <select
+              value={object}
+              onChange={(e) => {
+                setObject(e.target.value);
+                setSelectedObject(
+                  objectOptions.find(
+                    (x) => `${x.kind}:${x.id}` === e.target.value,
+                  ),
+                );
+                setRefs([]);
+              }}
+            >
+              <option value="">客户全部在管对象</option>
+              {objectOptions.map((x) => (
+                <option key={`${x.kind}:${x.id}`} value={`${x.kind}:${x.id}`}>
+                  {kindLabels[x.kind]} · {x.name}
+                </option>
+              ))}
+            </select>
+          </label>
+          <p>
+            对象目录{" "}
+            {catalog
+              ? `${catalog.objectOffset + 1}–${Math.min(catalog.objectOffset + catalog.objectLimit, catalog.objectTotal)} / ${catalog.objectTotal}`
+              : "加载中"}
+            <button
+              disabled={!catalog || catalog.objectOffset === 0}
+              onClick={() =>
+                loadCatalog(Math.max(0, catalogOffset.current - 100)).catch(
+                  fail,
+                )
+              }
+            >
+              上一页对象
+            </button>
+            <button
+              disabled={
+                !catalog ||
+                catalog.objectOffset + catalog.objectLimit >=
+                  catalog.objectTotal
+              }
+              onClick={() =>
+                loadCatalog(catalogOffset.current + 100).catch(fail)
+              }
+            >
+              下一页对象
+            </button>
+          </p>
+          <label>
+            显式评估批次（可多对象，每个对象限一个）
+            <select
+              multiple
+              size={4}
+              value={refs}
+              onChange={(e) =>
+                setRefs(Array.from(e.target.selectedOptions, (o) => o.value))
+              }
+            >
+              {catalog?.assessments.map((a) => (
+                <option key={a.id} value={a.id}>
+                  {a.target.kind} · {a.id} · {statusLabels[a.status]} ·{" "}
+                  {a.createdAt}
+                </option>
+              ))}
+            </select>
+          </label>
+          <p>
+            自动范围按对象解析固定输入及最近尝试，失败不回退。关闭自动汇总后使用手动指定批次。
+            {catalog?.truncated ? "评估选择目录仅列最近1000条，已截断。" : ""}
+          </p>
+          <label>
+            生命周期评估版本
+            <select
+              value={lifecycleId}
+              onChange={(e) => setLifecycleId(e.target.value)}
+            >
+              <option value="">未选择（EOS/EOL 未知）</option>
+              {catalog?.lifecycleAssessments.map((l) => (
+                <option key={l.id} value={l.id}>
+                  {l.evaluatedAt} · {l.id} · {l.itemCount} 对象
+                </option>
+              ))}
+            </select>
+          </label>
+          <p>
+            手动选择目录为最近100次；自动汇总按对象匹配固定生命周期评估，均不累计历史。
+          </p>
+          <div className="dashboard-time">
+            <label>
+              评估开始时间
+              <input
+                type="datetime-local"
+                value={from}
+                onChange={(e) => setFrom(e.target.value)}
+              />
+            </label>
+            <label>
+              评估结束时间
+              <input
+                type="datetime-local"
+                value={to}
+                onChange={(e) => setTo(e.target.value)}
+              />
+            </label>
+          </div>
+          <label className="dashboard-check">
+            <input
+              type="checkbox"
+              checked={crossVersion}
+              onChange={(e) => setCrossVersion(e.target.checked)}
+            />
+            趋势对比所选对象的所有输入版本（汇总仍使用固定所选批次）
+          </label>
+          <button
+            className="dashboard-primary"
+            disabled={busy}
+            onClick={() => void apply()}
+          >
+            应用概览范围
+          </button>
         </div>
-        <label className="dashboard-check">
-          <input
-            type="checkbox"
-            checked={crossVersion}
-            onChange={(e) => setCrossVersion(e.target.checked)}
-          />
-          趋势对比所选对象的所有输入版本（汇总仍使用固定所选批次）
-        </label>
-        <button
-          className="dashboard-primary"
-          disabled={busy}
-          onClick={() => void apply()}
-        >
-          应用概览范围
-        </button>
-      </div>
+      </details>
       {error && <p role="alert">{error}</p>}
       {data && (
         <>
@@ -361,7 +372,7 @@ export function DashboardPage({
               <span>本范围对象</span>
               <strong>{data.objects.length}</strong>
               <small>
-                主机 {data.metrics.inventory.host} · 软件{" "}
+                硬件 {data.metrics.inventory.host} · 软件{" "}
                 {data.metrics.inventory.software} · 镜像{" "}
                 {data.metrics.inventory.container}
               </small>
