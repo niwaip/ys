@@ -1,4 +1,5 @@
 import { DashboardPage } from "./features/dashboard/DashboardPage";
+import { SoftwareHistoryPage } from "./features/software-history/SoftwareHistoryPage";
 import { ConversationsPage } from "./features/conversations/ConversationsPage";
 import { WindowsAssessmentsPage } from "./features/windows-assessments/WindowsAssessmentsPage";
 import { ContainersPage } from "./features/containers/ContainersPage";
@@ -30,6 +31,12 @@ export const features: Feature[] = [
     label: "客户风险概览",
     icon: "◫",
     component: DashboardPage,
+  },
+  {
+    id: "software-history",
+    label: "历史与比较",
+    icon: "⇄",
+    component: SoftwareHistoryPage,
   },
   {
     id: "windows-assessments",
