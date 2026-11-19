@@ -165,6 +165,7 @@ export function ConnectionEditor({
               主机地址
               <input
                 value={host}
+                disabled={busy}
                 onChange={(e) => {
                   setHost(e.target.value);
                   setHostKey("");
@@ -182,6 +183,7 @@ export function ConnectionEditor({
                 min={1}
                 max={65535}
                 value={port}
+                disabled={busy}
                 onChange={(e) => {
                   setPort(Number(e.target.value));
                   setHostKey("");

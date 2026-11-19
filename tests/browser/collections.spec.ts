@@ -72,16 +72,22 @@ test("网页新建凭证并绑定所选主机，刷新后仅显示关联连接",
   await dialog.getByRole("button", { name: "保存凭证", exact: true }).click();
   await expect(dialog.getByLabel("登录凭证")).not.toHaveValue("");
   // Only host-key discovery is substituted: credential and association use real HTTP persistence.
-  await page.route("**/collections/connections/host-key", (route) =>
-    route.fulfill({
+  let releaseProbe!: () => void;
+  const probeGate = new Promise<void>((resolve) => { releaseProbe = resolve; });
+  await page.route("**/collections/connections/host-key", async (route) => {
+    await probeGate;
+    await route.fulfill({
       json: {
         hostKey:
           "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
         fingerprint: "SHA256:test-fingerprint",
       },
-    }),
-  );
+    });
+  });
   await dialog.getByRole("button", { name: "读取主机指纹" }).click();
+  await expect(dialog.getByLabel("主机地址")).toBeDisabled();
+  await expect(dialog.getByLabel("SSH端口")).toBeDisabled();
+  releaseProbe();
   await dialog.getByLabel("我已核对该主机指纹").check();
   await dialog.getByRole("button", { name: "保存连接", exact: true }).click();
   await expect(dialog).not.toBeVisible();
