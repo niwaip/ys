@@ -18,6 +18,7 @@ import { AssessmentsModule } from "./assessments/assessments.module";
 import { ProcessTrivyExecutor, type TrivyExecutor } from "./assessments/trivy";
 import { ContainersModule } from "./containers/containers.module";
 import { ReportsModule } from "./reports/reports.module";
+import { SoftwareHistoryModule } from "./software-history/software-history.module";
 import { ConversationsModule } from "./conversations/conversations.module";
 import {
   configuredCustomerExecutor,
@@ -103,6 +104,7 @@ export async function createApp(
             : []),
           assessments,
           ReportsModule.register(assessments),
+          SoftwareHistoryModule.register(assessments),
           ConversationsModule.register(
             assessments,
             runtime.customerReadExecutor ??
