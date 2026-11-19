@@ -969,3 +969,24 @@
     padding: 16px;
   }
 }
+
+.baseline-diff-value {
+  min-width: 180px;
+  margin: 0;
+}
+.baseline-diff-value > div {
+  display: grid;
+  grid-template-columns: 65px minmax(0, 1fr);
+  gap: 10px;
+  padding: 6px 0;
+  border-bottom: 1px solid #edf1e7;
+}
+.baseline-diff-value dt {
+  font-size: 11px;
+  color: #8a9b80;
+}
+.baseline-diff-value dd {
+  margin: 0;
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}

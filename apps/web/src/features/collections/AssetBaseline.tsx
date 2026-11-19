@@ -79,6 +79,30 @@ function valueText(v: unknown): string {
   if (typeof v === "string") return v;
   return JSON.stringify(v, null, 2);
 }
+function DiffValue({ value }: { value: unknown }) {
+  if (value == null) return <span>无</span>;
+  if (typeof value !== "object" || Array.isArray(value))
+    return <span>{valueText(value)}</span>;
+  return (
+    <dl className="baseline-diff-value">
+      {Object.entries(value).map(([key, v]) => (
+        <div key={key}>
+          <dt>{fields[key] ?? key}</dt>
+          <dd>
+            {v && typeof v === "object" ? (
+              <details>
+                <summary>详细资料</summary>
+                <pre>{valueText(v)}</pre>
+              </details>
+            ) : (
+              valueText(v)
+            )}
+          </dd>
+        </div>
+      ))}
+    </dl>
+  );
+}
 function Layer({
   name,
   base,
@@ -197,10 +221,10 @@ function Layer({
                             </span>
                           </td>
                           <td>
-                            <pre>{valueText(v.before)}</pre>
+                            <DiffValue value={v.before} />
                           </td>
                           <td>
-                            <pre>{valueText(v.after)}</pre>
+                            <DiffValue value={v.after} />
                           </td>
                         </>
                       ) : name === "packages" ? (
