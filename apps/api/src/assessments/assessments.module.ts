@@ -26,6 +26,11 @@ import type {
 import type { SoftwareComponent } from "../../../../packages/contracts/software";
 import { ProcessTrivyExecutor, type TrivyExecutor } from "./trivy";
 import { normalizeTrivy } from "./normalize";
+import {
+  WindowsAssessmentsModule,
+  WindowsAssessmentService,
+  windowsSubmitSchema,
+} from "../windows-assessments/windows-assessments.module";
 const EXECUTOR = Symbol("TRIVY_EXECUTOR");
 const submitSchema=z.union([z.object({softwareId:z.uuid(),versionId:z.uuid(),idempotencyKey:z.string().trim().min(1).max(200)}).strict(),z.object({containerId:z.uuid(),versionId:z.uuid(),idempotencyKey:z.string().trim().min(1).max(200)}).strict()]);
 type Submission = z.infer<typeof submitSchema>;
@@ -231,8 +236,17 @@ export class AssessmentService {
 }
 @Controller("api/customers/:customerId/assessments")
 class AssessmentsController {
-  constructor(private readonly assessments: AssessmentService) {}
+  constructor(
+    private readonly assessments: AssessmentService,
+    private readonly windows: WindowsAssessmentService,
+  ) {}
   @Post() @HttpCode(202) submit(req: AuthorizedRequest) {
+    if (req.body && typeof req.body === "object" && "snapshotId" in req.body) {
+      const windows = windowsSubmitSchema.safeParse(req.body);
+      if (!windows.success)
+        throw new BadRequestException("需固定快照、规则资料 UUID 和幂等键");
+      return this.windows.submit(req.params.customerId, windows.data);
+    }
     const input = submitSchema.safeParse(req.body);
     if (!input.success)
       throw new BadRequestException("需软件/输入版本 UUID 和幂等键");
@@ -259,6 +273,7 @@ class AssessmentsController {
 for (const method of ["submit", "list", "get"] as const)
   Req()(AssessmentsController.prototype, method, 0);
 Inject(AssessmentService)(AssessmentsController, undefined, 0);
+Inject(WindowsAssessmentService)(AssessmentsController, undefined, 1);
 @Module({})
 export class AssessmentsModule {
   static register(
@@ -266,7 +281,7 @@ export class AssessmentsModule {
   ): DynamicModule {
     return {
       module: AssessmentsModule,
-      imports: [SoftwareModule, ContainersModule, ImportsModule],
+      imports: [SoftwareModule, ContainersModule, ImportsModule, WindowsAssessmentsModule],
       controllers: [AssessmentsController],
       providers: [
         { provide: EXECUTOR, useValue: executor },
