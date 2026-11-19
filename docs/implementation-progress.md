@@ -33,3 +33,5 @@
 集成浏览器回归另发现T12页面下钻未传已应用object范围：后端复用概览解析后，缺失object会把其他软件current加入明细。新增双对象都有current发现的浏览器场景，红灯为单对象概览instances=1而明细total=2；页面改传data.scope.object后Node24浏览器通过，断言概览唯一对象、固定assessmentRefs、明细总数及每行评估归属一致，未用first规避重复行。Node24构建通过。截图保存在修复工作树output/t12-dashboard.png（运行产物，不提交）。
 
 最终业务提交 `8dbeb24`：48项API/进程测试通过（Node24.22.3）；构建通过；默认浏览器15项通过，专用成功Pi场景默认跳过并通过独立配置另跑1项。报告文字编辑、事实保持、重新复核、固定HTML交付，以及Dashboard双对象范围一致性均已验证。两位新上下文独立审查者复核完整规格与修复，Standards 0项、Spec 0项未解决发现。详细证据和边界见 [集成验收](verification/integration.md) 与 [最终双轴审查](verification/final-review.md)。所有T01–T15已集成；PR未合并，未部署，未进行真实工具或客户扫描验证。截图已复制到集成目录 `output/verification/dashboard.png` 后归档任务工作树。
+
+后续部署及缺陷：用户随后授权远端8001启动服务；版本eed5d66部署为ys.service。真实HTTP菜单验收复现randomUUID不受支持导致React整页空白，修复f3ea656已部署。新增HTTP兼容菜单回归，完整默认browser16通过、独立假Pi成功1通过；远端桌面/手机52次菜单切换无异常。详见 [HTTP页面验收](verification/http-navigation.md)。T01–T15仅代表首片实现完成：真实工具配置/联调、真实资料验收和PR合并仍未完成，不标记整个项目生产收尾。
