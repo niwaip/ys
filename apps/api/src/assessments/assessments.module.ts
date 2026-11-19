@@ -1,3 +1,4 @@
+import {ContainersModule,ContainerService} from "../containers/containers.module";
 import {
   BadRequestException,
   ConflictException,
@@ -26,13 +27,7 @@ import type { SoftwareComponent } from "../../../../packages/contracts/software"
 import { ProcessTrivyExecutor, type TrivyExecutor } from "./trivy";
 import { normalizeTrivy } from "./normalize";
 const EXECUTOR = Symbol("TRIVY_EXECUTOR");
-const submitSchema = z
-  .object({
-    softwareId: z.uuid(),
-    versionId: z.uuid(),
-    idempotencyKey: z.string().trim().min(1).max(200),
-  })
-  .strict();
+const submitSchema=z.union([z.object({softwareId:z.uuid(),versionId:z.uuid(),idempotencyKey:z.string().trim().min(1).max(200)}).strict(),z.object({containerId:z.uuid(),versionId:z.uuid(),idempotencyKey:z.string().trim().min(1).max(200)}).strict()]);
 type Submission = z.infer<typeof submitSchema>;
 const cols = `id,customer_id AS "customerId",status,details`;
 function serialize(row: Record<string, unknown>): Assessment {
@@ -52,12 +47,13 @@ export class AssessmentService {
   constructor(
     private readonly db: Database,
     private readonly software: SoftwareService,
+    private readonly containers: ContainerService,
     private readonly imports: ImportsService,
     private readonly executor: TrivyExecutor,
   ) {}
   async onModuleInit() {
     await this.db.query(
-      `UPDATE vulnerability_jobs SET status='interrupted',details=details || $1::jsonb WHERE status='running'`,
+      `UPDATE vulnerability_jobs SET status='interrupted',details=details || $1::jsonb WHERE status='running' AND details#>>'{target,kind}' IN ('software','container')`,
       [
         JSON.stringify({
           error: "后端重启，执行结果无法确认；未自动重试",
@@ -91,24 +87,17 @@ export class AssessmentService {
     }, 10);
   }
   async submit(customer: string, input: Submission) {
-    const snapshot = await this.software.getVersion(
-      customer,
-      input.softwareId,
-      input.versionId,
-    );
+    const target:Assessment['target']='containerId' in input?{kind:'container',containerId:input.containerId,versionId:input.versionId}:{kind:'software',softwareId:input.softwareId,versionId:input.versionId};
+    const snapshot=await this.snapshot(customer,target);
     const material = await this.imports.get(customer, snapshot.importId);
-    if (material.format !== "cyclonedx-json" || material.content === undefined)
+    if (material.format !== (target.kind==="container"?"container-cyclonedx-json":"cyclonedx-json") || material.content === undefined)
       throw new BadRequestException("该输入不是可评估的软件 SBOM");
     const record: Assessment = {
       id: randomUUID(),
       customerId: customer,
       status: "queued",
       idempotencyKey: input.idempotencyKey,
-      target: {
-        kind: "software",
-        softwareId: input.softwareId,
-        versionId: input.versionId,
-      },
+      target,
       input: {
         importId: snapshot.importId,
         contentHash: material.contentHash,
@@ -127,10 +116,7 @@ export class AssessmentService {
         [customer, input.idempotencyKey],
       );
       const old = serialize(existing.rows[0]);
-      if (
-        old.target.softwareId !== input.softwareId ||
-        old.target.versionId !== input.versionId
-      )
+      if (old.target.kind!==target.kind||old.target.versionId!==target.versionId||('containerId' in old.target?old.target.containerId:old.target.softwareId)!==('containerId' in target?target.containerId:target.softwareId))
         throw new ConflictException("幂等键已用于其他输入版本");
       return { ...old, replayed: true };
     });
@@ -148,7 +134,7 @@ export class AssessmentService {
   }
   async list(
     customer: string,
-    page: { limit?: number; offset?: number } = {},
+    page: { limit?: number; offset?: number; targetKind?:"software"|"container"|"windows" } = {},
   ): Promise<AssessmentPage> {
     const limit = page.limit ?? 50,
       offset = page.offset ?? 0;
@@ -161,13 +147,14 @@ export class AssessmentService {
       offset > 1000000
     )
       throw new BadRequestException("分页无效");
+    const filter=page.targetKind?" AND details#>>'{target,kind}'=$4":"";
     const r = await this.db.query(
-      `SELECT id,customer_id AS "customerId",status,details - 'execution' - 'result' AS details, details#>'{result,coverage}' AS coverage,details#>'{result,database}' AS database,jsonb_array_length(details#>'{result,findings}') AS "findingCount" FROM vulnerability_jobs WHERE customer_id=$1 ORDER BY created_at DESC,id LIMIT $2 OFFSET $3`,
-      [customer, limit, offset],
+      `SELECT id,customer_id AS "customerId",status,details - 'execution' - 'result' AS details, details#>'{result,coverage}' AS coverage,details#>'{result,database}' AS database,jsonb_array_length(details#>'{result,findings}') AS "findingCount" FROM vulnerability_jobs WHERE customer_id=$1${filter} ORDER BY created_at DESC,id LIMIT $2 OFFSET $3`,
+      page.targetKind?[customer,limit,offset,page.targetKind]:[customer, limit, offset],
     );
     const count = await this.db.query(
-      "SELECT count(*)::int AS total FROM vulnerability_jobs WHERE customer_id=$1",
-      [customer],
+      `SELECT count(*)::int AS total FROM vulnerability_jobs WHERE customer_id=$1${page.targetKind?" AND details#>>'{target,kind}'=$2":""}`,
+      page.targetKind?[customer,page.targetKind]:[customer],
     );
     return {
       items: r.rows.map((row) => {
@@ -187,6 +174,7 @@ export class AssessmentService {
       offset,
     };
   }
+  private snapshot(customer:string,target:Assessment['target']){return target.kind==='container'?this.containers.getVersion(customer,target.containerId,target.versionId):this.software.getVersion(customer,target.softwareId,target.versionId);}
   private async save(record: Assessment) {
     await this.db.query(
       `UPDATE vulnerability_jobs SET status=$3,details=$4::jsonb WHERE customer_id=$1 AND id=$2`,
@@ -196,7 +184,7 @@ export class AssessmentService {
   private async drain() {
     while (!this.stopping) {
       const rows = await this.db.query(
-        `UPDATE vulnerability_jobs SET status='running' WHERE id=(SELECT id FROM vulnerability_jobs WHERE status='queued' ORDER BY created_at,id LIMIT 1 FOR UPDATE SKIP LOCKED) AND status='queued' RETURNING ${cols}`,
+        `UPDATE vulnerability_jobs SET status='running' WHERE id=(SELECT id FROM vulnerability_jobs WHERE status='queued' AND details#>>'{target,kind}' IN ('software','container') ORDER BY created_at,id LIMIT 1 FOR UPDATE SKIP LOCKED) AND status='queued' RETURNING ${cols}`,
       );
       if (!rows.rows.length) return;
       const job = serialize(rows.rows[0]);
@@ -204,11 +192,7 @@ export class AssessmentService {
       await this.save(job);
       this.abort = new AbortController();
       try {
-        const snapshot = await this.software.getVersion(
-          job.customerId,
-          job.target.softwareId,
-          job.target.versionId,
-        );
+        const snapshot = await this.snapshot(job.customerId,job.target);
         const material = await this.imports.get(
           job.customerId,
           job.input.importId,
@@ -258,6 +242,7 @@ class AssessmentsController {
     const page = z
       .object({
         limit: z.coerce.number().int().min(1).max(100).optional(),
+        targetKind:z.enum(["software","container","windows"]).optional(),
         offset: z.coerce.number().int().min(0).max(1000000).optional(),
       })
       .strict()
@@ -281,19 +266,20 @@ export class AssessmentsModule {
   ): DynamicModule {
     return {
       module: AssessmentsModule,
-      imports: [SoftwareModule, ImportsModule],
+      imports: [SoftwareModule, ContainersModule, ImportsModule],
       controllers: [AssessmentsController],
       providers: [
         { provide: EXECUTOR, useValue: executor },
         {
           provide: AssessmentService,
-          inject: [DATABASE, SoftwareService, ImportsService, EXECUTOR],
+          inject: [DATABASE, SoftwareService, ContainerService, ImportsService, EXECUTOR],
           useFactory: (
             db: Database,
             software: SoftwareService,
+            containers: ContainerService,
             imports: ImportsService,
             runner: TrivyExecutor,
-          ) => new AssessmentService(db, software, imports, runner),
+          ) => new AssessmentService(db, software, containers, imports, runner),
         },
       ],
       exports: [AssessmentService],

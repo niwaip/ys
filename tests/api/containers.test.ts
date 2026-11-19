@@ -1,0 +1,43 @@
+import {afterEach,expect,test} from 'vitest';
+import request from 'supertest';
+import {mkdtemp,rm} from 'node:fs/promises';
+import {tmpdir} from 'node:os';
+import {join} from 'node:path';
+import {createApp} from '../../apps/api/src/app';
+let app:Awaited<ReturnType<typeof createApp>>,directory:string;
+const auth={Authorization:'Bearer test-container-secret'};
+const config={customers:[{id:'acme',name:'A'},{id:'river',name:'R'}],operators:[{token:'test-container-secret',name:'Tester',customerIds:['acme','river']}]};
+const digest='sha256:'+ 'a'.repeat(64);
+const content=(d=digest)=>JSON.stringify({bomFormat:'CycloneDX',specVersion:'1.5',metadata:{component:{type:'container',name:'debian',version:'latest',purl:`pkg:oci/debian@${encodeURIComponent(d)}?repository_url=registry.test%2Flibrary%2Fdebian&tag=latest&arch=amd64`}},components:[{type:'operating-system',name:'Debian',version:'12',cpe:'cpe:/o:debian:debian_linux:12'},{type:'library',name:'libssl3',version:'3.0.1',purl:'pkg:deb/debian/libssl3@3.0.1?distro=debian-12'}]});
+afterEach(async()=>{await app?.close();if(directory)await rm(directory,{recursive:true,force:true});});
+test('容器SBOM保留来源与digest版本，复用后台评估并隔离软件及客户',async()=>{
+ directory=await mkdtemp(join(tmpdir(),'ys-containers-'));const options={...config,databaseUrl:`pglite://${directory}`};app=await createApp(options,[],{trivyExecutor:{execute:async()=>({status:'succeeded',toolVersion:'fixture-container',argv:['sbom'],startedAt:'2026-11-18T00:00:00Z',finishedAt:'2026-11-18T00:00:01Z',exitCode:0,signal:null,stderr:'',databaseBefore:null,databaseAfter:null,rawReport:JSON.stringify({SchemaVersion:2,Results:[{Target:'debian',Class:'os-pkgs',Type:'debian',Packages:[{Name:'libssl3',Version:'3.0.1',Identifier:{PURL:'pkg:deb/debian/libssl3@3.0.1?distro=debian-12'}}],Vulnerabilities:[{VulnerabilityID:'CVE-2099-CONTAINER',PkgName:'libssl3',InstalledVersion:'3.0.1',PkgIdentifier:{PURL:'pkg:deb/debian/libssl3@3.0.1?distro=debian-12'},Severity:'HIGH',FixedVersion:'3.0.2'}]}]})})}});const http=request(app.getHttpServer());
+ const image=(await http.post('/api/customers/acme/containers').set(auth).send({name:'Debian runtime',source:'release-pipeline'}).expect(201)).body;
+ const v=(await http.post(`/api/customers/acme/containers/${image.id}/sbom`).set(auth).send({fileName:'image.json',content:content()}).expect(201)).body;
+ expect(v).toMatchObject({containerId:image.id,identity:{digest,tag:'latest',repository:'registry.test/library/debian',architecture:'amd64',basis:'sbom-oci-purl'},operatingSystems:[{name:'Debian',version:'12'}],components:[{ecosystem:null},{ecosystem:'deb'}]});
+ const replay=(await http.post(`/api/customers/acme/containers/${image.id}/sbom`).set(auth).send({fileName:'renamed.json',content:content()}).expect(201)).body;expect(replay.id).toBe(v.id);expect(replay.replayed).toBe(true);
+ const v2=(await http.post(`/api/customers/acme/containers/${image.id}/sbom`).set(auth).send({fileName:'image2.json',content:content('sha256:'+'b'.repeat(64))}).expect(201)).body;expect(v2.id).not.toBe(v.id);expect(v2.identity.tag).toBe('latest');
+ const submitted=(await http.post('/api/customers/acme/assessments').set(auth).send({containerId:image.id,versionId:v.id,idempotencyKey:'container-1'}).expect(202)).body;
+ let job:any;for(let n=0;n<100;n++){job=(await http.get(`/api/customers/acme/assessments/${submitted.id}`).set(auth).expect(200)).body;if(!['queued','running'].includes(job.status))break;await new Promise(r=>setTimeout(r,20));}
+ expect(job).toMatchObject({status:'succeeded',target:{kind:'container',containerId:image.id,versionId:v.id},input:{importId:v.importId,version:digest},result:{findings:[{vulnerabilityId:'CVE-2099-CONTAINER',componentId:v.components[1].id}]}});expect(job.target.assetId).toBeUndefined();
+ await http.get(`/api/customers/river/containers/${image.id}`).set(auth).expect(404);await http.post('/api/customers/river/assessments').set(auth).send({containerId:image.id,versionId:v.id,idempotencyKey:'bad'}).expect(404);
+ await http.get(`/api/customers/acme/software/${image.id}`).set(auth).expect(404);
+ const softwareTasks=await http.get('/api/customers/acme/assessments?targetKind=software').set(auth).expect(200);expect(softwareTasks.body.total).toBe(0);
+ const containerTasks=await http.get('/api/customers/acme/assessments?targetKind=container').set(auth).expect(200);expect(containerTasks.body.total).toBe(1);
+ await app.close();app=await createApp(options);const persisted=(await request(app.getHttpServer()).get(`/api/customers/acme/containers/${image.id}/versions/${v.id}`).set(auth).expect(200)).body;expect(persisted.identity.digest).toBe(digest);
+ const material=(await request(app.getHttpServer()).get(`/api/customers/acme/imports/${v.importId}`).set(auth).expect(200)).body;expect(material.content).toBe(content());expect(material.contentHash).toMatch(/^[a-f0-9]{64}$/);
+});
+test('身份不足明确披露，坏文件及矛盾声明拒绝且同内容声明不可静默覆盖',async()=>{
+ directory=await mkdtemp(join(tmpdir(),'ys-container-policy-'));app=await createApp({...config,databaseUrl:`pglite://${directory}`});const http=request(app.getHttpServer());const image=(await http.post('/api/customers/acme/containers').set(auth).send({name:'Unknown',source:'offline-export'}).expect(201)).body;
+ const path=`/api/customers/acme/containers/${image.id}/sbom`;const unknown=JSON.stringify({bomFormat:'CycloneDX',specVersion:'1.6',metadata:{component:{type:'container',name:'unknown',version:'latest'}},components:[{type:'library',name:'unknown'}]});
+ const first=(await http.post(path).set(auth).send({fileName:'unknown.json',content:unknown}).expect(201)).body;expect(first.identity).toMatchObject({digest:null,tag:null,repository:null,basis:'unknown'});expect(first.version).toBeNull();expect(first.issues).toContain('镜像 digest 未知；标签可变，无法确认不可变镜像身份');
+ await http.post(path).set(auth).send({fileName:'different.json',content:unknown,digest}).expect(409);
+ await http.post(path).set(auth).send({fileName:'wrong.json',content:content(),digest:'sha256:'+'c'.repeat(64)}).expect(400);
+ for(const raw of ['{',unknown.replace('"container"','"application"'),content().replace('sha256%3A','sha512%3A')])await http.post(path).set(auth).send({fileName:'bad.json',content:raw}).expect(400);
+ const explicit={fileName:'known.json',content:JSON.stringify({bomFormat:'CycloneDX',specVersion:'1.5',metadata:{component:{type:'container',name:'operator-claims'}},components:[]}),repository:'registry.test/image',digest,tag:'latest',architecture:'amd64'};
+ const v=(await http.post(path).set(auth).send(explicit).expect(201)).body;const replay=(await http.post(path).set(auth).send(explicit).expect(201)).body;expect(replay.id).toBe(v.id);expect(replay.replayed).toBe(true);
+ const other=(await http.post('/api/customers/acme/containers').set(auth).send({name:'Other',source:'offline-export'}).expect(201)).body;await http.post(`/api/customers/acme/containers/${other.id}/sbom`).set(auth).send(explicit).expect(409);
+ const software=(await http.post('/api/customers/acme/software').set(auth).send({name:'Wrong category'}).expect(201)).body;await http.post(`/api/customers/acme/software/${software.id}/sbom`).set(auth).send({fileName:'wrong-category.json',content:content()}).expect(400);
+ const before=(await http.get(`/api/customers/acme/containers/${image.id}`).set(auth).expect(200)).body;expect(before.versions).toHaveLength(2);
+ const task=(await http.post('/api/customers/acme/assessments').set(auth).send({containerId:image.id,versionId:first.id,idempotencyKey:'missing-tool'}).expect(202)).body;let outcome:any;for(let n=0;n<100;n++){outcome=(await http.get(`/api/customers/acme/assessments/${task.id}`).set(auth)).body;if(!['queued','running'].includes(outcome.status))break;await new Promise(r=>setTimeout(r,10));}expect(outcome.status).toBe('unavailable');expect(outcome.result).toBeUndefined();
+});

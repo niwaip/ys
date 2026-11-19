@@ -96,6 +96,7 @@ export function parseCycloneDx(content: string) {
   const version = parsed.data.metadata?.component?.version ?? null;
   return {
     components,
+    rootType: parsed.data.metadata?.component?.type ?? null,
     version,
     collectedAt: parsed.data.metadata?.timestamp
       ? new Date(parsed.data.metadata.timestamp).toISOString()
