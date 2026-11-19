@@ -1,5 +1,5 @@
 import { test, expect } from "@playwright/test";
-test("台账Tab展示容量和网络摘要，用户确认基线，再采集突出版本变化并保留旧基线", async ({
+test("台账只读展示分组Tab与SBOM组件，再采集突出变化并保留已确认基线", async ({
   page,
   request,
 }) => {
@@ -121,14 +121,93 @@ test("台账Tab展示容量和网络摘要，用户确认基线，再采集突�
   await expect(
     dialog.getByText("尚无已确认基线", { exact: true }),
   ).toBeVisible();
-  await dialog.getByRole("button", { name: "确认选中资料并更新基线" }).click();
-  await expect(dialog.getByRole("status")).toHaveText("已确认并更新资产基线");
+  await expect(
+    dialog.getByRole("button", { name: "确认选中资料并更新基线" }),
+  ).toHaveCount(0);
+  await expect(dialog.getByText("采纳此字段", { exact: true })).toHaveCount(0);
+  await dialog.getByRole("tab", { name: "Docker 环境", exact: true }).click();
+  await expect(
+    dialog.getByRole("heading", { name: "Docker客户端", exact: true }),
+  ).toBeVisible();
+  await dialog.getByRole("tab", { name: "容器", exact: true }).click();
+  await expect(
+    dialog.getByText("容器组件扫描尚未接入", { exact: true }),
+  ).toBeVisible();
+  await dialog.getByRole("tab", { name: "软件 / 项目", exact: true }).click();
+  await expect(
+    dialog.getByText("尚未关联软件 / 项目 SBOM", { exact: true }),
+  ).toBeVisible();
+  const sw = await (
+    await request.post(base + "/software", {
+      headers,
+      data: { name: "关联应用" },
+    })
+  ).json();
+  const sbom = await (
+    await request.post(base + `/software/${sw.id}/sbom`, {
+      headers,
+      data: {
+        fileName: "app.json",
+        content: JSON.stringify({
+          bomFormat: "CycloneDX",
+          metadata: { component: { type: "application", name } },
+          specVersion: "1.5",
+          version: 1,
+          components: [
+            { type: "library", name: "fixture-library", version: "2.3" },
+          ],
+        }),
+      },
+    })
+  ).json();
+  const hostPreview = await (
+    await request.get(base + `/assets/${asset.id}/baseline`, { headers })
+  ).json();
+  expect(
+    (
+      await request.post(base + "/collections/links", {
+        headers,
+        data: {
+          assetId: asset.id,
+          snapshotId: hostPreview.snapshot.id,
+          kind: "software",
+          objectId: sw.id,
+          versionId: sbom.id,
+          basis: "部署关联验收",
+        },
+      })
+    ).ok(),
+  ).toBe(true);
+  await dialog.getByRole("tab", { name: /^硬件/ }).click();
+  await dialog.getByRole("tab", { name: "软件 / 项目", exact: true }).click();
+  await dialog.getByRole("button", { name: /部署关联验收/ }).click();
+  await expect(dialog.getByRole("heading", { name: /关联应用/ })).toBeVisible();
+  await expect(dialog.locator("tbody")).toContainText("fixture-library");
+  await expect(dialog.locator("tbody")).toContainText("2.3");
+  const preview = await (
+    await request.get(base + `/assets/${asset.id}/baseline`, { headers })
+  ).json();
+  expect(
+    (
+      await request.post(base + `/assets/${asset.id}/baseline/confirm`, {
+        headers,
+        data: {
+          snapshotId: preview.snapshot.id,
+          expectedBaselineId: null,
+          idempotencyKey: name,
+          sections: ["identity", "os", "hardware", "network", "packages"],
+          excludeFields: [],
+        },
+      })
+    ).ok(),
+  ).toBe(true);
   await page.getByRole("button", { name: "关闭资产详情" }).click();
   expect((await upload("13")).ok()).toBe(true);
   await page.getByRole("button", { name, exact: true }).click();
   await expect(
     dialog.getByRole("tab", { name: "硬件", exact: true }),
   ).toBeVisible();
+  await dialog.getByRole("button", { name: "本次采集与变更" }).click();
   await dialog.getByRole("tab", { name: /^网络/ }).click();
   await dialog.locator("#baseline-network").getByLabel("仅显示变化").check();
   await expect(dialog.locator("#baseline-network")).toContainText("eth50");

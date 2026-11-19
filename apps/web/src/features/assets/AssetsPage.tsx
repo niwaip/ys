@@ -286,7 +286,7 @@ export function AssetsPage({
                 token={token}
                 onUnauthorized={onUnauthorized}
                 assetId={detailAsset.id}
-                onConfirmed={refresh}
+                readOnly
               />
             </section>
           </div>

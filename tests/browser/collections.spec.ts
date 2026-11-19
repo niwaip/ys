@@ -35,6 +35,13 @@ test("网页保存人工基础快照，刷新回读来源与未评估状态，�
   await expect(
     page.locator("summary").filter({ hasText: "关联软件 / 镜像SBOM版本" }),
   ).toBeVisible();
+  await expect(
+    page.getByRole("button", { name: "确认选中资料并更新基线" }),
+  ).toBeVisible();
+  await page.getByRole("button", { name: "确认选中资料并更新基线" }).click();
+  await expect(
+    page.getByText("已确认并更新资产基线", { exact: true }),
+  ).toBeVisible();
   await page.getByRole("button", { name: "关闭资料详情" }).click();
   await page.getByRole("tab", { name: "连接采集" }).click();
   await page.getByLabel("主机连接").selectOption({ index: 0 });
@@ -73,7 +80,9 @@ test("网页新建凭证并绑定所选主机，刷新后仅显示关联连接",
   await expect(dialog.getByLabel("登录凭证")).not.toHaveValue("");
   // Only host-key discovery is substituted: credential and association use real HTTP persistence.
   let releaseProbe!: () => void;
-  const probeGate = new Promise<void>((resolve) => { releaseProbe = resolve; });
+  const probeGate = new Promise<void>((resolve) => {
+    releaseProbe = resolve;
+  });
   await page.route("**/collections/connections/host-key", async (route) => {
     await probeGate;
     await route.fulfill({

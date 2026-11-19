@@ -167,12 +167,12 @@ export class CollectionLinksService {
       throw new ConflictException("关联与所选对象输入版本不匹配");
     return link;
   }
-  async list(customerId: string) {
+  async list(customerId: string, assetId?: string, offset = 0, kind?: string) {
     return {
       items: (
         await this.db.query(
-          "SELECT details FROM asset_version_links WHERE customer_id=$1 ORDER BY created_at DESC,id LIMIT 100",
-          [customerId],
+          "SELECT details FROM asset_version_links WHERE customer_id=$1 AND ($2::uuid IS NULL OR asset_id=$2::uuid) AND ($4::text IS NULL OR details->>'kind'=$4) ORDER BY created_at DESC,id LIMIT 100 OFFSET $3",
+          [customerId, assetId ?? null, offset, kind ?? null],
         )
       ).rows.map((row) => row.details),
     };
@@ -204,7 +204,20 @@ class LinksController {
     );
   }
   @Get("links") list(req: AuthorizedRequest) {
-    return this.service.list(req.params.customerId);
+    const query = z
+      .object({
+        assetId: z.uuid().optional(),
+        kind: z.enum(["software", "container"]).optional(),
+        offset: z.coerce.number().int().min(0).max(1000000).default(0),
+      })
+      .safeParse(req.query);
+    if (!query.success) throw new BadRequestException("资产编号或分页参数无效");
+    return this.service.list(
+      req.params.customerId,
+      query.data.assetId,
+      query.data.offset,
+      query.data.kind,
+    );
   }
   @Get("snapshots/:snapshotId/assessment-input") assessmentInput(
     req: AuthorizedRequest,

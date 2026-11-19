@@ -452,6 +452,37 @@ test("显式软件版本关联绑定固定主机快照，独立评估及报告�
       })
       .expect(201)
   ).body;
+  const listed = await http
+    .get(`/api/customers/acme/collections/links?assetId=${asset.id}`)
+    .set(auth)
+    .expect(200);
+  expect(listed.body.items.map((v: { id: string }) => v.id)).toEqual([link.id]);
+  expect(
+    (
+      await http
+        .get(`/api/customers/other/collections/links?assetId=${asset.id}`)
+        .set(auth)
+        .expect(200)
+    ).body.items,
+  ).toEqual([]);
+  expect(
+    (
+      await http
+        .get(
+          `/api/customers/acme/collections/links?assetId=${asset.id}&offset=1`,
+        )
+        .set(auth)
+        .expect(200)
+    ).body.items,
+  ).toEqual([]);
+  await http
+    .get("/api/customers/acme/collections/links?assetId=invalid")
+    .set(auth)
+    .expect(400);
+  await http
+    .get("/api/customers/acme/collections/links?offset=-1")
+    .set(auth)
+    .expect(400);
   const job = (
     await http
       .post("/api/customers/acme/assessments")

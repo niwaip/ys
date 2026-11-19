@@ -3,6 +3,7 @@ import {
   networkSummary,
 } from "../../../../../packages/contracts/collection-display";
 import "./collections.css";
+import { AssetSoftware } from "./AssetSoftware";
 import { useEffect, useState } from "react";
 import { api, ApiError } from "../../api";
 import { requestId } from "../../request-id";
@@ -200,7 +201,9 @@ function Layer({
   onExclude,
   excluded,
   onError,
+  readOnly = false,
 }: {
+  readOnly?: boolean;
   name: string;
   base: string;
   snapshotId: string;
@@ -281,7 +284,7 @@ function Layer({
           value={page?.data}
           excluded={excluded}
           onExclude={onExclude}
-          canSelect={view === "observed"}
+          canSelect={!readOnly && view === "observed"}
           changes={view === "observed" ? info.changes : []}
         />
       ) : name === "network" ? (
@@ -530,7 +533,8 @@ function Layer({
                       </small>
                     )}
                   </dd>
-                  {view === "observed" &&
+                  {!readOnly &&
+                    view === "observed" &&
                     [
                       "identity",
                       "os",
@@ -565,7 +569,9 @@ export function AssetBaseline({
   assetId,
   snapshotId,
   onConfirmed,
+  readOnly = false,
 }: {
+  readOnly?: boolean;
   assetId: string;
   snapshotId?: string;
   onConfirmed?: () => void;
@@ -595,6 +601,7 @@ export function AssetBaseline({
       .then((v) => {
         if (c.signal.aborted) return;
         setData(v);
+        if (readOnly) setView(v.current ? "baseline" : "observed");
         setSelected(
           Object.entries(v.sections)
             .filter(([, s]) => s.comparable)
@@ -671,6 +678,22 @@ export function AssetBaseline({
     return (
       <p role={error ? "alert" : "status"}>{error || "正在读取资产资料…"}</p>
     );
+  const tabs: Record<string, string[]> = {
+    identity: ["identity"],
+    os: ["os"],
+    hardware: ["hardware"],
+    network: ["network"],
+    packages: ["packages"],
+    docker: ["dockerClient", "dockerDaemon"],
+    containers: ["containers", "images"],
+    software: [],
+  };
+  const tabLabels = {
+    ...labels,
+    docker: "Docker 环境",
+    containers: "容器",
+    software: "软件 / 项目",
+  };
   return (
     <div className="asset-baseline">
       <div className="baseline-overview">
@@ -747,7 +770,7 @@ export function AssetBaseline({
             role="tablist"
             aria-label="资产资料分区"
           >
-            {Object.entries(labels).map(([key, label]) => (
+            {Object.keys(tabs).map((key) => (
               <button
                 type="button"
                 key={key}
@@ -756,20 +779,47 @@ export function AssetBaseline({
                 aria-controls={`baseline-${key}`}
                 onClick={() => setActiveTab(key)}
               >
-                {label}
-                {data.sections[key]?.totalChanges ? (
-                  <b>{data.sections[key].totalChanges}</b>
+                {tabLabels[key as keyof typeof tabLabels]}
+                {tabs[key].some((name) => data.sections[name]?.totalChanges) ? (
+                  <b>
+                    {tabs[key].reduce(
+                      (sum, name) =>
+                        sum + (data.sections[name]?.totalChanges ?? 0),
+                      0,
+                    )}
+                  </b>
                 ) : null}
               </button>
             ))}
           </div>
-          {view === "observed" && (
+          {!readOnly && view === "observed" && (
             <p className="collect-muted">
               勾选完整取得的区块，展开可排除字段。未取得或部分取得的区块保留原基线；清单仅在完整取得时比较删除。
             </p>
           )}
+          {activeTab === "software" && (
+            <AssetSoftware
+              customerId={customerId}
+              token={token}
+              assetId={assetId}
+              kind="software"
+              onError={fail}
+            />
+          )}
+          {activeTab === "containers" && (
+            <p className="collect-muted">容器组件扫描尚未接入</p>
+          )}
+          {activeTab === "containers" && (
+            <AssetSoftware
+              customerId={customerId}
+              token={token}
+              assetId={assetId}
+              kind="container"
+              onError={fail}
+            />
+          )}
           {Object.entries(labels)
-            .filter(([name]) => name === activeTab)
+            .filter(([name]) => tabs[activeTab]?.includes(name))
             .map(([name, label]) => {
               const info = data.sections[name];
               return (
@@ -797,7 +847,7 @@ export function AssetBaseline({
                           · 删除 {info.counts.removed}
                         </span>
                       )}
-                      {view === "observed" && (
+                      {!readOnly && view === "observed" && (
                         <label className="collect-check">
                           <input
                             aria-label={`采纳${label}`}
@@ -832,11 +882,12 @@ export function AssetBaseline({
                       )
                     }
                     onError={fail}
+                    readOnly={readOnly}
                   />
                 </section>
               );
             })}
-          {view === "observed" && (
+          {!readOnly && view === "observed" && (
             <div className="baseline-confirm">
               <div>
                 <strong>确认本次基础资料</strong>
@@ -879,7 +930,7 @@ export function AssetBaseline({
                   unknown: "写回未获确认",
                 }[h.status] ?? h.status}
               </span>
-              {h.status === "unknown" && (
+              {!readOnly && h.status === "unknown" && (
                 <button
                   className="secondary"
                   disabled={busy}
@@ -888,7 +939,7 @@ export function AssetBaseline({
                   核对NetBox当前值
                 </button>
               )}
-              {h.status === "unknown" && (
+              {!readOnly && h.status === "unknown" && (
                 <button
                   className="secondary"
                   disabled={busy}
