@@ -88,6 +88,10 @@ export class SoftwareService {
     content: string,
   ) {
     const parsed = parseCycloneDx(content);
+    if (parsed.rootType === "container")
+      throw new BadRequestException(
+        "容器镜像 SBOM 请使用容器入口，不能关联为软件应用",
+      );
     const hash = createHash("sha256").update(content, "utf8").digest("hex");
     return this.db.transaction(async (session) => {
       await this.get(customer, softwareId, session);

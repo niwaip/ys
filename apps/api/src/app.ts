@@ -16,6 +16,7 @@ import { configuredPublicExecutor } from "./agent/pi-process";
 import { AgentModule } from "./agent/agent.module";
 import { AssessmentsModule } from "./assessments/assessments.module";
 import { ProcessTrivyExecutor, type TrivyExecutor } from "./assessments/trivy";
+import { ContainersModule } from "./containers/containers.module";
 import { ReportsModule } from "./reports/reports.module";
 const CONFIG = Symbol("APP_CONFIG");
 Inject(CONFIG)(OperatorGuard, undefined, 0);
@@ -81,6 +82,7 @@ export async function createApp(
           ImportsModule,
           LifecycleModule,
           SoftwareModule,
+          ContainersModule,
           WindowsModule,
           ...(!features.some(
             (f) =>

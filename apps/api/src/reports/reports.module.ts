@@ -78,6 +78,7 @@ export class ReportsService {
       cveTargets = new Set<string>(),
       lifeTargets = new Set<string>();
     for (const a of assessmentSnapshots) {
+      if(a.target.kind!=="software")throw new BadRequestException("此报告适配器仅支持软件目标");
       const key = `software:${a.target.softwareId}:${a.target.versionId}`;
       if (cveTargets.has(key))
         throw new ConflictException(
@@ -121,6 +122,7 @@ export class ReportsService {
         );
     }
     for (const a of assessmentSnapshots) {
+      if(a.target.kind!=="software")throw new BadRequestException("此报告适配器仅支持软件目标");
       if (!a.result)
         coverageIssues.push(
           `CVE评估 ${a.id}：${a.status}，无可用结果，不是零漏洞`,
@@ -159,6 +161,7 @@ export class ReportsService {
       now = new Date().toISOString();
     const sourceRefs: ReportFacts["sourceRefs"] = [];
     for (const a of assessmentSnapshots) {
+      if(a.target.kind!=="software")throw new BadRequestException("此报告适配器仅支持软件目标");
       const material = await this.imports.get(customer, a.input.importId);
       const snapshot = await this.software.getVersion(
         customer,

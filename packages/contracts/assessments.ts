@@ -57,7 +57,9 @@ export type Assessment = {
   customerId: string;
   status: AssessmentStatus;
   idempotencyKey: string;
-  target: { kind: "software"; softwareId: string; versionId: string };
+  target:
+    | { kind: "software"; softwareId: string; versionId: string }
+    | { kind: "container"; containerId: string; versionId: string };
   input: { importId: string; contentHash: string; version: string | null };
   createdAt: string;
   startedAt?: string;

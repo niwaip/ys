@@ -23,6 +23,7 @@ if (
   console.error("unsafe invocation");
   process.exit(3);
 }
+const container = input.metadata?.component?.type === "container";
 const output = args[args.indexOf("--output") + 1];
 fs.writeFileSync(
   output,
@@ -33,25 +34,35 @@ fs.writeFileSync(
       {
         Target: "fixture-target",
         Class: "lang-pkgs",
-        Type: "npm",
+        Type: container ? "debian" : "npm",
         Packages: [
           {
-            Name: "express",
-            Version: "4.18.0",
-            Identifier: { PURL: "pkg:npm/express@4.18.0" },
+            Name: container ? "libssl3" : "express",
+            Version: container ? "3.0.1" : "4.18.0",
+            Identifier: {
+              PURL: container
+                ? "pkg:deb/debian/libssl3@3.0.1?distro=debian-12"
+                : "pkg:npm/express@4.18.0",
+            },
           },
         ],
         Vulnerabilities:
           input.fixtureMode === "findings"
             ? [
                 {
-                  VulnerabilityID: "CVE-2099-FIXTURE",
-                  PkgName: "express",
-                  InstalledVersion: "4.18.0",
+                  VulnerabilityID: container
+                    ? "CVE-2099-CONTAINER"
+                    : "CVE-2099-FIXTURE",
+                  PkgName: container ? "libssl3" : "express",
+                  InstalledVersion: container ? "3.0.1" : "4.18.0",
                   Severity: "HIGH",
-                  FixedVersion: "4.19.2",
+                  FixedVersion: container ? "3.0.2" : "4.19.2",
                   PrimaryURL: "https://example.test/fixture",
-                  PkgIdentifier: { PURL: "pkg:npm/express@4.18.0" },
+                  PkgIdentifier: {
+                    PURL: container
+                      ? "pkg:deb/debian/libssl3@3.0.1?distro=debian-12"
+                      : "pkg:npm/express@4.18.0",
+                  },
                 },
               ]
             : [],

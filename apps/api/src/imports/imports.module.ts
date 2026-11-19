@@ -42,7 +42,7 @@ export class ImportsService {
     session: Queryable = this.db,
   ): Promise<ImportMaterial> {
     const result = await session.query(
-      `SELECT ${columns} FROM import_materials WHERE customer_id=$1 AND id=$2 AND format IN ('csv','cyclonedx-json')`,
+      `SELECT ${columns} FROM import_materials WHERE customer_id=$1 AND id=$2 AND format IN ('csv','cyclonedx-json','container-cyclonedx-json')`,
       [customer, id],
     );
     if (!result.rows.length)
