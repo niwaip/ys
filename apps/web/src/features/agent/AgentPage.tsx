@@ -1,3 +1,4 @@
+import { requestId } from "../../request-id";
 import { useEffect, useState } from "react";
 import type { AgentQuery } from "../../../../../packages/contracts/agent";
 import type { FeatureProps } from "../../features";
@@ -60,7 +61,7 @@ export function AgentPage({ token, onUnauthorized }: FeatureProps) {
     try {
       const result = await api<AgentQuery>("/intelligence/queries", token, {
         method: "POST",
-        body: JSON.stringify({ message, idempotencyKey: crypto.randomUUID() }),
+        body: JSON.stringify({ message, idempotencyKey: requestId() }),
       });
       setSelected(result);
       setItems((old) => [result, ...old.filter((i) => i.id !== result.id)]);

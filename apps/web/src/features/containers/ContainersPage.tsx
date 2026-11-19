@@ -1,3 +1,4 @@
+import { requestId } from "../../request-id";
 import { useEffect, useRef, useState } from "react";
 import type { FeatureProps } from "../../features";
 import { api, ApiError } from "../../api";
@@ -49,7 +50,7 @@ export function ContainersPage({
       undefined,
     ),
     jobId = useRef<string | undefined>(undefined),
-    key = useRef(crypto.randomUUID()),
+    key = useRef(requestId()),
     offset = useRef(0);
   const base = `/customers/${customerId}`;
   const call = <T,>(path: string, options: RequestInit = {}) =>
@@ -117,7 +118,7 @@ export function ContainersPage({
     setMaterial(undefined);
     setHistory({ items: [], total: 0, limit: 20, offset: 0 });
     offset.current = 0;
-    key.current = crypto.randomUUID();
+    key.current = requestId();
   }
   async function chooseVersion(v: ContainerVersion) {
     selection.current = { containerId: v.containerId, versionId: v.id };
@@ -126,7 +127,7 @@ export function ContainersPage({
     setSnapshot(v);
     setMaterial(undefined);
     offset.current = 0;
-    key.current = crypto.randomUUID();
+    key.current = requestId();
     setMaterial(await call<ImportMaterial>(`${base}/imports/${v.importId}`));
     await refreshTasks();
   }
@@ -398,7 +399,7 @@ export function ContainersPage({
             <button
               disabled={busy}
               onClick={() => {
-                key.current = crypto.randomUUID();
+                key.current = requestId();
                 setMessage("已建立新镜像评估请求，提交后独立执行");
               }}
             >

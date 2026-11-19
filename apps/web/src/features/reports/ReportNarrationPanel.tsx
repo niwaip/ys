@@ -1,3 +1,4 @@
+import { requestId } from "../../request-id";
 import { useEffect, useRef, useState } from "react";
 import type { FeatureProps } from "../../features";
 import type {
@@ -57,7 +58,7 @@ export function ReportNarrationPanel({
         method: "POST",
         body: JSON.stringify({
           baseRevisionId: report.revision.id,
-          idempotencyKey: crypto.randomUUID(),
+          idempotencyKey: requestId(),
         }),
       });
       setJobs((current) => [job, ...current.filter((j) => j.id !== job.id)]);

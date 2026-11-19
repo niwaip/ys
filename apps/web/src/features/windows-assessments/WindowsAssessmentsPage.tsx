@@ -1,3 +1,4 @@
+import { requestId } from "../../request-id";
 import { useEffect, useRef, useState } from "react";
 import { api, ApiError } from "../../api";
 import type { FeatureProps } from "../../features";
@@ -44,7 +45,7 @@ export function WindowsAssessmentsPage({
     [job, setJob] = useState<WindowsAssessment>(),
     [error, setError] = useState(""),
     [busy, setBusy] = useState(false),
-    [requestKey, setRequestKey] = useState(() => crypto.randomUUID());
+    [requestKey, setRequestKey] = useState(() => requestId());
   const abort = useRef(new AbortController()),
     selected = useRef<string | undefined>(undefined);
   const base = `/customers/${customerId}`;
@@ -101,7 +102,7 @@ export function WindowsAssessmentsPage({
       setRules(
         (await call<{ items: WindowsRuleMaterial[] }>("/windows/rules")).items,
       );
-      setRequestKey(crypto.randomUUID());
+      setRequestKey(requestId());
     } catch (e) {
       fail(e);
     } finally {
@@ -161,7 +162,7 @@ export function WindowsAssessmentsPage({
             value={snapshotId}
             onChange={(e) => {
               setSnapshotId(e.target.value);
-              setRequestKey(crypto.randomUUID());
+              setRequestKey(requestId());
             }}
           >
             <option value="">请选择快照</option>
@@ -180,7 +181,7 @@ export function WindowsAssessmentsPage({
             value={ruleId}
             onChange={(e) => {
               setRuleId(e.target.value);
-              setRequestKey(crypto.randomUUID());
+              setRequestKey(requestId());
             }}
           >
             <option value="">请选择规则</option>
@@ -195,7 +196,7 @@ export function WindowsAssessmentsPage({
         <button disabled={!snapshotId || !ruleId || busy} onClick={submit}>
           开始 Windows 评估
         </button>
-        <button onClick={() => setRequestKey(crypto.randomUUID())}>
+        <button onClick={() => setRequestKey(requestId())}>
           新建评估请求
         </button>
       </div>

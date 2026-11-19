@@ -1,3 +1,4 @@
+import { requestId } from "../../request-id";
 import { useEffect, useState } from "react";
 import { api, ApiError } from "../../api";
 import type { FeatureProps } from "../../features";
@@ -74,7 +75,7 @@ export function ConversationsPage({
         body: JSON.stringify({
           message,
           assessmentIds: ids,
-          idempotencyKey: crypto.randomUUID(),
+          idempotencyKey: requestId(),
         }),
       });
       setSelected(d);

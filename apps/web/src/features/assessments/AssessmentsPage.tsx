@@ -1,3 +1,4 @@
+import { requestId } from "../../request-id";
 import {
   AssessmentDetails,
   assessmentStatusLabels as labels,
@@ -29,7 +30,7 @@ export function AssessmentsPage({
       offset: 0,
     }),
     [job, setJob] = useState<Assessment>(),
-    [key, setKey] = useState(() => crypto.randomUUID()),
+    [key, setKey] = useState(() => requestId()),
     [busy, setBusy] = useState(false),
     [error, setError] = useState(""),
     [message, setMessage] = useState("");
@@ -88,7 +89,7 @@ export function AssessmentsPage({
     await run(async () => {
       setSelected(undefined);
       setVersionId("");
-      setKey(crypto.randomUUID());
+      setKey(requestId());
       if (id) setSelected(await call<SoftwareDetail>(`${base}/software/${id}`));
     });
   }
@@ -130,7 +131,7 @@ export function AssessmentsPage({
             value={versionId}
             onChange={(e) => {
               setVersionId(e.target.value);
-              setKey(crypto.randomUUID());
+              setKey(requestId());
             }}
           >
             <option value="">选择输入版本</option>
@@ -173,7 +174,7 @@ export function AssessmentsPage({
         <button
           disabled={busy}
           onClick={() => {
-            setKey(crypto.randomUUID());
+            setKey(requestId());
             setMessage("已建立新的评估请求；提交后生成独立任务");
           }}
         >

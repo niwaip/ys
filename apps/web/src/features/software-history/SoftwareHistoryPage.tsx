@@ -1,3 +1,4 @@
+import { requestId } from "../../request-id";
 import { useEffect, useRef, useState } from "react";
 import type { FeatureProps } from "../../features";
 import { api, ApiError } from "../../api";
@@ -296,7 +297,7 @@ export function SoftwareHistoryPage({
                     )
                       requestKey.current = {
                         versionId: inputId,
-                        key: crypto.randomUUID(),
+                        key: requestId(),
                       };
                     const job = await call<Assessment>(`${base}/assessments`, {
                       method: "POST",
