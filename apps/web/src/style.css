@@ -102,6 +102,10 @@ button.secondary {
   flex-direction: column;
   position: fixed;
   inset: 0 auto 0 0;
+  overflow-y: auto;
+}
+.sidebar > * {
+  flex-shrink: 0;
 }
 .workspace-label,
 .nav-label {
@@ -685,6 +689,7 @@ pre {
 @media (max-width: 720px) {
   .sidebar {
     position: static;
+    overflow: visible;
     width: 100%;
     padding: 18px;
   }

@@ -20,6 +20,10 @@ const migrations = [
     sql: `CREATE TABLE report_narrations(id uuid PRIMARY KEY,customer_id text NOT NULL,report_id uuid NOT NULL,base_revision_id uuid NOT NULL,idempotency_key text NOT NULL,actor_key text NOT NULL,status text NOT NULL,details jsonb NOT NULL,created_at timestamptz NOT NULL DEFAULT now(),UNIQUE(customer_id,report_id,idempotency_key),FOREIGN KEY(customer_id,report_id) REFERENCES reports(customer_id,id),FOREIGN KEY(customer_id,base_revision_id) REFERENCES report_revisions(customer_id,id));CREATE INDEX report_narration_scope ON report_narrations(customer_id,report_id,created_at DESC,id);`,
   },
   {
+    version: 11,
+    sql: `CREATE TABLE software_current(customer_id text NOT NULL,software_id uuid NOT NULL,version_id uuid NOT NULL,assessment_id uuid,selected_at timestamptz NOT NULL DEFAULT now(),PRIMARY KEY(customer_id,software_id),FOREIGN KEY(customer_id,software_id) REFERENCES software_objects(customer_id,id),FOREIGN KEY(customer_id,version_id) REFERENCES software_versions(customer_id,id),FOREIGN KEY(customer_id,assessment_id) REFERENCES vulnerability_jobs(customer_id,id));`,
+  },
+  {
     version: 10,
     sql: `CREATE TABLE customer_conversations(id uuid PRIMARY KEY,customer_id text NOT NULL REFERENCES customers(id),idempotency_key text NOT NULL,input_hash text NOT NULL,details jsonb NOT NULL,created_at timestamptz NOT NULL DEFAULT now(),UNIQUE(customer_id,idempotency_key));`,
   },
