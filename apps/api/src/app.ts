@@ -1,3 +1,4 @@
+import { DashboardModule } from "./dashboard/dashboard.module";
 import "reflect-metadata";
 import { Inject, Module, type DynamicModule } from "@nestjs/common";
 import { APP_GUARD, NestFactory } from "@nestjs/core";
@@ -18,7 +19,7 @@ import { AssessmentsModule } from "./assessments/assessments.module";
 import { ProcessTrivyExecutor, type TrivyExecutor } from "./assessments/trivy";
 import { ContainersModule } from "./containers/containers.module";
 import { ReportsModule } from "./reports/reports.module";
-import {SoftwareHistoryModule} from "./software-history/software-history.module";
+import { SoftwareHistoryModule } from "./software-history/software-history.module";
 import { ConversationsModule } from "./conversations/conversations.module";
 import {
   configuredCustomerExecutor,
@@ -82,6 +83,7 @@ export async function createApp(
     const assessments = AssessmentsModule.register(
       runtime.trivyExecutor ?? new ProcessTrivyExecutor(config.trivy),
     );
+    const history = SoftwareHistoryModule.register(assessments);
     const app = await NestFactory.create(
       {
         module: ApplicationModule,
@@ -104,7 +106,8 @@ export async function createApp(
             : []),
           assessments,
           ReportsModule.register(assessments),
-          SoftwareHistoryModule.register(assessments),
+          history,
+          DashboardModule.register(assessments, history),
           ConversationsModule.register(
             assessments,
             runtime.customerReadExecutor ??
