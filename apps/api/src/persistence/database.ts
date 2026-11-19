@@ -16,6 +16,10 @@ export const DATABASE = Symbol("DATABASE");
 // Numbered migrations are applied atomically; new features append migrations here.
 const migrations = [
   {
+    version: 9,
+    sql: `CREATE TABLE agent_queries(id uuid PRIMARY KEY,owner_key text NOT NULL,idempotency_key text NOT NULL,original_message text NOT NULL,status text NOT NULL,events jsonb NOT NULL DEFAULT '[]',result jsonb,error text,created_at timestamptz NOT NULL DEFAULT now(),finished_at timestamptz,UNIQUE(owner_key,idempotency_key));`,
+  },
+  {
     version: 13,
     sql: `CREATE TABLE reports(id uuid PRIMARY KEY,customer_id text NOT NULL REFERENCES customers(id),created_at timestamptz NOT NULL,created_by text NOT NULL,UNIQUE(customer_id,id)); CREATE TABLE report_revisions(id uuid PRIMARY KEY,customer_id text NOT NULL,report_id uuid NOT NULL,number integer NOT NULL,result jsonb NOT NULL,UNIQUE(customer_id,id),UNIQUE(customer_id,report_id,number),FOREIGN KEY(customer_id,report_id) REFERENCES reports(customer_id,id)); CREATE INDEX reports_customer ON reports(customer_id,created_at DESC,id);`,
   },

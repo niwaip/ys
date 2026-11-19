@@ -12,6 +12,7 @@ import { ImportsModule } from "./imports/imports.module";
 import { LifecycleModule } from "./lifecycle/lifecycle.module";
 import { SoftwareModule } from "./software/software.module";
 import { WindowsModule } from "./windows/windows.module";
+import { AgentModule } from "./agent/agent.module";
 import { AssessmentsModule } from "./assessments/assessments.module";
 import { ProcessTrivyExecutor, type TrivyExecutor } from "./assessments/trivy";
 import { ReportsModule } from "./reports/reports.module";
@@ -80,6 +81,15 @@ export async function createApp(
           LifecycleModule,
           SoftwareModule,
           WindowsModule,
+          ...(!features.some(
+            (f) =>
+              typeof f === "object" &&
+              f !== null &&
+              "module" in f &&
+              f.module === AgentModule,
+          )
+            ? [AgentModule.register()]
+            : []),
           assessments,
           ReportsModule.register(assessments),
           ...features,
