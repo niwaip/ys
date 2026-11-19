@@ -14,6 +14,7 @@ import { SoftwareModule } from "./software/software.module";
 import { WindowsModule } from "./windows/windows.module";
 import { AssessmentsModule } from "./assessments/assessments.module";
 import { ProcessTrivyExecutor, type TrivyExecutor } from "./assessments/trivy";
+import { ReportsModule } from "./reports/reports.module";
 const CONFIG = Symbol("APP_CONFIG");
 Inject(CONFIG)(OperatorGuard, undefined, 0);
 Inject(CONFIG)(CustomersController, undefined, 0);
@@ -66,6 +67,9 @@ export async function createApp(
         "INSERT INTO customers (id,name) VALUES ($1,$2) ON CONFLICT (id) DO UPDATE SET name=EXCLUDED.name",
         [customer.id, customer.name],
       );
+    const assessments = AssessmentsModule.register(
+      runtime.trivyExecutor ?? new ProcessTrivyExecutor(config.trivy),
+    );
     const app = await NestFactory.create(
       {
         module: ApplicationModule,
@@ -76,7 +80,8 @@ export async function createApp(
           LifecycleModule,
           SoftwareModule,
           WindowsModule,
-          AssessmentsModule.register(runtime.trivyExecutor ?? new ProcessTrivyExecutor(config.trivy)),
+          assessments,
+          ReportsModule.register(assessments),
           ...features,
         ],
         controllers: [CustomersController],
