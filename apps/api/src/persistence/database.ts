@@ -16,6 +16,10 @@ export const DATABASE = Symbol("DATABASE");
 // Numbered migrations are applied atomically; new features append migrations here.
 const migrations = [
   {
+    version: 9,
+    sql: `CREATE TABLE agent_queries(id uuid PRIMARY KEY,owner_key text NOT NULL,idempotency_key text NOT NULL,original_message text NOT NULL,status text NOT NULL,events jsonb NOT NULL DEFAULT '[]',result jsonb,error text,created_at timestamptz NOT NULL DEFAULT now(),finished_at timestamptz,UNIQUE(owner_key,idempotency_key));`,
+  },
+  {
     version: 4,
     sql: `
     CREATE TABLE software_objects(id uuid PRIMARY KEY, customer_id text NOT NULL REFERENCES customers(id), name text NOT NULL, created_at timestamptz NOT NULL DEFAULT now(), UNIQUE(customer_id,id));

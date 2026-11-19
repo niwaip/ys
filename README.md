@@ -73,3 +73,7 @@ API 测试通过真实 HTTP 边界使用临时 PGlite 数据目录，结束自�
 ## Windows 采集 JSON
 
 客户空间的“Windows 采集导入”接收本地 BAT 资料，保留原文、软件/KB/Build/UBR、来源完整性及未知字段。新内容生成独立快照，同名身份冲突保留待确认。支持范围、API 和后续评估读取边界见 [Windows 输入契约](docs/windows-import.md)。
+
+## 公开 CVE 对话
+
+“公开 CVE 对话”提交Pi后台任务，固定skill/工具使用已有CVE查询脚本；公开情报不等于客户受影响评估。未配置运行时明确不可用，刷新后保留状态和原因。配置、RPC版本边界与API见 [Pi公开查询](docs/pi-public-query.md)。

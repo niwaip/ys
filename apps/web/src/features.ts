@@ -1,3 +1,4 @@
+import { AgentPage } from "./features/agent/AgentPage";
 import { LifecyclePage } from "./features/lifecycle/LifecyclePage";
 import { SoftwarePage } from "./features/software/SoftwarePage";
 import { WindowsPage } from "./features/windows/WindowsPage";
@@ -19,12 +20,23 @@ export type Feature = {
 export const features: Feature[] = [
   { id: "assets", label: "资产台账", icon: "▦", component: AssetsPage },
   {
+    id: "public-intelligence",
+    label: "公开 CVE 对话",
+    icon: "◌",
+    component: AgentPage,
+  },
+  {
     id: "windows",
     label: "Windows 采集导入",
     icon: "⇧",
     component: WindowsPage,
   },
   { id: "imports", label: "CSV 资料导入", icon: "⇧", component: ImportsPage },
-  { id: "lifecycle", label: "EOS/EOL 生命周期", icon: "◷", component: LifecyclePage },
+  {
+    id: "lifecycle",
+    label: "EOS/EOL 生命周期",
+    icon: "◷",
+    component: LifecyclePage,
+  },
   { id: "software", label: "软件 SBOM", icon: "◇", component: SoftwarePage },
 ];

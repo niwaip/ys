@@ -12,6 +12,7 @@ import { ImportsModule } from "./imports/imports.module";
 import { LifecycleModule } from "./lifecycle/lifecycle.module";
 import { SoftwareModule } from "./software/software.module";
 import { WindowsModule } from "./windows/windows.module";
+import { AgentModule } from "./agent/agent.module";
 const CONFIG = Symbol("APP_CONFIG");
 Inject(CONFIG)(OperatorGuard, undefined, 0);
 Inject(CONFIG)(CustomersController, undefined, 0);
@@ -73,6 +74,15 @@ export async function createApp(
           LifecycleModule,
           SoftwareModule,
           WindowsModule,
+          ...(!features.some(
+            (f) =>
+              typeof f === "object" &&
+              f !== null &&
+              "module" in f &&
+              f.module === AgentModule,
+          )
+            ? [AgentModule.register()]
+            : []),
           ...features,
         ],
         controllers: [CustomersController],
