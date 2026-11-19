@@ -92,7 +92,14 @@ export function evaluateWindows(
   rules: WindowsRules,
   provenance: { importId: string; contentHash: string },
 ): WindowsAssessmentResult {
+  const fullBuild = host.fullBuild?.match(/^(?:10\.0\.)?(\d+)\.(\d+)$/);
+  const consistentBuild =
+    host.fullBuild === null ||
+    (!!fullBuild &&
+      fullBuild[1] === host.osBuild &&
+      (host.ubr === null || Number(fullBuild[2]) === host.ubr));
   const matched =
+    consistentBuild &&
     /^(?:Microsoft\s+)?Windows Server 2022(?: (?:Standard|Datacenter)(?: Evaluation)?)?$/i.test(
       host.os ?? "",
     ) &&
@@ -100,11 +107,13 @@ export function evaluateWindows(
     ["x64", "64-bit", "amd64"].includes(
       (host.architecture ?? "").toLowerCase(),
     );
-  const overall = String(host.collectionStatus?.Overall ?? "").toUpperCase();
+  const overall = String(host.collectionStatus?.Overall ?? "")
+    .trim()
+    .toUpperCase();
   const complete =
     host.kbs !== null &&
     !Object.values(host.collectionStatus ?? {}).some((v) =>
-      ["FAILED", "PARTIAL"].includes(String(v).toUpperCase()),
+      ["FAILED", "PARTIAL"].includes(String(v).trim().toUpperCase()),
     ) &&
     host.kbInventoryComplete === true &&
     host.rebootPending === false &&
@@ -114,6 +123,8 @@ export function evaluateWindows(
     "仅覆盖所上传人工整理规则；不是完整或最新 Windows 漏洞库",
     "来源内容哈希已核对；未联网核实上传内容真实性",
   ];
+  if (!consistentBuild)
+    issues.push("FullBuild 与 Build/UBR 冲突或格式未知，不能确认适用性");
   if (!matched) issues.push("产品、20348 分支或 x64 架构无法确认");
   if (!complete)
     issues.push("采集完整性、采集时间或重启状态不足；不能确认已修复");
@@ -181,6 +192,8 @@ export function evaluateWindows(
         observed: {
           os: host.os,
           build: host.osBuild,
+          fullBuild: host.fullBuild,
+          architecture: host.architecture,
           ubr: host.ubr,
           kbs: host.kbs,
           collectedAt: host.collectedAt,

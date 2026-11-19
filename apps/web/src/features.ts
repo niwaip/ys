@@ -1,7 +1,7 @@
+import { WindowsAssessmentsPage } from "./features/windows-assessments/WindowsAssessmentsPage";
 import { ContainersPage } from "./features/containers/ContainersPage";
 import { AgentPage } from "./features/agent/AgentPage";
 import { ReportsPage } from "./features/reports/ReportsPage";
-import { WindowsAssessmentsPage } from "./features/windows-assessments/WindowsAssessmentsPage";
 import { AssessmentsPage } from "./features/assessments/AssessmentsPage";
 import { LifecyclePage } from "./features/lifecycle/LifecyclePage";
 import { SoftwarePage } from "./features/software/SoftwarePage";
