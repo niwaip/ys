@@ -10,6 +10,9 @@ const pkg = z
   .object({
     Name: z.string(),
     Version: z.string(),
+    Epoch: z.number().int().nonnegative().optional(),
+    Release: z.string().optional(),
+    Arch: z.string().optional(),
     Identifier: z
       .object({ PURL: z.string().optional() })
       .passthrough()
@@ -81,18 +84,28 @@ export function normalizeTrivy(
       ];
   const matched = new Set<string>();
   const findings: VulnerabilityFinding[] = [];
-  const match = (name: string, version: string, purl?: string) => {
+  const match = (
+    name: string,
+    version: string,
+    purl?: string,
+    architecture?: string,
+  ) => {
     const candidates = components.filter(
       (c) =>
         c.name === name &&
         c.version === version &&
+        (!linuxOs || !architecture || c.raw.architecture === architecture) &&
         (!!linuxOs || !purl || c.purl === purl),
     );
     return candidates.length === 1 ? candidates[0] : null;
   };
   for (const r of parsed.data.Results) {
     for (const p of r.Packages ?? []) {
-      const c = match(p.Name, p.Version, p.Identifier?.PURL);
+      // Native dpkg output splits Debian version into epoch/upstream/revision.
+      const version = linuxOs
+        ? `${p.Epoch ? `${p.Epoch}:` : ""}${p.Version}${p.Release ? `-${p.Release}` : ""}`
+        : p.Version;
+      const c = match(p.Name, version, p.Identifier?.PURL, p.Arch);
       if (c && c.version && (c.purl || linuxOs)) matched.add(c.id);
     }
     for (const v of r.Vulnerabilities ?? []) {

@@ -58,12 +58,20 @@ test("Linux固定快照经真实任务队列扫描，Dashboard和报告冻结结
                   Target: "ubuntu",
                   Class: "os-pkgs",
                   Type: "ubuntu",
-                  Packages: [{ Name: "libssl3", Version: "3.0.1" }],
+                  Packages: [
+                    {
+                      Name: "libssl3",
+                      Version: "3.0.1",
+                      Epoch: 1,
+                      Release: "0ubuntu1",
+                      Arch: "amd64",
+                    },
+                  ],
                   Vulnerabilities: [
                     {
                       VulnerabilityID: "CVE-2026-12345",
                       PkgName: "libssl3",
-                      InstalledVersion: "3.0.1",
+                      InstalledVersion: "1:3.0.1-0ubuntu1",
                       Severity: "HIGH",
                       FixedVersion: "3.0.2",
                     },
@@ -104,7 +112,7 @@ test("Linux固定快照经真实任务队列扫描，Dashboard和报告冻结结
           {
             manager: "dpkg",
             name: "libssl3",
-            version: "3.0.1",
+            version: "1:3.0.1-0ubuntu1",
             architecture: "amd64",
             state: "installed",
           },
@@ -116,7 +124,7 @@ test("Linux固定快照经真实任务队列扫描，Dashboard和报告冻结结
         os: 'ID=ubuntu\nVERSION_ID="24.04"\n',
         lsbRelease: "DISTRIB_ID=Ubuntu\nDISTRIB_RELEASE=24.04\n",
         dpkgStatus:
-          "Package: libssl3\nStatus: hold ok installed\nArchitecture: amd64\nVersion: 3.0.1\nSource: openssl\n\n",
+          "Package: libssl3\nStatus: hold ok installed\nArchitecture: amd64\nVersion: 1:3.0.1-0ubuntu1\nSource: openssl\n\n",
       },
     },
   };
