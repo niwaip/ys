@@ -75,6 +75,8 @@ test("Linux快照扫描分页、原始证据下载、历史回读及客户隔离
   await page.getByRole("button", { name: "下一页漏洞" }).click();
   await expect(page.getByText("CVE-LINUX-050", { exact: true })).toBeVisible();
   await expect(page.getByText("CVE-LINUX-000", { exact: true })).toHaveCount(0);
+  await page.setViewportSize({width:390,height:844});
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
   const download = page.waitForEvent("download");
   await page.getByRole("button", { name: "下载原始Trivy报告" }).click();
   expect((await download).suggestedFilename()).toMatch(/^trivy-.*\.json$/);

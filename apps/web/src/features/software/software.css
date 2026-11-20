@@ -64,3 +64,10 @@
 .software-page h3 {
   margin: 12px 0;
 }
+
+.software-page select {
+  box-sizing: border-box;
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
+}
