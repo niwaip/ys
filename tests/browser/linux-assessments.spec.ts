@@ -137,6 +137,7 @@ test("Linux快照扫描分页、原始证据下载、历史回读及客户隔离
   await expect(
     preview.getByText("待复核草稿 · 不代表正式交付", { exact: true }),
   ).toBeVisible();
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
   await page.getByLabel("当前客户").selectOption("river");
   await expect(page.getByText("CVE-LINUX-000", { exact: true })).toHaveCount(0);
   expect(errors).toEqual([]);
