@@ -37,4 +37,4 @@ worker从持久队列处理任务，依据保存的操作员不可逆hash重新�
 YS_REPORT_BROWSER_FIXTURE=1 YS_BROWSER_API=http://127.0.0.1:3124 PLAYWRIGHT_CHANNEL=chrome npm run test:browser -- --config playwright.narration.config.ts
 ```
 
-端口4274/3124，数据在`.data/browser-narration`。普通 `npm run test:browser`跳过这个专用成功spec。API通过注入固定输出验收成功、越界提案、超时、并发新稿及重启；进程契约通过真实固定extension/script配合本地假Pi验证。未连接真实provider，也未声称已验证真实Pi版本/CLI兼容。适配真实环境需核对配置的CLI终态与工具协议。
+端口4274/3124，数据在`.data/browser-narration`。普通 `npm run test:browser`跳过这个专用成功spec。API通过注入固定输出验收成功、越界提案、超时、并发新稿及重启；进程契约通过真实固定extension/script配合本地假Pi验证。以上自动化套件不连接真实provider；YS主机的真实Pi验收另见 [生产环境报告叙述验证](verification/pi-report-narration.md)。其他CLI版本仍需核对终态与工具协议。
