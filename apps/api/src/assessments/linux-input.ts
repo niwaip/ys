@@ -64,7 +64,8 @@ export function linuxInput(row: Record<string, unknown>, assetId: string) {
         return m ? [[m[1], m[2]]] : [];
       }),
     );
-    if (fields.Status !== "install ok installed") continue;
+    // The first token is the desired selection (including hold), not the current state.
+    if (!/^\S+ \S+ installed$/.test(fields.Status ?? "")) continue;
     if (!fields.Package || !fields.Version || !fields.Architecture)
       throw new BadRequestException("原始dpkg记录缺少包名、版本或架构");
     components.push({

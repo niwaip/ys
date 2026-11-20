@@ -116,7 +116,7 @@ test("Linux固定快照经真实任务队列扫描，Dashboard和报告冻结结
         os: 'ID=ubuntu\nVERSION_ID="24.04"\n',
         lsbRelease: "DISTRIB_ID=Ubuntu\nDISTRIB_RELEASE=24.04\n",
         dpkgStatus:
-          "Package: libssl3\nStatus: install ok installed\nArchitecture: amd64\nVersion: 3.0.1\nSource: openssl\n\n",
+          "Package: libssl3\nStatus: hold ok installed\nArchitecture: amd64\nVersion: 3.0.1\nSource: openssl\n\n",
       },
     },
   };
