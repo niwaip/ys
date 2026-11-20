@@ -152,6 +152,13 @@ export class ReportsService {
           evaluatedAt: a.finishedAt ?? null,
           toolVersion: a.execution?.toolVersion ?? null,
         });
+      } else if (a.target.kind === "linux") {
+        const row=(await this.db.query("SELECT normalized,created_at FROM collection_snapshots WHERE customer_id=$1 AND id=$2 AND asset_id=$3",[customer,a.target.snapshotId,a.target.assetId])).rows[0];
+        if(!row) throw new NotFoundException("未找到Linux评估固定快照");
+        const observed=row.normalized as import("../../../../packages/contracts/collections").HostCollection;
+        const os=observed.sections.os?.data as {id?:string;version?:string};
+        target={kind:"linux",objectId:a.target.assetId,versionId:a.target.snapshotId,name:observed.identity.hostname,version:os.version??null,sourceIdentity:{snapshotId:a.target.snapshotId,snapshotHash:"snapshotHash" in a.input ? a.input.snapshotHash : null,os:os.id,scope:"scope" in a.input ? a.input.scope : null}};
+        sourceMetadata.set(a.id,{importedAt:new Date(row.created_at as string).toISOString(),collectedAt:observed.collectedAt});
       } else if (a.target.kind === "container") {
         const image = await this.containers.get(customer, a.target.containerId),
           snapshot = await this.containers.getVersion(

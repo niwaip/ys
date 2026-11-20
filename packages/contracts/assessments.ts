@@ -59,11 +59,14 @@ export type Assessment = {
   idempotencyKey: string;
   target:
     | { kind: "software"; softwareId: string; versionId: string }
-    | { kind: "container"; containerId: string; versionId: string };
+    | { kind: "container"; containerId: string; versionId: string }
+    | { kind: "linux"; assetId: string; snapshotId: string; versionId: string };
   input: {
     importId: string;
     contentHash: string;
     version: string | null;
+    snapshotHash?: string;
+    scope?: string;
     provenance?: import("./collections").AssetVersionLink;
   };
   createdAt: string;
@@ -73,6 +76,7 @@ export type Assessment = {
   execution?: TrivyExecution;
   result?: AssessmentResult;
   replayed?: boolean;
+  findingsPage?: { total: number; offset: number; limit: number };
 };
 
 export type AssessmentSummary = Omit<Assessment, "execution" | "result"> & {

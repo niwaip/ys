@@ -53,7 +53,7 @@ const inputSchema = z
   })
   .strict();
 const identity = (a: AnyAssessment) =>
-  a.target.kind === "windows"
+  a.target.kind === "windows" || a.target.kind === "linux"
     ? {
         kind: "host" as const,
         id: a.target.assetId,
@@ -238,7 +238,7 @@ export class DashboardService {
         }
         const candidate = (
           await this.db.query(
-            `SELECT details FROM vulnerability_jobs WHERE customer_id=$1 AND COALESCE(details#>>'{target,softwareId}',details#>>'{target,containerId}',details#>>'{target,assetId}')=$2 AND ($3::text IS NULL OR COALESCE(details#>>'{target,versionId}',details#>>'{target,snapshotId}')=$3) ORDER BY created_at DESC,id DESC LIMIT 1`,
+            `SELECT details - 'execution' || jsonb_build_object('execution',(details->'execution') - 'rawReport') AS details FROM vulnerability_jobs WHERE customer_id=$1 AND COALESCE(details#>>'{target,softwareId}',details#>>'{target,containerId}',details#>>'{target,assetId}')=$2 AND ($3::text IS NULL OR COALESCE(details#>>'{target,versionId}',details#>>'{target,snapshotId}')=$3) ORDER BY created_at DESC,id DESC LIMIT 1`,
             [customer, object.id, row.inputId],
           )
         ).rows[0];
@@ -271,6 +271,28 @@ export class DashboardService {
           row.collectedAt = v.collectedAt;
           row.createdAt = v.createdAt;
           row.issues.push(...v.issues);
+        } else if (job?.target.kind === "linux") {
+          const v = (
+            await this.db.query(
+              "SELECT normalized,created_at FROM collection_snapshots WHERE customer_id=$1 AND id=$2 AND asset_id=$3",
+              [customer, row.inputId, object.id],
+            )
+          ).rows[0];
+          if (!v) throw new NotFoundException("该客户下未找到Linux快照");
+          const data =
+            v.normalized as import("../../../../packages/contracts/collections").HostCollection;
+          const os = data.sections.os?.data as {
+            id?: string;
+            version?: string;
+          };
+          row.inputLabel = `${os.id ?? "未知"} ${os.version ?? "未知"}`;
+          row.installedSoftwareCount = Array.isArray(
+            data.sections.packages?.data,
+          )
+            ? data.sections.packages.data.length
+            : null;
+          row.collectedAt = data.collectedAt;
+          row.createdAt = new Date(v.created_at as string).toISOString();
         } else {
           const v = await this.windows.getSnapshot(customer, row.inputId);
           const s =
@@ -282,6 +304,7 @@ export class DashboardService {
       }
       if (job) {
         row.assessmentId = job.id;
+        row.assessmentKind = job.target.kind;
         row.inputHash = job.input.contentHash;
         row.toolVersion = job.execution?.toolVersion ?? null;
         const time = Date.parse(job.createdAt);

@@ -30,7 +30,9 @@ export function aggregateDashboard(
 ): DashboardView["metrics"] {
   const usable = rows.filter((r) => r.status === "succeeded" && r.coverage),
     findings = usable.flatMap((r) => r.findings),
-    windows = usable.filter((r) => r.kind === "host"),
+    windows = usable.filter(
+      (r) => r.kind === "host" && r.assessmentKind === "windows",
+    ),
     bySeverity: Record<string, number> = {},
     byApplicability: Record<string, number> = {};
   for (const f of findings) {
@@ -156,9 +158,9 @@ export function trendPoints(
   const previous = new Map<string, (typeof jobs)[number]>();
   return jobs.map((job) => {
     const t = job.target,
-      kind = t.kind === "windows" ? "host" : t.kind,
+      kind = t.kind === "windows" || t.kind === "linux" ? "host" : t.kind,
       id =
-        t.kind === "windows"
+        t.kind === "windows" || t.kind === "linux"
           ? t.assetId
           : t.kind === "container"
             ? t.containerId
@@ -169,7 +171,7 @@ export function trendPoints(
     previous.set(key, job);
     const valid = job.status === "succeeded" && job.result,
       oldInput = old
-        ? old.target.kind === "windows"
+        ? old.target.kind === "windows" || old.target.kind === "linux"
           ? old.target.snapshotId
           : old.target.versionId
         : null,

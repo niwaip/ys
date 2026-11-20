@@ -19,6 +19,9 @@ emit machineId cat /etc/machine-id
 emit serial cat /sys/class/dmi/id/product_serial
 `;
 const basic = String.raw`emit os cat /etc/os-release
+emit dpkgStatus cat /var/lib/dpkg/status
+emit lsbRelease cat /etc/lsb-release
+emit debianVersion cat /etc/debian_version
 emit kernel uname -r
 emit architecture uname -m
 emit packages sh -c 'if command -v dpkg-query >/dev/null 2>&1; then dpkg-query -W -f="dpkg\t\${Package}\t\${Version}\t\${Architecture}\t\${db:Status-Status}\n"; elif command -v rpm >/dev/null 2>&1; then rpm -qa --qf "rpm\t%{NAME}\t%{EPOCHNUM}:%{VERSION}-%{RELEASE}\t%{ARCH}\tinstalled\n"; else exit 127; fi'

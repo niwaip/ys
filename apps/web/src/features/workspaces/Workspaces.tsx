@@ -1,3 +1,4 @@
+import { LinuxAssessmentsPage } from "../assessments/LinuxAssessmentsPage";
 import { useEffect, useState } from "react";
 import { api, ApiError } from "../../api";
 import { requestId } from "../../request-id";
@@ -150,7 +151,7 @@ function AssetAssessment({
   return (
     <section className="asset-panel workspace-panel">
       <h2>资产评估 · {name}</h2>
-      <p>Linux主机与网络设备直接CVE评估尚未接入</p>
+      <p>Linux系统包请使用“Linux系统包扫描”；网络设备的厂商规则评估尚未接入</p>
       <p>
         仅以下明确关联本资产的固定SBOM版本可独立评估；镜像结果不覆盖运行容器可写层或挂载卷。
       </p>
@@ -192,8 +193,8 @@ function AssetAssessment({
 export function AssessmentWorkspace(props: FeatureProps) {
   const [tab, setTab] = useState(0);
   const labels = props.assetId
-    ? ["本资产关联SBOM", "Windows 补丁评估"]
-    : ["软件漏洞评估", "Windows 补丁评估", "镜像漏洞评估"];
+    ? ["Linux系统包扫描", "本资产关联SBOM", "Windows 补丁评估"]
+    : ["Linux系统包扫描", "软件漏洞评估", "Windows 补丁评估", "镜像漏洞评估"];
   return (
     <>
       <div className="page-heading">
@@ -205,15 +206,17 @@ export function AssessmentWorkspace(props: FeatureProps) {
         </div>
       </div>
       <Tabs labels={labels} active={tab} change={setTab} />
-      {props.assetId ? (
-        tab === 0 ? (
+      {tab === 0 ? (
+        <LinuxAssessmentsPage {...props} />
+      ) : props.assetId ? (
+        tab === 1 ? (
           <AssetAssessment {...props} assetId={props.assetId} />
         ) : (
           <WindowsAssessmentsPage {...props} />
         )
-      ) : tab === 0 ? (
-        <AssessmentsPage {...props} />
       ) : tab === 1 ? (
+        <AssessmentsPage {...props} />
+      ) : tab === 2 ? (
         <WindowsAssessmentsPage {...props} />
       ) : (
         <ContainersPage {...props} />

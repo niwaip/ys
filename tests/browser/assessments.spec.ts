@@ -32,6 +32,7 @@ test("软件后台评估呈现发现、覆盖、过期库和证据，刷新后�
   await page.getByRole("button", { name: "上传 SBOM" }).click();
   await expect(page.getByText("SBOM 已导入为新输入版本")).toBeVisible();
   await page.locator("nav button").filter({ hasText: "CVE评估" }).click();
+  await page.getByRole("tab", { name: "软件漏洞评估", exact: true }).click();
   await page
     .getByRole("combobox", { name: "软件对象", exact: true })
     .selectOption({ label: name });
@@ -55,6 +56,7 @@ test("软件后台评估呈现发现、覆盖、过期库和证据，刷新后�
   await expect(page.getByText("重复请求：回读原任务")).toBeVisible();
   await page.reload();
   await page.locator("nav button").filter({ hasText: "CVE评估" }).click();
+  await page.getByRole("tab", { name: "软件漏洞评估", exact: true }).click();
   const history = page.getByRole("button", { name: /执行成功 ·/ }).first();
   await history.click();
   await expect(

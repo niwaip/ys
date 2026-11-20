@@ -5,6 +5,45 @@ if (args.includes("--version")) {
   console.log("Version: fixture-process-1");
   process.exit(0);
 }
+if (args[0] === "rootfs") {
+  const path = require("node:path");
+  const root = args.at(-1);
+  const status = fs.readFileSync(
+    path.join(root, "var/lib/dpkg/status"),
+    "utf8",
+  );
+  const release = fs.readFileSync(path.join(root, "etc/lsb-release"), "utf8");
+  if (
+    !args.includes("--offline-scan") ||
+    !args.includes("--disable-telemetry") ||
+    !release.includes("DISTRIB_RELEASE=24.04") ||
+    !status.includes("Source: openssl")
+  )
+    process.exit(3);
+  fs.writeFileSync(
+    args[args.indexOf("--output") + 1],
+    JSON.stringify({
+      SchemaVersion: 2,
+      Metadata: { OS: { Family: "ubuntu", Name: "24.04" } },
+      Results: [
+        {
+          Target: "ubuntu",
+          Class: "os-pkgs",
+          Type: "ubuntu",
+          Packages: [{ Name: "libssl3", Version: "3.0.1" }],
+          Vulnerabilities: Array.from({ length: 60 }, (_, i) => ({
+            VulnerabilityID: `CVE-LINUX-${String(i).padStart(3, "0")}`,
+            PkgName: "libssl3",
+            InstalledVersion: "3.0.1",
+            Severity: "HIGH",
+            FixedVersion: "3.0.2",
+          })),
+        },
+      ],
+    }),
+  );
+  process.exit(0);
+}
 const input = JSON.parse(fs.readFileSync(args.at(-1), "utf8"));
 if (input.fixtureMode === "timeout") {
   setInterval(() => {}, 1000);

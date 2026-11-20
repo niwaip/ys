@@ -1,3 +1,8 @@
+import {
+  CollectionsModule,
+  CollectionsService,
+} from "../collections/collections.module";
+import { linuxInput } from "./linux-input";
 import { requireActiveAsset } from "../assets/asset-state";
 import {
   CollectionLinksModule,
@@ -45,6 +50,13 @@ const EXECUTOR = Symbol("TRIVY_EXECUTOR");
 const submitSchema = z.union([
   z
     .object({
+      assetId: z.uuid(),
+      snapshotId: z.uuid(),
+      idempotencyKey: z.string().trim().min(1).max(200),
+    })
+    .strict(),
+  z
+    .object({
       softwareId: z.uuid(),
       versionId: z.uuid(),
       linkId: z.uuid().optional(),
@@ -83,10 +95,11 @@ export class AssessmentService {
     private readonly imports: ImportsService,
     private readonly executor: TrivyExecutor,
     private readonly links: CollectionLinksService,
+    private readonly collections: CollectionsService,
   ) {}
   async onModuleInit() {
     await this.db.query(
-      `UPDATE vulnerability_jobs SET status='interrupted',details=details || $1::jsonb WHERE status='running' AND details#>>'{target,kind}' IN ('software','container')`,
+      `UPDATE vulnerability_jobs SET status='interrupted',details=details || $1::jsonb WHERE status='running' AND details#>>'{target,kind}' IN ('software','container','linux')`,
       [
         JSON.stringify({
           error: "后端重启，执行结果无法确认；未自动重试",
@@ -121,36 +134,53 @@ export class AssessmentService {
   }
   async submit(customer: string, input: Submission) {
     const target: Assessment["target"] =
-      "containerId" in input
+      "assetId" in input
         ? {
-            kind: "container",
-            containerId: input.containerId,
-            versionId: input.versionId,
+            kind: "linux",
+            assetId: input.assetId,
+            snapshotId: input.snapshotId,
+            versionId: input.snapshotId,
           }
-        : {
-            kind: "software",
-            softwareId: input.softwareId,
-            versionId: input.versionId,
-          };
+        : "containerId" in input
+          ? {
+              kind: "container",
+              containerId: input.containerId,
+              versionId: input.versionId,
+            }
+          : {
+              kind: "software",
+              softwareId: input.softwareId,
+              versionId: input.versionId,
+            };
     const snapshot = await this.snapshot(customer, target);
-    const material = await this.imports.get(customer, snapshot.importId);
+    const material =
+      target.kind === "linux"
+        ? (snapshot as ReturnType<typeof linuxInput>)
+        : await this.imports.get(customer, snapshot.importId);
     if (
-      material.format !==
-        (target.kind === "container"
-          ? "container-cyclonedx-json"
-          : "cyclonedx-json") ||
-      material.content === undefined
+      target.kind !== "linux" &&
+      (!("format" in material) ||
+        material.format !==
+          (target.kind === "container"
+            ? "container-cyclonedx-json"
+            : "cyclonedx-json") ||
+        material.content === undefined)
     )
       throw new BadRequestException("该输入不是可评估的软件 SBOM");
-    const provenance = input.linkId
-      ? await this.links.forVersion(
-          customer,
-          input.linkId,
-          target.kind,
-          "containerId" in target ? target.containerId : target.softwareId,
-          target.versionId,
-        )
-      : undefined;
+    const provenance =
+      "linkId" in input && input.linkId
+        ? await this.links.forVersion(
+            customer,
+            input.linkId,
+            target.kind,
+            "containerId" in target
+              ? target.containerId
+              : "softwareId" in target
+                ? target.softwareId
+                : target.assetId,
+            target.versionId,
+          )
+        : undefined;
     const record: Assessment = {
       id: randomUUID(),
       customerId: customer,
@@ -161,11 +191,21 @@ export class AssessmentService {
         importId: snapshot.importId,
         contentHash: material.contentHash,
         version: snapshot.version,
+        ...(target.kind === "linux"
+          ? {
+              snapshotHash: (material as ReturnType<typeof linuxInput>)
+                .snapshotHash,
+              scope:
+                "已安装dpkg系统包；不含应用依赖、容器、挂载卷和运行内核适用性验证",
+            }
+          : {}),
         ...(provenance ? { provenance } : {}),
       },
       createdAt: new Date().toISOString(),
     };
     const saved = await this.db.transaction(async (session) => {
+      if (target.kind === "linux")
+        await requireActiveAsset(session, customer, target.assetId);
       if (provenance)
         await requireActiveAsset(session, customer, provenance.assetId);
       const insert = await session.query(
@@ -184,14 +224,53 @@ export class AssessmentService {
         old.target.versionId !== target.versionId ||
         ("containerId" in old.target
           ? old.target.containerId
-          : old.target.softwareId) !==
-          ("containerId" in target ? target.containerId : target.softwareId)
+          : "softwareId" in old.target
+            ? old.target.softwareId
+            : old.target.assetId) !==
+          ("containerId" in target
+            ? target.containerId
+            : "softwareId" in target
+              ? target.softwareId
+              : target.assetId)
       )
         throw new ConflictException("幂等键已用于其他输入版本");
       return { ...old, replayed: true };
     });
     this.wake();
     return saved;
+  }
+  async linuxInputs(customer: string, assetId: string, offset: number) {
+    await requireActiveAsset(this.db, customer, assetId);
+    const page = await this.collections.list(customer, {
+      assetId,
+      limit: 20,
+      offset,
+    });
+    const items = [];
+    for (const item of page.items) {
+      try {
+        const input = linuxInput(
+          await this.collections.row(customer, item.id),
+          assetId,
+        );
+        items.push({
+          id: item.id,
+          importedAt: item.importedAt,
+          os: input.os,
+          packages: input.components.length,
+          supported: true,
+          reason: null,
+        });
+      } catch (e) {
+        items.push({
+          id: item.id,
+          importedAt: item.importedAt,
+          supported: false,
+          reason: (e as Error).message,
+        });
+      }
+    }
+    return { items, total: page.total, offset };
   }
   async get(customer: string, id: string) {
     const r = await this.db.query(
@@ -202,12 +281,30 @@ export class AssessmentService {
       throw new NotFoundException("该客户下未找到漏洞评估任务");
     return serialize(r.rows[0]);
   }
+  async page(customer: string, id: string, offset: number) {
+    const rows = await this.db.query(
+      `SELECT id,customer_id AS "customerId",status,
+       details - 'execution' - 'result' || jsonb_build_object(
+         'execution',(details->'execution') - 'rawReport',
+         'result', CASE WHEN details->'result' IS NOT NULL THEN (details->'result') - 'findings' || jsonb_build_object(
+           'findings',COALESCE(jsonb_path_query_array(details#>'{result,findings}', ('$[' || $3::int || ' to ' || ($3::int+49) || ']')::jsonpath),'[]'::jsonb)) ELSE NULL END,
+         'findingsPage',jsonb_build_object('total',COALESCE(jsonb_array_length(details#>'{result,findings}'),0),'offset',$3::int,'limit',50)
+       ) AS details FROM vulnerability_jobs WHERE customer_id=$1 AND id=$2`,
+      [customer, id, offset],
+    );
+    if (!rows.rows.length)
+      throw new NotFoundException("该客户下未找到漏洞评估任务");
+    const job = serialize(rows.rows[0]);
+    if (job.target.kind !== "linux")
+      throw new BadRequestException("此分页用于Linux扫描结果");
+    return job;
+  }
   async list(
     customer: string,
     page: {
       limit?: number;
       offset?: number;
-      targetKind?: "software" | "container" | "windows";
+      targetKind?: "software" | "container" | "windows" | "linux";
       targetId?: string;
       versionId?: string;
     } = {},
@@ -272,7 +369,12 @@ export class AssessmentService {
       offset,
     };
   }
-  private snapshot(customer: string, target: Assessment["target"]) {
+  private async snapshot(customer: string, target: Assessment["target"]) {
+    if (target.kind === "linux")
+      return linuxInput(
+        await this.collections.row(customer, target.snapshotId),
+        target.assetId,
+      );
     return target.kind === "container"
       ? this.containers.getVersion(
           customer,
@@ -290,7 +392,7 @@ export class AssessmentService {
   private async drain() {
     while (!this.stopping) {
       const rows = await this.db.query(
-        `UPDATE vulnerability_jobs SET status='running' WHERE id=(SELECT id FROM vulnerability_jobs WHERE status='queued' AND details#>>'{target,kind}' IN ('software','container') ORDER BY created_at,id LIMIT 1 FOR UPDATE SKIP LOCKED) AND status='queued' RETURNING ${cols}`,
+        `UPDATE vulnerability_jobs SET status='running' WHERE id=(SELECT id FROM vulnerability_jobs WHERE status='queued' AND details#>>'{target,kind}' IN ('software','container','linux') ORDER BY created_at,id LIMIT 1 FOR UPDATE SKIP LOCKED) AND status='queued' RETURNING ${cols}`,
       );
       if (!rows.rows.length) return;
       const selected = serialize(rows.rows[0]);
@@ -303,10 +405,10 @@ export class AssessmentService {
       this.abort = new AbortController();
       try {
         const snapshot = await this.snapshot(job.customerId, job.target);
-        const material = await this.imports.get(
-          job.customerId,
-          job.input.importId,
-        );
+        const material =
+          job.target.kind === "linux"
+            ? (snapshot as ReturnType<typeof linuxInput>)
+            : await this.imports.get(job.customerId, job.input.importId);
         if (
           material.content === undefined ||
           createHash("sha256").update(material.content).digest("hex") !==
@@ -314,7 +416,11 @@ export class AssessmentService {
         )
           throw Error("输入资料内容校验失败");
         const execution = await this.executor.execute(
-          { content: material.content, contentHash: job.input.contentHash },
+          {
+            content: material.content,
+            contentHash: job.input.contentHash,
+            ...(job.target.kind === "linux" ? { kind: "linux" as const } : {}),
+          },
           this.abort.signal,
         );
         if (execution.rawReport !== undefined)
@@ -328,6 +434,9 @@ export class AssessmentService {
           job.result = normalizeTrivy(
             execution,
             snapshot.components as SoftwareComponent[],
+            job.target.kind === "linux"
+              ? (material as ReturnType<typeof linuxInput>).os
+              : undefined,
           );
       } catch (error) {
         job.status = this.stopping ? "interrupted" : "failed";
@@ -346,7 +455,11 @@ class AssessmentsController {
     private readonly windows: WindowsAssessmentService,
   ) {}
   @Post() @HttpCode(202) submit(req: AuthorizedRequest) {
-    if (req.body && typeof req.body === "object" && "snapshotId" in req.body) {
+    if (
+      req.body &&
+      typeof req.body === "object" &&
+      "ruleImportId" in req.body
+    ) {
       const windows = windowsSubmitSchema.safeParse(req.body);
       if (!windows.success)
         throw new BadRequestException("需固定快照、规则资料 UUID 和幂等键");
@@ -361,7 +474,9 @@ class AssessmentsController {
     const page = z
       .object({
         limit: z.coerce.number().int().min(1).max(100).optional(),
-        targetKind: z.enum(["software", "container", "windows"]).optional(),
+        targetKind: z
+          .enum(["software", "container", "windows", "linux"])
+          .optional(),
         targetId: z.uuid().optional(),
         versionId: z.uuid().optional(),
         offset: z.coerce.number().int().min(0).max(1000000).optional(),
@@ -371,13 +486,42 @@ class AssessmentsController {
     if (!page.success) throw new BadRequestException("分页无效");
     return this.assessments.list(req.params.customerId, page.data);
   }
-  @Get(":assessmentId") get(req: AuthorizedRequest) {
+  @Get("linux-inputs") linuxInputs(req: AuthorizedRequest) {
+    const query = z
+      .object({
+        assetId: z.uuid(),
+        offset: z.coerce.number().int().min(0).max(1000000).default(0),
+      })
+      .strict()
+      .safeParse(req.query);
+    if (!query.success)
+      throw new BadRequestException("需目标资产编号与有效分页");
+    return this.assessments.linuxInputs(
+      req.params.customerId,
+      query.data.assetId,
+      query.data.offset,
+    );
+  }
+  @Get(":assessmentId") async get(req: AuthorizedRequest) {
     if (!z.uuid().safeParse(req.params.assessmentId).success)
       throw new BadRequestException("任务编号无效");
+    const query = z
+      .object({
+        findingsOffset: z.coerce.number().int().min(0).max(1000000).optional(),
+      })
+      .strict()
+      .safeParse(req.query);
+    if (!query.success) throw new BadRequestException("结果分页无效");
+    if (query.data.findingsOffset !== undefined)
+      return this.assessments.page(
+        req.params.customerId,
+        req.params.assessmentId,
+        query.data.findingsOffset,
+      );
     return this.assessments.get(req.params.customerId, req.params.assessmentId);
   }
 }
-for (const method of ["submit", "list", "get"] as const)
+for (const method of ["submit", "list", "get", "linuxInputs"] as const)
   Req()(AssessmentsController.prototype, method, 0);
 Inject(AssessmentService)(AssessmentsController, undefined, 0);
 Inject(WindowsAssessmentService)(AssessmentsController, undefined, 1);
@@ -390,6 +534,7 @@ export class AssessmentsModule {
       module: AssessmentsModule,
       imports: [
         CollectionLinksModule,
+        CollectionsModule,
         SoftwareModule,
         ContainersModule,
         ImportsModule,
@@ -407,6 +552,7 @@ export class AssessmentsModule {
             ImportsService,
             EXECUTOR,
             CollectionLinksService,
+            CollectionsService,
           ],
           useFactory: (
             db: Database,
@@ -415,6 +561,7 @@ export class AssessmentsModule {
             imports: ImportsService,
             runner: TrivyExecutor,
             links: CollectionLinksService,
+            collections: CollectionsService,
           ) =>
             new AssessmentService(
               db,
@@ -423,6 +570,7 @@ export class AssessmentsModule {
               imports,
               runner,
               links,
+              collections,
             ),
         },
       ],

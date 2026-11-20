@@ -1,6 +1,7 @@
 import { spawn } from "node:child_process";
 import {
   mkdtemp,
+  mkdir,
   readFile,
   writeFile,
   rm,
@@ -11,7 +12,11 @@ import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { createHash } from "node:crypto";
 import type { TrivyExecution } from "../../../../packages/contracts/assessments";
-export type TrivyInput = { content: string; contentHash: string };
+export type TrivyInput = {
+  content: string;
+  contentHash: string;
+  kind?: "linux";
+};
 export interface TrivyExecutor {
   execute(input: TrivyInput, signal: AbortSignal): Promise<TrivyExecution>;
 }
@@ -62,7 +67,7 @@ export class ProcessTrivyExecutor implements TrivyExecutor {
       timedOut = true;
       abort.abort();
     }, this.config.timeoutMs ?? 120000);
-    const cap = this.config.maxOutputBytes ?? 5000000;
+    const cap = this.config.maxOutputBytes ?? (input.kind === "linux" ? 100000000 : 5000000);
     async function metadata() {
       try {
         return JSON.parse(
@@ -160,8 +165,40 @@ export class ProcessTrivyExecutor implements TrivyExecutor {
         writeFile(configPath, "{}\n"),
         writeFile(ignorePath, ""),
       ]);
+      let targetPath = inputPath;
+      if (input.kind === "linux") {
+        const raw = JSON.parse(input.content);
+        if (
+          raw.format !== "dpkg-status/1" ||
+          typeof raw.osRelease !== "string" ||
+          typeof raw.dpkgStatus !== "string"
+        )
+          throw new Error("Linux扫描输入格式无效");
+        targetPath = join(cwd, "rootfs");
+        await mkdir(join(targetPath, "etc"), { recursive: true });
+        await mkdir(join(targetPath, "var/lib/dpkg"), { recursive: true });
+        await writeFile(join(targetPath, "etc/os-release"), raw.osRelease, {
+          mode: 0o600,
+        });
+        if (typeof raw.lsbRelease === "string")
+          await writeFile(join(targetPath, "etc/lsb-release"), raw.lsbRelease, {
+            mode: 0o600,
+          });
+        if (typeof raw.debianVersion === "string")
+          await writeFile(
+            join(targetPath, "etc/debian_version"),
+            raw.debianVersion,
+            { mode: 0o600 },
+          );
+        await writeFile(
+          join(targetPath, "var/lib/dpkg/status"),
+          raw.dpkgStatus,
+          { mode: 0o600 },
+        );
+      }
       execution.argv = [
-        "sbom",
+        input.kind === "linux" ? "rootfs" : "sbom",
+        ...(input.kind === "linux" ? ["--pkg-types", "os"] : []),
         "--format",
         "json",
         "--scanners",
@@ -172,6 +209,7 @@ export class ProcessTrivyExecutor implements TrivyExecutor {
         "--skip-java-db-update",
         "--offline-scan",
         "--skip-version-check",
+        "--disable-telemetry",
         "--exit-code",
         "0",
         "--config",
@@ -182,7 +220,7 @@ export class ProcessTrivyExecutor implements TrivyExecutor {
         cacheDir,
         "--output",
         reportPath,
-        inputPath,
+        targetPath,
       ];
       const result = await run(execution.argv);
       execution.exitCode = result.code;

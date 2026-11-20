@@ -42,7 +42,7 @@ test("Dashboard首屏、四组导航、资产删除恢复与明确评估入口",
   row = page.getByRole("row").filter({ hasText: name });
   await row.getByRole("button", { name: "CVE评估", exact: true }).click();
   await expect(
-    page.getByText("Linux主机与网络设备直接CVE评估尚未接入", { exact: true }),
+    page.getByRole("heading", { name: "Linux系统包CVE扫描", exact: true }),
   ).toBeVisible();
   await page.locator("nav button").filter({ hasText: "资产台账" }).click();
   row = page.getByRole("row").filter({ hasText: name });

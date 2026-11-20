@@ -99,3 +99,11 @@ test("真实子进程超时、非零退出、缺失工具与缺失数据库明�
   expect(db.status).toBe("unavailable");
   expect(db.error).toContain("数据库");
 });
+
+test('Linux进程只构造两份固定元数据文件，不接受任意目标路径',async()=>{
+ const executable=await setup();
+ await writeFile(executable,`#!${process.execPath}\nconst fs=require('node:fs'),path=require('node:path');const a=process.argv.slice(2);if(a[0]==='--version'){console.log('Version: fixture-linux');process.exit(0)};const root=a.at(-1);if(a[0]!=='rootfs'||a[a.indexOf('--pkg-types')+1]!=='os'||!fs.readFileSync(path.join(root,'var/lib/dpkg/status'),'utf8').includes('Package: fixture')||fs.readdirSync(root).sort().join(',')!=='etc,var')process.exit(3);fs.writeFileSync(a[a.indexOf('--output')+1],JSON.stringify({SchemaVersion:2,Metadata:{OS:{Family:'debian',Name:'12'}},Results:[]}));`);
+ const content=JSON.stringify({format:'dpkg-status/1',osRelease:'ID=debian\nVERSION_ID="12"',dpkgStatus:'Package: fixture\nStatus: install ok installed\nVersion: 1\nArchitecture: amd64\n'});
+ const result=await new ProcessTrivyExecutor({executable,cacheDir:directory}).execute({content,contentHash:createHash('sha256').update(content).digest('hex'),kind:'linux'},new AbortController().signal);
+ expect(result.status).toBe('succeeded');expect(result.argv).toContain('rootfs');expect(result.argv).not.toContain('/');
+});

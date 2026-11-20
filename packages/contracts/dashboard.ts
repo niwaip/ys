@@ -9,6 +9,7 @@ export type DashboardObject = {
   inputId: string | null;
   inputLabel: string | null;
   assessmentId: string | null;
+  assessmentKind?: string;
   selection:
     | "software_current"
     | "explicit_assessment"

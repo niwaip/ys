@@ -49,6 +49,7 @@ const schema = z
 export function normalizeTrivy(
   execution: TrivyExecution,
   components: SoftwareComponent[],
+  linuxOs?: { id: string; version: string },
 ): AssessmentResult {
   let json: unknown;
   try {
@@ -59,22 +60,40 @@ export function normalizeTrivy(
   const parsed = schema.safeParse(json);
   if (!parsed.success)
     throw Error("Trivy 输出结构不兼容；需要 SchemaVersion 2 及 Results");
-  const issues: string[] = [
-    "第三方 SBOM 可能缺少 Trivy 专有属性；覆盖仅针对已声明组件，不证明全部软件或运行环境安全",
-  ];
+  if (linuxOs) {
+    const metadata = (
+      json as {
+        Metadata?: { OS?: { Family?: string; Name?: string; EOSL?: boolean } };
+      }
+    ).Metadata;
+    if (
+      metadata?.OS?.Family !== linuxOs.id ||
+      metadata?.OS?.Name !== linuxOs.version
+    )
+      throw Error("Trivy识别的发行版与固定输入不一致，未保存成功判定");
+  }
+  const issues: string[] = linuxOs
+    ? [
+        "仅扫描该快照已安装dpkg系统包；不含应用依赖、容器内部、挂载卷及运行内核适用性验证。包清单被读取不代表每个包均有厂商漏洞匹配，第三方包可能被跳过",
+      ]
+    : [
+        "第三方 SBOM 可能缺少 Trivy 专有属性；覆盖仅针对已声明组件，不证明全部软件或运行环境安全",
+      ];
   const matched = new Set<string>();
   const findings: VulnerabilityFinding[] = [];
   const match = (name: string, version: string, purl?: string) => {
     const candidates = components.filter(
       (c) =>
-        c.name === name && c.version === version && (!purl || c.purl === purl),
+        c.name === name &&
+        c.version === version &&
+        (!!linuxOs || !purl || c.purl === purl),
     );
     return candidates.length === 1 ? candidates[0] : null;
   };
   for (const r of parsed.data.Results) {
     for (const p of r.Packages ?? []) {
       const c = match(p.Name, p.Version, p.Identifier?.PURL);
-      if (c && c.version && c.purl) matched.add(c.id);
+      if (c && c.version && (c.purl || linuxOs)) matched.add(c.id);
     }
     for (const v of r.Vulnerabilities ?? []) {
       const c = match(v.PkgName, v.InstalledVersion, v.PkgIdentifier?.PURL);
@@ -102,7 +121,7 @@ export function normalizeTrivy(
       `${components.length - matched.size} 个输入组件没有可核实的包覆盖证据`,
     );
   if (!components.length) issues.push("输入组件清单为空，无法声明评估覆盖");
-  if (components.some((c) => !c.version || !c.purl))
+  if (components.some((c) => !c.version || (!c.purl && !linuxOs)))
     issues.push("存在未知版本或生态的组件");
   const before = execution.databaseBefore,
     after = execution.databaseAfter;
@@ -130,9 +149,10 @@ export function normalizeTrivy(
     coverage: {
       status: !parsed.data.Results.length
         ? "unknown"
-        : components.length > 0 &&
+        : !linuxOs &&
+            components.length > 0 &&
             matched.size === components.length &&
-            !components.some((c) => !c.version || !c.purl) &&
+            !components.some((c) => !c.version || (!c.purl && !linuxOs)) &&
             !changed &&
             findings.every((f) => f.componentId !== null)
           ? "complete_for_declared_input"
