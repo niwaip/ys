@@ -224,6 +224,17 @@ test("Linux固定快照经真实任务队列扫描，Dashboard和报告冻结结
   ).body;
   expect(paged.findingsPage).toEqual({ total: 1, offset: 0, limit: 50 });
   expect(paged.execution.rawReport).toBeUndefined();
+  expect(paged.artifact).toBeUndefined();
+  const ref = paged.result.findings[0].evidence;
+  expect(ref).toMatchObject({
+    reportSha256: done.execution.outputHash,
+    resultIndex: 0,
+    vulnerabilityIndex: 0,
+  });
+  expect(
+    JSON.parse(done.execution.rawReport).Results[ref.resultIndex]
+      .Vulnerabilities[ref.vulnerabilityIndex].VulnerabilityID,
+  ).toBe("CVE-2026-12345");
   expect(paged.execution.outputHash).toBeTruthy();
   const evidence = (
     await h
@@ -283,4 +294,54 @@ test("Linux固定快照经真实任务队列扫描，Dashboard和报告冻结结
     .get(base + `/assessments/${job.id}`)
     .set(auth)
     .expect(200);
+  // Seed the old on-disk representation to exercise upgrade/restart compaction.
+  await app.close();
+  const { PGlite } = await import("@electric-sql/pglite");
+  const seed = new PGlite(dir);
+  const legacy = structuredClone(done);
+  legacy.result.findings[0].evidence = JSON.parse(
+    legacy.execution.rawReport,
+  ).Results[0].Vulnerabilities[0];
+  await seed.query(
+    "UPDATE vulnerability_jobs SET details=$2::jsonb WHERE id=$1",
+    [job.id, JSON.stringify(legacy)],
+  );
+  await seed.close();
+  for (let restart = 0; restart < 2; restart++) {
+    app = await createApp({
+      databaseUrl: `pglite://${dir}`,
+      customers: [
+        { id: "a", name: "A" },
+        { id: "b", name: "B" },
+      ],
+      operators: [
+        { name: "T", token: "linux-assessment-test", customerIds: ["a", "b"] },
+      ],
+    });
+    const restored = (
+      await request(app.getHttpServer())
+        .get(base + `/assessments/${job.id}`)
+        .set(auth)
+        .expect(200)
+    ).body;
+    expect(restored.id).toBe(job.id);
+    expect(restored.status).toBe("succeeded");
+    expect(restored.result.findings).toHaveLength(1);
+    expect(restored.execution.rawReport).toBe(done.execution.rawReport);
+    expect(restored.execution.outputHash).toBe(done.execution.outputHash);
+    expect(restored.artifact).toBeUndefined();
+    expect(restored.result.findings[0].evidence).toEqual(ref);
+    const history = (
+      await request(app.getHttpServer())
+        .get(base + `/assessments?targetKind=linux&targetId=${asset.id}`)
+        .set(auth)
+        .expect(200)
+    ).body;
+    expect(history.items[0]).toMatchObject({
+      id: job.id,
+      status: "succeeded",
+      findingCount: 1,
+    });
+    if (restart === 0) await app.close();
+  }
 });

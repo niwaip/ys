@@ -1,4 +1,9 @@
 import {
+  packLinuxAssessment,
+  linuxReportContent,
+  type StoredAssessment,
+} from "./linux-artifact";
+import {
   CollectionsModule,
   CollectionsService,
 } from "../collections/collections.module";
@@ -81,8 +86,9 @@ const submitSchema = z.union([
 type Submission = z.infer<typeof submitSchema>;
 const cols = `id,customer_id AS "customerId",status,details`;
 function serialize(row: Record<string, unknown>): AnyAssessment {
+  const { artifact, ...details } = row.details as StoredAssessment;
   return {
-    ...(row.details as Assessment),
+    ...details,
     id: String(row.id),
     customerId: String(row.customerId),
     status: row.status as Assessment["status"],
@@ -113,6 +119,15 @@ export class AssessmentService {
         }),
       ],
     );
+    // Compact older Linux records without changing findings, identities or report bytes.
+    while (true) {
+      const old = await this.db.query(
+        `SELECT ${cols} FROM vulnerability_jobs WHERE details#>>'{target,kind}'='linux' AND details#>>'{execution,rawReport}' IS NOT NULL LIMIT 1`,
+      );
+      if (!old.rows.length) break;
+      const job = serialize(old.rows[0]) as Assessment;
+      await this.save(job);
+    }
     this.wake();
   }
   async onModuleDestroy() {
@@ -285,18 +300,33 @@ export class AssessmentService {
     );
     if (!r.rows.length)
       throw new NotFoundException("该客户下未找到漏洞评估任务");
-    return serialize(r.rows[0]);
+    const job = serialize(r.rows[0]);
+    if (job.target.kind === "linux") {
+      const rawReport = await linuxReportContent(
+        r.rows[0].details as StoredAssessment,
+      );
+      if (rawReport !== undefined && job.execution)
+        job.execution = { ...job.execution, rawReport };
+    }
+    return job;
   }
   async report(customer: string, id: string) {
     const rows = await this.db.query(
-      `SELECT details#>>'{execution,rawReport}' AS content,details#>>'{execution,outputHash}' AS "contentHash" FROM vulnerability_jobs WHERE customer_id=$1 AND id=$2`,
+      `SELECT details->'artifact' AS artifact,details#>>'{execution,rawReport}' AS content,details#>>'{execution,outputHash}' AS "contentHash" FROM vulnerability_jobs WHERE customer_id=$1 AND id=$2`,
       [customer, id],
     );
     if (!rows.rows.length)
       throw new NotFoundException("该客户下未找到漏洞评估任务");
-    if (typeof rows.rows[0].content !== "string")
+    const row = rows.rows[0];
+    const content =
+      typeof row.content === "string"
+        ? row.content
+        : await linuxReportContent({
+            artifact: row.artifact,
+          } as StoredAssessment);
+    if (content === undefined)
       throw new ConflictException("本任务没有可下载的原始报告");
-    return compress(JSON.stringify(rows.rows[0]));
+    return compress(JSON.stringify({ content, contentHash: row.contentHash }));
   }
   async page(customer: string, id: string, offset: number) {
     const rows = await this.db.query(
@@ -412,9 +442,10 @@ export class AssessmentService {
       : this.software.getVersion(customer, target.softwareId, target.versionId);
   }
   private async save(record: Assessment) {
+    const stored = await packLinuxAssessment(record);
     await this.db.query(
       `UPDATE vulnerability_jobs SET status=$3,details=$4::jsonb WHERE customer_id=$1 AND id=$2`,
-      [record.customerId, record.id, record.status, JSON.stringify(record)],
+      [record.customerId, record.id, record.status, JSON.stringify(stored)],
     );
   }
   private async drain() {

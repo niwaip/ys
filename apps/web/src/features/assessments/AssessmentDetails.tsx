@@ -131,7 +131,11 @@ export function AssessmentDetails({
                         </a>
                       )}
                       <details>
-                        <summary>漏洞原始证据</summary>
+                        <summary>
+                          {job.target.kind === "linux"
+                            ? "漏洞证据来源"
+                            : "漏洞原始证据"}
+                        </summary>
                         <pre>{JSON.stringify(f.evidence, null, 2)}</pre>
                       </details>
                     </td>
