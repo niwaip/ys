@@ -301,10 +301,21 @@ export class AssessmentService {
   async page(customer: string, id: string, offset: number) {
     const rows = await this.db.query(
       `SELECT id,customer_id AS "customerId",status,
-       details - 'execution' - 'result' || jsonb_build_object(
-         'execution',(details->'execution') - 'rawReport',
-         'result', CASE WHEN details->'result' IS NOT NULL THEN (details->'result') - 'findings' || jsonb_build_object(
-           'findings',COALESCE(jsonb_path_query_array(details#>'{result,findings}', ('$[' || $3::int || ' to ' || ($3::int+49) || ']')::jsonpath),'[]'::jsonb)) ELSE NULL END,
+       jsonb_build_object(
+         'idempotencyKey',details->'idempotencyKey','target',details->'target','input',details->'input',
+         'createdAt',details->'createdAt','startedAt',details->'startedAt','finishedAt',details->'finishedAt','error',details->'error',
+         'execution',CASE WHEN details ? 'execution' THEN jsonb_build_object(
+           'status',details#>'{execution,status}','toolVersion',details#>'{execution,toolVersion}',
+           'argv',details#>'{execution,argv}','startedAt',details#>'{execution,startedAt}','finishedAt',details#>'{execution,finishedAt}',
+           'exitCode',details#>'{execution,exitCode}','signal',details#>'{execution,signal}','stderr',details#>'{execution,stderr}',
+           'databaseBefore',details#>'{execution,databaseBefore}','databaseAfter',details#>'{execution,databaseAfter}',
+           'outputHash',details#>'{execution,outputHash}','error',details#>'{execution,error}'
+         ) ELSE NULL END,
+         'result',CASE WHEN details ? 'result' THEN jsonb_build_object(
+           'outcome',details#>'{result,outcome}','coverage',details#>'{result,coverage}','database',details#>'{result,database}',
+           'parserVersion',details#>'{result,parserVersion}',
+           'findings',COALESCE(jsonb_path_query_array(details#>'{result,findings}', ('$[' || $3::int || ' to ' || ($3::int+49) || ']')::jsonpath),'[]'::jsonb)
+         ) ELSE NULL END,
          'findingsPage',jsonb_build_object('total',COALESCE(jsonb_array_length(details#>'{result,findings}'),0),'offset',$3::int,'limit',50)
        ) AS details FROM vulnerability_jobs WHERE customer_id=$1 AND id=$2`,
       [customer, id, offset],
@@ -361,7 +372,7 @@ export class AssessmentService {
       }
     }
     const r = await this.db.query(
-      `SELECT id,customer_id AS "customerId",status,details - 'execution' - 'result' AS details,details#>'{result,coverage}' AS coverage,details#>'{result,database}' AS database,jsonb_array_length(details#>'{result,findings}') AS "findingCount" FROM vulnerability_jobs WHERE ${where} ORDER BY created_at DESC,id LIMIT $${params.length + 1} OFFSET $${params.length + 2}`,
+      `SELECT id,customer_id AS "customerId",status,jsonb_build_object('idempotencyKey',details->'idempotencyKey','target',details->'target','input',details->'input','createdAt',details->'createdAt','startedAt',details->'startedAt','finishedAt',details->'finishedAt','error',details->'error') AS details,details#>'{result,coverage}' AS coverage,details#>'{result,database}' AS database,jsonb_array_length(details#>'{result,findings}') AS "findingCount" FROM vulnerability_jobs WHERE ${where} ORDER BY created_at DESC,id LIMIT $${params.length + 1} OFFSET $${params.length + 2}`,
       [...params, limit, offset],
     );
     const count = await this.db.query(

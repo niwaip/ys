@@ -100,19 +100,24 @@ export function LinuxAssessmentsPage(props: FeatureProps) {
         if (!c.signal.aborted) setJob(v);
       }
     }
-    void refresh().catch((e) => {
-      if (!c.signal.aborted) fail(e);
-    });
-    const timer = setInterval(
-      () =>
-        void refresh().catch((e) => {
-          if (!c.signal.aborted) fail(e);
-        }),
-      1500,
-    );
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    async function poll() {
+      try {
+        await refresh();
+      } catch (e) {
+        if (!c.signal.aborted) fail(e);
+      }
+      if (
+        !c.signal.aborted &&
+        job &&
+        ["queued", "running"].includes(job.status)
+      )
+        timer = setTimeout(() => void poll(), 1500);
+    }
+    void poll();
     return () => {
       c.abort();
-      clearInterval(timer);
+      if (timer) clearTimeout(timer);
     };
   }, [base, props.token, asset, job?.id, job?.status, historyOffset]);
   async function findingsPage(offset: number) {
