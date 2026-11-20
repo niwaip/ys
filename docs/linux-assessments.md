@@ -4,7 +4,7 @@
 
 ## 固定输入与覆盖
 
-基础采集新增只读 `/var/lib/dpkg/status`、`/etc/lsb-release`、`/etc/debian_version`。目标无需安装 Trivy。原始包数据库保留 Source 包及版本语义；扫描前核对 OS 及所有已安装包的名称、版本、架构与归一化清单一致。旧快照缺少原始数据库时提示重新采集，不合成无依据的 SBOM。
+基础采集新增只读 `/var/lib/dpkg/status`、`/etc/lsb-release`、`/etc/debian_version`。目标无需安装 Trivy。原始包数据库保留 Source 包及版本语义；held包仍按已安装状态纳入，Trivy输出的epoch/版本/修订号会重建后与输入核对。扫描前核对 OS 及所有已安装包的名称、版本、架构与归一化清单一致。旧快照缺少原始数据库时提示重新采集，不合成无依据的 SBOM。
 
 后台在独立临时目录仅重建发行版文件及 dpkg 数据库，执行 `trivy rootfs --pkg-types os --scanners vuln`，复用软件扫描的超时、进程隔离、离线数据库、空配置与退出状态处理。固定路径均由服务端生成，客户端不能提供扫描路径或命令。包括 SBOM 在内的扫描显式禁用遥测。Linux 报告默认上限100MB，其他扫描仍为5MB；配置中的 maxOutputBytes 可覆盖此限制。超限明确失败。
 
@@ -19,7 +19,8 @@
 - `GET /api/customers/:customerId/assessments/linux-inputs?assetId=UUID&offset=0`：每页20个采集快照，提供可扫描状态和阻断原因。
 - `POST .../assessments`：`{assetId,snapshotId,idempotencyKey}`。同客户同输入同键回读原任务；页面重试保留键，“建立新扫描请求”才生成新键。
 - `GET .../assessments?targetKind=linux&targetId=UUID&limit=20&offset=0`：分页历史摘要。
-- `GET .../assessments/:id?findingsOffset=0`：每页50条发现，返回 findingsPage 总量，不传原始整份报告。无此参数保留完整证据接口，供主动下载。
+- `GET .../assessments/:id?findingsOffset=0`：每页50条发现，返回 findingsPage 总量，不传原始整份报告。无此参数保留完整任务接口。
+- `GET .../assessments/:id/report`：客户范围的原始报告下载，gzip压缩传输JSON封装 `{content,contentHash}`，网页保存原始报告内容。避免下载时重复传输所有归一化发现；原始内容哈希保持不变。
 
 客户隔离和资产在管状态由服务端校验。删除后保留旧任务证据，但禁止提交新的资产扫描。共享持久队列在重启时恢复排队任务，将遗留运行任务标记 interrupted，禁止自动重扫。
 
@@ -28,3 +29,5 @@
 ## 验证
 
 接口测试覆盖固定原生包资料、队列、幂等、分页、客户隔离、删除阻断、Dashboard 与报告冻结；进程测试验证受控 rootfs 构造。浏览器使用明确的假工具输出验证60条发现分页、原始报告下载及历史回读，不将替身冒充真实扫描。真实 YS 验证记录在部署验收文件中。
+
+大报告仍完整保存在任务数据库中；下载压缩在内存执行，当前单实例验证不表示已完成多客户并发容量测试。

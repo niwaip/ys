@@ -131,13 +131,12 @@ export function LinuxAssessmentsPage(props: FeatureProps) {
   async function downloadEvidence() {
     if (!job) return;
     try {
-      const full = await api<Assessment>(
-        `${base}/assessments/${job.id}`,
+      const full = await api<{ content: string }>(
+        `${base}/assessments/${job.id}/report`,
         props.token,
       );
-      if (!full.execution?.rawReport) throw new Error("原始报告不可用");
       const url = URL.createObjectURL(
-        new Blob([full.execution.rawReport], { type: "application/json" }),
+        new Blob([full.content], { type: "application/json" }),
       );
       const link = document.createElement("a");
       link.href = url;

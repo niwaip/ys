@@ -19,13 +19,19 @@ import {
   DynamicModule,
   Get,
   HttpCode,
+  StreamableFile,
+  Res,
   Inject,
   Module,
   NotFoundException,
   Post,
   Req,
 } from "@nestjs/common";
+import type { Response } from "express";
 import { randomUUID, createHash } from "node:crypto";
+import { gzip } from "node:zlib";
+import { promisify } from "node:util";
+const compress = promisify(gzip);
 import { z } from "zod";
 import { DATABASE, type Database } from "../persistence/database";
 import { SoftwareModule, SoftwareService } from "../software/software.module";
@@ -281,6 +287,17 @@ export class AssessmentService {
       throw new NotFoundException("该客户下未找到漏洞评估任务");
     return serialize(r.rows[0]);
   }
+  async report(customer: string, id: string) {
+    const rows = await this.db.query(
+      `SELECT details#>>'{execution,rawReport}' AS content,details#>>'{execution,outputHash}' AS "contentHash" FROM vulnerability_jobs WHERE customer_id=$1 AND id=$2`,
+      [customer, id],
+    );
+    if (!rows.rows.length)
+      throw new NotFoundException("该客户下未找到漏洞评估任务");
+    if (typeof rows.rows[0].content !== "string")
+      throw new ConflictException("本任务没有可下载的原始报告");
+    return compress(JSON.stringify(rows.rows[0]));
+  }
   async page(customer: string, id: string, offset: number) {
     const rows = await this.db.query(
       `SELECT id,customer_id AS "customerId",status,
@@ -502,6 +519,17 @@ class AssessmentsController {
       query.data.offset,
     );
   }
+  @Get(":assessmentId/report")
+  async report(req: AuthorizedRequest, response: Response) {
+    if (!z.uuid().safeParse(req.params.assessmentId).success)
+      throw new BadRequestException("任务编号无效");
+    const content = await this.assessments.report(
+      req.params.customerId,
+      req.params.assessmentId,
+    );
+    response.setHeader("Content-Encoding", "gzip");
+    return new StreamableFile(content, { type: "application/json" });
+  }
   @Get(":assessmentId") async get(req: AuthorizedRequest) {
     if (!z.uuid().safeParse(req.params.assessmentId).success)
       throw new BadRequestException("任务编号无效");
@@ -521,8 +549,15 @@ class AssessmentsController {
     return this.assessments.get(req.params.customerId, req.params.assessmentId);
   }
 }
-for (const method of ["submit", "list", "get", "linuxInputs"] as const)
+for (const method of [
+  "submit",
+  "list",
+  "get",
+  "linuxInputs",
+  "report",
+] as const)
   Req()(AssessmentsController.prototype, method, 0);
+Res({ passthrough: true })(AssessmentsController.prototype, "report", 1);
 Inject(AssessmentService)(AssessmentsController, undefined, 0);
 Inject(WindowsAssessmentService)(AssessmentsController, undefined, 1);
 @Module({})

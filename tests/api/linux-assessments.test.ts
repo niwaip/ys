@@ -225,6 +225,18 @@ test("Linux固定快照经真实任务队列扫描，Dashboard和报告冻结结
   expect(paged.findingsPage).toEqual({ total: 1, offset: 0, limit: 50 });
   expect(paged.execution.rawReport).toBeUndefined();
   expect(paged.execution.outputHash).toBeTruthy();
+  const evidence = (
+    await h
+      .get(base + `/assessments/${job.id}/report`)
+      .set(auth)
+      .expect(200)
+  ).body;
+  expect(evidence.content).toBe(done.execution.rawReport);
+  expect(evidence.contentHash).toBe(done.execution.outputHash);
+  await h
+    .get(`/api/customers/b/assessments/${job.id}/report`)
+    .set(auth)
+    .expect(404);
   const next = (
     await h
       .get(base + `/assessments/${job.id}?findingsOffset=50`)
