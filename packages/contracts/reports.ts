@@ -20,6 +20,7 @@ export type ReportFacts = {
     id: string;
     inputId: string;
     contentHash: string;
+    outputHash?: string;
     ruleVersion: string;
     importedAt: string;
     collectedAt: string | null;

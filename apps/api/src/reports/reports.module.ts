@@ -81,10 +81,9 @@ export class ReportsService {
     const assessmentSnapshots = await Promise.all(
       input.assessmentRefs.map(
         async (id) =>
-          (await this.assessments.get(
-            customer,
-            id,
-          )) as ReportFacts["assessmentSnapshots"][number],
+          (await this.assessments.get(customer, id, {
+            includeRawReport: false,
+          })) as ReportFacts["assessmentSnapshots"][number],
       ),
     );
     if (
@@ -153,12 +152,37 @@ export class ReportsService {
           toolVersion: a.execution?.toolVersion ?? null,
         });
       } else if (a.target.kind === "linux") {
-        const row=(await this.db.query("SELECT normalized,created_at FROM collection_snapshots WHERE customer_id=$1 AND id=$2 AND asset_id=$3",[customer,a.target.snapshotId,a.target.assetId])).rows[0];
-        if(!row) throw new NotFoundException("未找到Linux评估固定快照");
-        const observed=row.normalized as import("../../../../packages/contracts/collections").HostCollection;
-        const os=observed.sections.os?.data as {id?:string;version?:string};
-        target={kind:"linux",objectId:a.target.assetId,versionId:a.target.snapshotId,name:observed.identity.hostname,version:os.version??null,sourceIdentity:{snapshotId:a.target.snapshotId,snapshotHash:"snapshotHash" in a.input ? a.input.snapshotHash : null,os:os.id,scope:"scope" in a.input ? a.input.scope : null}};
-        sourceMetadata.set(a.id,{importedAt:new Date(row.created_at as string).toISOString(),collectedAt:observed.collectedAt});
+        const row = (
+          await this.db.query(
+            "SELECT normalized,created_at FROM collection_snapshots WHERE customer_id=$1 AND id=$2 AND asset_id=$3",
+            [customer, a.target.snapshotId, a.target.assetId],
+          )
+        ).rows[0];
+        if (!row) throw new NotFoundException("未找到Linux评估固定快照");
+        const observed =
+          row.normalized as import("../../../../packages/contracts/collections").HostCollection;
+        const os = observed.sections.os?.data as {
+          id?: string;
+          version?: string;
+        };
+        target = {
+          kind: "linux",
+          objectId: a.target.assetId,
+          versionId: a.target.snapshotId,
+          name: observed.identity.hostname,
+          version: os.version ?? null,
+          sourceIdentity: {
+            snapshotId: a.target.snapshotId,
+            snapshotHash:
+              "snapshotHash" in a.input ? a.input.snapshotHash : null,
+            os: os.id,
+            scope: "scope" in a.input ? a.input.scope : null,
+          },
+        };
+        sourceMetadata.set(a.id, {
+          importedAt: new Date(row.created_at as string).toISOString(),
+          collectedAt: observed.collectedAt,
+        });
       } else if (a.target.kind === "container") {
         const image = await this.containers.get(customer, a.target.containerId),
           snapshot = await this.containers.getVersion(
@@ -286,6 +310,7 @@ export class ReportsService {
       sourceRefs.push({
         kind: "cve",
         id: a.id,
+        outputHash: a.execution?.outputHash,
         inputId: a.input.importId,
         contentHash: a.input.contentHash,
         ruleVersion: a.result?.parserVersion ?? "no-normalized-result",
@@ -405,22 +430,19 @@ export class ReportsService {
     } as Report;
   }
   async list(customer: string) {
-    const r = await this.db.query(
-      "SELECT id FROM reports WHERE customer_id=$1 ORDER BY created_at DESC,id LIMIT 100",
+    const rows = await this.db.query(
+      `SELECT r.id,r.customer_id AS "customerId",r.created_at AS "createdAt",r.created_by AS "createdBy",
+       v.id AS "revisionId",v.number AS "revisionNumber",v.result->>'status' AS status,v.result->>'factHash' AS "factHash"
+       FROM reports r JOIN LATERAL (SELECT id,number,result FROM report_revisions WHERE customer_id=r.customer_id AND report_id=r.id ORDER BY number DESC LIMIT 1) v ON true
+       WHERE r.customer_id=$1 ORDER BY r.created_at DESC,r.id LIMIT 100`,
       [customer],
     );
-    const items: ReportSummary[] = [];
-    for (const row of r.rows) {
-      const { revision, ...base } = await this.get(customer, String(row.id));
-      items.push({
-        ...base,
-        revisionId: revision.id,
-        revisionNumber: revision.number,
-        status: revision.status,
-        factHash: revision.factHash,
-      });
-    }
-    return { items };
+    return {
+      items: rows.rows.map((row) => ({
+        ...row,
+        createdAt: new Date(row.createdAt as string).toISOString(),
+      })) as ReportSummary[],
+    };
   }
   async previewRevision(
     customer: string,

@@ -1,3 +1,5 @@
+import { AssessmentDetails } from "../assessments/AssessmentDetails";
+import type { Assessment } from "../../../../../packages/contracts/assessments";
 import { ReportNarrationPanel } from "./ReportNarrationPanel";
 import { ReportReviewPanel } from "./ReportReviewPanel";
 import { useEffect, useRef, useState } from "react";
@@ -22,6 +24,7 @@ export function ReportsPage({
     [report, setReport] = useState<Report>(),
     [html, setHtml] = useState(""),
     [evidence, setEvidence] = useState<unknown>(),
+    [linuxEvidence, setLinuxEvidence] = useState<Assessment>(),
     [error, setError] = useState(""),
     [busy, setBusy] = useState(false);
   const controller = useRef(new AbortController());
@@ -71,6 +74,7 @@ export function ReportsPage({
     setHtml(await response.text());
     setReport(selected);
     setEvidence(undefined);
+    setLinuxEvidence(undefined);
   }
   const toggle = (ids: string[], id: string, checked: boolean) =>
     checked ? [...ids, id] : ids.filter((x) => x !== id);
@@ -88,7 +92,7 @@ export function ReportsPage({
         <p>
           合计1–20个引用；同一对象输入版本每类只可选一次评估。这里只列最近100次。缺失、失败或未知范围保持披露，草稿尚未内部复核。
         </p>
-        <h3>CVE 软件评估</h3>
+        <h3>CVE评估（主机 / 软件 / 镜像）</h3>
         {!assessments.length && (
           <p>尚无 CVE 评估；可仅用生命周期资料生成带未评估说明的草稿。</p>
         )}
@@ -220,19 +224,88 @@ export function ReportsPage({
               <button
                 disabled={busy}
                 onClick={() =>
-                  run(async () =>
-                    setEvidence(
-                      await call(
-                        `${base}/${r.kind === "cve" ? "assessments" : r.kind === "windows_rules" ? "windows/rules" : "lifecycle/assessments"}/${r.id}`,
-                      ),
-                    ),
-                  )
+                  run(async () => {
+                    const linux =
+                      r.kind === "cve" &&
+                      report.revision.facts.assessmentSnapshots.some(
+                        (a) => a.id === r.id && a.target.kind === "linux",
+                      );
+                    setEvidence(undefined);
+                    setLinuxEvidence(undefined);
+                    if (linux) {
+                      const source = await call<Assessment>(
+                        `${base}/assessments/${r.id}?findingsOffset=0`,
+                      );
+                      if (
+                        r.outputHash &&
+                        source.execution?.outputHash !== r.outputHash
+                      )
+                        throw new Error("原始评估报告哈希与冻结依据不一致");
+                      setLinuxEvidence(source);
+                    } else
+                      setEvidence(
+                        await call(
+                          `${base}/${r.kind === "cve" ? "assessments" : r.kind === "windows_rules" ? "windows/rules" : "lifecycle/assessments"}/${r.id}`,
+                        ),
+                      );
+                  })
                 }
               >
                 {r.kind} 依据 {r.id}
               </button>
+              {r.kind === "cve" &&
+                report.revision.facts.assessmentSnapshots.some(
+                  (a) => a.id === r.id && a.target.kind === "linux",
+                ) && (
+                  <button
+                    disabled={busy}
+                    onClick={() =>
+                      run(async () => {
+                        const original = await call<{
+                          content: string;
+                          contentHash: string;
+                        }>(`${base}/assessments/${r.id}/report`);
+                        if (
+                          r.outputHash &&
+                          original.contentHash !== r.outputHash
+                        )
+                          throw new Error("原始报告哈希与冻结依据不一致");
+                        const url = URL.createObjectURL(
+                          new Blob([original.content], {
+                            type: "application/json",
+                          }),
+                        );
+                        const link = document.createElement("a");
+                        link.href = url;
+                        link.download = `trivy-${r.id}.json`;
+                        link.click();
+                        setTimeout(() => URL.revokeObjectURL(url), 1000);
+                      })
+                    }
+                  >
+                    下载原始扫描报告
+                  </button>
+                )}
             </p>
           ))}
+          {linuxEvidence && (
+            <AssessmentDetails
+              job={linuxEvidence}
+              onFindingsPage={(offset) =>
+                void run(async () => {
+                  const next = await call<Assessment>(
+                    `${base}/assessments/${linuxEvidence.id}?findingsOffset=${offset}`,
+                  );
+                  if (
+                    next.execution?.outputHash !==
+                    linuxEvidence.execution?.outputHash
+                  )
+                    throw new Error("原始评估报告哈希与冻结依据不一致");
+                  setLinuxEvidence(next);
+                })
+              }
+            />
+          )}
           {evidence !== undefined && (
             <details open>
               <summary>原始评估依据</summary>

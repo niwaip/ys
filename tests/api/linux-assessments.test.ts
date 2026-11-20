@@ -281,6 +281,18 @@ test("Linux固定快照经真实任务队列扫描，Dashboard和报告冻结结
   expect(report.revision.facts.assessmentSnapshots[0].input.snapshotHash).toBe(
     snapshot.contentHash,
   );
+  expect(
+    report.revision.facts.assessmentSnapshots[0].execution.rawReport,
+  ).toBeUndefined();
+  expect(report.revision.facts.sourceRefs[0].outputHash).toBe(
+    done.execution.outputHash,
+  );
+  const preview = await h
+    .get(base + `/reports/${report.id}/preview`)
+    .set(auth)
+    .expect(200);
+  expect(preview.text).toContain("CVE Linux系统包评估");
+  expect(preview.text).toContain(done.execution.outputHash);
   await h
     .delete(base + `/assets/${asset.id}`)
     .set(auth)

@@ -68,15 +68,19 @@ test("Linux快照扫描分页、原始证据下载、历史回读及客户隔离
   await page.getByLabel("Linux采集快照").selectOption(snapshot.id);
   await page.getByRole("button", { name: "扫描所选Linux快照" }).click();
   await expect(
-    page.getByRole("heading", { name: "发现 60 条漏洞记录" }),
+    page.getByRole("heading", { name: "发现 120 条漏洞记录" }),
   ).toBeVisible();
   await expect(page.getByText("CVE-LINUX-000", { exact: true })).toBeVisible();
   await expect(page.getByText("CVE-LINUX-050", { exact: true })).toHaveCount(0);
   await page.getByRole("button", { name: "下一页漏洞" }).click();
   await expect(page.getByText("CVE-LINUX-050", { exact: true })).toBeVisible();
   await expect(page.getByText("CVE-LINUX-000", { exact: true })).toHaveCount(0);
-  await page.setViewportSize({width:390,height:844});
-  expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+  await page.setViewportSize({ width: 390, height: 844 });
+  expect(
+    await page.evaluate(
+      () => document.documentElement.scrollWidth <= innerWidth,
+    ),
+  ).toBe(true);
   const download = page.waitForEvent("download");
   await page.getByRole("button", { name: "下载原始Trivy报告" }).click();
   expect((await download).suggestedFilename()).toMatch(/^trivy-.*\.json$/);
@@ -87,7 +91,51 @@ test("Linux快照扫描分页、原始证据下载、历史回读及客户隔离
     .first()
     .click();
   await expect(
-    page.getByRole("heading", { name: "发现 60 条漏洞记录" }),
+    page.getByRole("heading", { name: "发现 120 条漏洞记录" }),
+  ).toBeVisible();
+  const history = await (
+    await request.get(
+      `${api}/assessments?targetKind=linux&targetId=${asset.id}`,
+      { headers },
+    )
+  ).json();
+  const job = history.items[0];
+  await page.locator("nav button").filter({ hasText: "风险事实报告" }).click();
+  await page.getByLabel(new RegExp(job.id)).check();
+  await page.getByRole("button", { name: "生成事实草稿" }).click();
+  const preview = page.frameLocator('iframe[title="事实报告草稿"]');
+  await expect(
+    preview.getByRole("heading", { name: "CVE Linux系统包评估" }),
+  ).toBeVisible();
+  await expect(
+    preview.getByText("完整漏洞明细（120条，展开查看）"),
+  ).toBeVisible();
+  await expect(
+    preview.getByText("CVE-LINUX-119", { exact: true }),
+  ).not.toBeVisible();
+  await preview.getByText("完整漏洞明细（120条，展开查看）").click();
+  await expect(
+    preview.getByText("CVE-LINUX-119", { exact: true }),
+  ).toBeVisible();
+  await page
+    .getByRole("button", { name: `cve 依据 ${job.id}`, exact: true })
+    .click();
+  await expect(
+    page.getByRole("heading", { name: "发现 120 条漏洞记录", exact: true }),
+  ).toBeVisible();
+  await page.getByRole("button", { name: "下一页漏洞", exact: true }).click();
+  await expect(page.getByText("CVE-LINUX-050", { exact: true })).toBeVisible();
+  const originalDownload = page.waitForEvent("download");
+  await page
+    .getByRole("button", { name: "下载原始扫描报告", exact: true })
+    .click();
+  expect((await originalDownload).suggestedFilename()).toContain(job.id);
+  await expect(
+    page.getByRole("button", { name: "下载正式 HTML" }),
+  ).toBeDisabled();
+  await page.getByRole("button", { name: "提交复核", exact: true }).click();
+  await expect(
+    preview.getByText("待复核草稿 · 不代表正式交付", { exact: true }),
   ).toBeVisible();
   await page.getByLabel("当前客户").selectOption("river");
   await expect(page.getByText("CVE-LINUX-000", { exact: true })).toHaveCount(0);

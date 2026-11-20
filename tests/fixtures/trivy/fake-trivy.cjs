@@ -31,7 +31,7 @@ if (args[0] === "rootfs") {
           Class: "os-pkgs",
           Type: "ubuntu",
           Packages: [{ Name: "libssl3", Version: "3.0.1" }],
-          Vulnerabilities: Array.from({ length: 60 }, (_, i) => ({
+          Vulnerabilities: Array.from({ length: 120 }, (_, i) => ({
             VulnerabilityID: `CVE-LINUX-${String(i).padStart(3, "0")}`,
             PkgName: "libssl3",
             InstalledVersion: "3.0.1",

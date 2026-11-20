@@ -293,20 +293,31 @@ export class AssessmentService {
     }
     return { items, total: page.total, offset };
   }
-  async get(customer: string, id: string) {
+  async get(
+    customer: string,
+    id: string,
+    options: { includeRawReport?: boolean } = {},
+  ) {
     const r = await this.db.query(
-      `SELECT ${cols} FROM vulnerability_jobs WHERE customer_id=$1 AND id=$2`,
+      `SELECT id,customer_id AS "customerId",status,${options.includeRawReport === false ? "details - 'artifact'" : "details"} AS details FROM vulnerability_jobs WHERE customer_id=$1 AND id=$2`,
       [customer, id],
     );
     if (!r.rows.length)
       throw new NotFoundException("该客户下未找到漏洞评估任务");
     const job = serialize(r.rows[0]);
-    if (job.target.kind === "linux") {
+    if (job.target.kind === "linux" && options.includeRawReport !== false) {
       const rawReport = await linuxReportContent(
         r.rows[0].details as StoredAssessment,
       );
       if (rawReport !== undefined && job.execution)
         job.execution = { ...job.execution, rawReport };
+    }
+    if (
+      job.target.kind === "linux" &&
+      options.includeRawReport === false &&
+      job.execution
+    ) {
+      job.execution = { ...job.execution, rawReport: undefined };
     }
     return job;
   }
