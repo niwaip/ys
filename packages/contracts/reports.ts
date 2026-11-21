@@ -110,3 +110,15 @@ export type ReportAudit = {
   createdAt: string;
   details: Record<string, unknown>;
 };
+
+export type ReportRevisionSummary = Pick<
+  ReportRevision,
+  | "id"
+  | "reportId"
+  | "customerId"
+  | "number"
+  | "createdAt"
+  | "createdBy"
+  | "status"
+  | "factHash"
+>;

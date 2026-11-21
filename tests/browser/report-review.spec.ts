@@ -52,7 +52,14 @@ test("controlled revision review and formal HTML delivery, then edits return to 
   await page.getByRole("button", { name: "进入工作台" }).click();
   await page.locator("nav button").filter({ hasText: "资产台账" }).click();
   await page.getByRole("button", { name: "风险事实报告" }).click();
+  const summaryResponse = page.waitForResponse((r) =>
+    r.url().endsWith(`/reports/${report.id}/revisions?view=summary`),
+  );
   await page.getByRole("button", { name: report.id, exact: true }).click();
+  const revisionSummaries = (await (await summaryResponse).json()).items;
+  expect(revisionSummaries).toHaveLength(1);
+  expect(revisionSummaries[0]).not.toHaveProperty("facts");
+
   await expect(
     page.getByRole("button", { name: "下载正式 HTML" }),
   ).toBeDisabled();

@@ -154,6 +154,51 @@ test("reviewed delivery binds immutable facts and HTML, edited revisions require
     })
     .expect(400);
   expect((await http.get(`${revision}/export`).set(auth)).text).toBe(html);
+  const summaries = (
+    await http.get(`${base}/revisions?view=summary`).set(auth).expect(200)
+  ).body.items;
+  expect(summaries.map((v: { id: string }) => v.id)).toEqual([
+    report.revision.id,
+    edited.id,
+  ]);
+  expect(summaries[1]).toMatchObject({
+    number: 2,
+    status: "draft",
+    factHash: report.revision.factHash,
+  });
+  expect(summaries[1]).not.toHaveProperty("facts");
+  expect(summaries[1]).not.toHaveProperty("narrative");
+  expect(
+    (await http.get(`${base}/revisions/${edited.id}`).set(auth).expect(200))
+      .body,
+  ).toEqual(edited);
+  await http
+    .get(`/api/customers/b/reports/${report.id}/revisions?view=summary`)
+    .set(auth)
+    .expect(404);
+  await http.get(`${base}/revisions?view=invalid`).set(auth).expect(400);
+  const compressed = await http
+    .get(base)
+    .set(auth)
+    .set("Accept-Encoding", "gzip")
+    .expect(200);
+  expect(compressed.headers["content-encoding"]).toBe("gzip");
+  expect(compressed.headers.vary).toContain("Accept-Encoding");
+  expect(compressed.body.revision).toEqual(edited);
+  const identity = await http
+    .get(base)
+    .set(auth)
+    .set("Accept-Encoding", "identity")
+    .expect(200);
+  expect(identity.headers["content-encoding"]).toBeUndefined();
+  expect(identity.body).toEqual(compressed.body);
+  const compressedPreview = await http
+    .get(`${base}/revisions/${edited.id}/preview`)
+    .set(auth)
+    .set("Accept-Encoding", "gzip")
+    .expect(200);
+  expect(compressedPreview.headers["content-encoding"]).toBe("gzip");
+  expect(compressedPreview.text).toBe(editedPreview);
   const audit = (await http.get(`${base}/audit`).set(auth).expect(200)).body;
   expect(audit.items.map((x: { action: string }) => x.action)).toEqual([
     "submit_review",

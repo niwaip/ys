@@ -1,3 +1,6 @@
+import { gzip } from "node:zlib";
+import { promisify } from "node:util";
+import type { Request, Response } from "express";
 import {
   ReportNarrationService,
   ReportNarrationController,
@@ -28,6 +31,8 @@ import {
   NotFoundException,
   Post,
   Req,
+  Res,
+  StreamableFile,
   type DynamicModule,
 } from "@nestjs/common";
 import { randomUUID } from "node:crypto";
@@ -455,27 +460,54 @@ export class ReportsService {
     return renderReport((await this.get(customer, id)).revision);
   }
 }
+const compressReport = promisify(gzip);
+async function reportPayload(
+  req: AuthorizedRequest & Request,
+  response: Response,
+  value: unknown,
+) {
+  response.vary("Accept-Encoding");
+  response.setHeader("Cache-Control", "private, no-store");
+  if (!req.acceptsEncodings("gzip")) return value;
+  const html = typeof value === "string";
+  const bytes = await compressReport(html ? value : JSON.stringify(value));
+  response.setHeader("Content-Encoding", "gzip");
+  return new StreamableFile(bytes, {
+    type: html ? "text/html; charset=utf-8" : "application/json",
+  });
+}
 @Controller("api/customers/:customerId/reports")
 export class ReportsController {
   constructor(private readonly service: ReportsService) {}
-  @Post() create(req: AuthorizedRequest) {
+  @Post() async create(req: AuthorizedRequest & Request, response: Response) {
     const parsed = inputSchema.safeParse(req.body);
     if (!parsed.success)
       throw new BadRequestException(
         "需1–20个不重复的明确评估引用，不接受客户端事实",
       );
-    return this.service.create(
-      req.params.customerId,
-      req.operator.name,
-      parsed.data,
+    return reportPayload(
+      req,
+      response,
+      await this.service.create(
+        req.params.customerId,
+        req.operator.name,
+        parsed.data,
+      ),
     );
   }
-  @Get() list(req: AuthorizedRequest) {
+  @Get() list(req: AuthorizedRequest & Request) {
     return this.service.list(req.params.customerId);
   }
-  @Get(":reportId") get(req: AuthorizedRequest) {
+  @Get(":reportId") async get(
+    req: AuthorizedRequest & Request,
+    response: Response,
+  ) {
     this.valid(req.params.reportId);
-    return this.service.get(req.params.customerId, req.params.reportId);
+    return reportPayload(
+      req,
+      response,
+      await this.service.get(req.params.customerId, req.params.reportId),
+    );
   }
   @Get(":reportId/preview")
   @Header("Content-Type", "text/html; charset=utf-8")
@@ -483,17 +515,28 @@ export class ReportsController {
     "Content-Security-Policy",
     "default-src 'none'; style-src 'unsafe-inline'; frame-ancestors 'self'",
   )
-  preview(req: AuthorizedRequest) {
+  async preview(req: AuthorizedRequest & Request, response: Response) {
     this.valid(req.params.reportId);
-    return this.service.preview(req.params.customerId, req.params.reportId);
+    return reportPayload(
+      req,
+      response,
+      await this.service.preview(req.params.customerId, req.params.reportId),
+    );
   }
-  @Get(":reportId/revisions/:revisionId") revision(req: AuthorizedRequest) {
+  @Get(":reportId/revisions/:revisionId") async revision(
+    req: AuthorizedRequest & Request,
+    response: Response,
+  ) {
     this.valid(req.params.reportId);
     this.valid(req.params.revisionId);
-    return this.service.getRevision(
-      req.params.customerId,
-      req.params.reportId,
-      req.params.revisionId,
+    return reportPayload(
+      req,
+      response,
+      await this.service.getRevision(
+        req.params.customerId,
+        req.params.reportId,
+        req.params.revisionId,
+      ),
     );
   }
   @Get(":reportId/revisions/:revisionId/preview")
@@ -502,13 +545,17 @@ export class ReportsController {
     "Content-Security-Policy",
     "default-src 'none'; style-src 'unsafe-inline'; frame-ancestors 'self'",
   )
-  revisionPreview(req: AuthorizedRequest) {
+  async revisionPreview(req: AuthorizedRequest & Request, response: Response) {
     this.valid(req.params.reportId);
     this.valid(req.params.revisionId);
-    return this.service.previewRevision(
-      req.params.customerId,
-      req.params.reportId,
-      req.params.revisionId,
+    return reportPayload(
+      req,
+      response,
+      await this.service.previewRevision(
+        req.params.customerId,
+        req.params.reportId,
+        req.params.revisionId,
+      ),
     );
   }
   private valid(id: string) {
@@ -525,6 +572,14 @@ for (const method of [
   "revisionPreview",
 ] as const)
   Req()(ReportsController.prototype, method, 0);
+for (const method of [
+  "create",
+  "get",
+  "preview",
+  "revision",
+  "revisionPreview",
+] as const)
+  Res({ passthrough: true })(ReportsController.prototype, method, 1);
 Inject(ReportsService)(ReportsController, undefined, 0);
 @Module({})
 export class ReportsModule {

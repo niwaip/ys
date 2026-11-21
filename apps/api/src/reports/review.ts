@@ -15,6 +15,7 @@ import type { Database, Queryable } from "../persistence/database";
 import type { AuthorizedRequest, Operator } from "../auth/auth";
 import type {
   ReportRevision,
+  ReportRevisionSummary,
   ReportNarrative,
   ReportDelivery,
   ReportAudit,
@@ -236,20 +237,30 @@ export class ReportReviewService {
       throw new ConflictException("交付输出校验失败");
     return html;
   }
-  async history(customer: string, reportId: string) {
+  private async ensureReport(customer: string, reportId: string) {
     const found = await this.db.query(
       "SELECT id FROM reports WHERE customer_id=$1 AND id=$2",
       [customer, reportId],
     );
     if (!found.rows.length) throw new NotFoundException("该客户下未找到报告");
+  }
+  async history(customer: string, reportId: string, summary = false) {
+    await this.ensureReport(customer, reportId);
+    const projection = summary
+      ? "jsonb_build_object('id',id,'reportId',report_id,'customerId',customer_id,'number',number,'createdAt',result->'createdAt','createdBy',result->'createdBy','status',result->'status','factHash',result->'factHash')"
+      : "result";
     const r = await this.db.query(
-      "SELECT result FROM report_revisions WHERE customer_id=$1 AND report_id=$2 ORDER BY number",
+      `SELECT ${projection} AS result FROM report_revisions WHERE customer_id=$1 AND report_id=$2 ORDER BY number`,
       [customer, reportId],
     );
-    return { items: r.rows.map((x) => x.result as ReportRevision) };
+    return {
+      items: r.rows.map(
+        (x) => x.result as ReportRevisionSummary | ReportRevision,
+      ),
+    };
   }
   async audits(customer: string, reportId: string) {
-    await this.history(customer, reportId);
+    await this.ensureReport(customer, reportId);
     const r = await this.db.query(
       'SELECT id,revision_id AS "revisionId",action,actor,created_at AS "createdAt",details FROM report_audit WHERE customer_id=$1 AND report_id=$2 ORDER BY sequence',
       [customer, reportId],
@@ -291,7 +302,16 @@ export class ReportReviewController {
   }
   @Get("revisions") history(req: AuthorizedRequest) {
     this.valid(req);
-    return this.service.history(req.params.customerId, req.params.reportId);
+    const query = z
+      .object({ view: z.literal("summary").optional() })
+      .strict()
+      .safeParse(req.query);
+    if (!query.success) throw new BadRequestException("修订历史视图无效");
+    return this.service.history(
+      req.params.customerId,
+      req.params.reportId,
+      query.data.view === "summary",
+    );
   }
   @Get("audit") audits(req: AuthorizedRequest) {
     this.valid(req);

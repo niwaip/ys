@@ -6,6 +6,7 @@ import { useEffect, useRef, useState } from "react";
 import type {
   Report,
   ReportRevision,
+  ReportRevisionSummary,
   ReportNarrative,
   ReportAudit,
 } from "../../../../../packages/contracts/reports";
@@ -22,7 +23,7 @@ export function ReportReviewPanel({
   onRevision: (revision: ReportRevision) => Promise<void>;
 }) {
   const [narrative, setNarrative] = useState(report.revision.narrative),
-    [revisions, setRevisions] = useState<ReportRevision[]>([]),
+    [revisions, setRevisions] = useState<ReportRevisionSummary[]>([]),
     [audit, setAudit] = useState<ReportAudit[]>([]),
     [busy, setBusy] = useState(false),
     [error, setError] = useState("");
@@ -40,7 +41,9 @@ export function ReportReviewPanel({
     setBusy(false);
     setNarrative(report.revision.narrative);
     Promise.all([
-      call<{ items: ReportRevision[] }>(`${base}/revisions`),
+      call<{ items: ReportRevisionSummary[] }>(
+        `${base}/revisions?view=summary`,
+      ),
       call<{ items: ReportAudit[] }>(`${base}/audit`),
     ])
       .then(([v, a]) => {
@@ -246,7 +249,16 @@ export function ReportReviewPanel({
       <h3>修订历史</h3>
       {revisions.map((v) => (
         <p key={v.id}>
-          <button disabled={busy} onClick={() => run(() => onRevision(v))}>
+          <button
+            disabled={busy}
+            onClick={() =>
+              run(async () =>
+                onRevision(
+                  await call<ReportRevision>(`${base}/revisions/${v.id}`),
+                ),
+              )
+            }
+          >
             修订 {v.number} · {v.status}
           </button>{" "}
           · {v.createdBy} · {v.createdAt}
