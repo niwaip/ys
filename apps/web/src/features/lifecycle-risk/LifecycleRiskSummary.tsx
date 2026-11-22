@@ -33,7 +33,10 @@ export function LifecycleRiskSummary(props: FeatureProps) {
     location.hash = `lifecycle-risk?view=${view!.id}&level=${level}`;
   }
   return (
-    <section className="asset-panel" aria-label="生命周期风险概要">
+    <section
+      className="asset-panel lifecycle-summary"
+      aria-label="生命周期风险概要"
+    >
       <div className="panel-heading">
         <h2>当前生命周期风险</h2>
         <button className="secondary" onClick={() => setRevision((r) => r + 1)}>

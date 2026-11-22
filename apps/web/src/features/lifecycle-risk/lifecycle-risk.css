@@ -164,3 +164,51 @@
   margin: 16px 0;
   min-width: 0;
 }
+.lifecycle-summary {
+  padding: 24px;
+  margin: 24px 0;
+}
+.lifecycle-summary .panel-heading {
+  padding: 0;
+  margin-bottom: 16px;
+  border: 0;
+}
+.dashboard .lifecycle-summary .risk-card {
+  padding: 20px;
+  margin: 0;
+  background: #fff;
+  color: #26344b;
+  border: 1px solid #dfe5ed;
+  border-top: 3px solid #7b8a9e;
+  border-radius: 10px;
+}
+.dashboard .lifecycle-summary .risk-card.critical {
+  border-top-color: #c93745;
+}
+.dashboard .lifecycle-summary .risk-card.warning {
+  border-top-color: #db8a1b;
+}
+.dashboard .lifecycle-summary .risk-card.reminder {
+  border-top-color: #417cbb;
+}
+.dashboard .lifecycle-summary .secondary {
+  background: #fff;
+  margin: 0;
+}
+.dashboard .lifecycle-summary .text-button {
+  background: transparent;
+  border: 0;
+  padding: 0;
+  margin: 0;
+  text-decoration: underline;
+}
+@media (max-width: 600px) {
+  .lifecycle-summary {
+    padding: 16px;
+  }
+  .lifecycle-summary .panel-heading {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 12px;
+  }
+}
