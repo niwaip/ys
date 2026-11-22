@@ -58,6 +58,16 @@ test("Linux快照扫描分页、原始证据下载、历史回读及客户隔离
   });
   expect(snapshotResponse.ok()).toBe(true);
   const snapshot = await snapshotResponse.json();
+  let streams = 0,
+    submissions = 0;
+  page.on("request", (r) => {
+    if (r.method() === "POST" && r.url().endsWith("/assessments"))
+      submissions++;
+  });
+  await page.route("**/assessments/*/events", (route) => {
+    streams++;
+    return streams === 1 ? route.abort() : route.continue();
+  });
   const errors: string[] = [];
   page.on("pageerror", (e) => errors.push(e.message));
   await page.goto("/");
@@ -80,6 +90,11 @@ test("Linux快照扫描分页、原始证据下载、历史回读及客户隔离
   await expect(
     page.getByRole("heading", { name: "发现 120 条漏洞记录" }),
   ).toBeVisible();
+  await expect(
+    page.getByText("实时状态（SSE）：执行成功", { exact: true }),
+  ).toBeVisible();
+  expect(streams).toBeGreaterThanOrEqual(2);
+  expect(submissions).toBe(1);
   await expect(page.getByText("CVE-LINUX-000", { exact: true })).toBeVisible();
   await expect(page.getByText("CVE-LINUX-050", { exact: true })).toHaveCount(0);
   await page.getByRole("button", { name: "下一页漏洞" }).click();

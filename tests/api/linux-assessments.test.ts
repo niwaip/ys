@@ -30,6 +30,7 @@ test("Linux固定快照经真实任务队列扫描，Dashboard和报告冻结结
       trivyExecutor: {
         execute: async (input) => {
           calls++;
+          await new Promise((resolve) => setTimeout(resolve, 150));
           expect(input.kind).toBe("linux");
           expect(JSON.parse(input.content).dpkgStatus).toContain(
             "Source: openssl",
@@ -192,6 +193,11 @@ test("Linux固定快照经真实任务队列扫描，Dashboard和报告冻结结
       .send(body)
       .expect(202)
   ).body;
+  const liveStream = h
+    .get(base + `/assessments/${job.id}/events`)
+    .set(auth)
+    .timeout(5000)
+    .then((r) => r);
   let done = job;
   for (let i = 0; i < 100 && ["queued", "running"].includes(done.status); i++) {
     await new Promise((r) => setTimeout(r, 10));
@@ -216,6 +222,20 @@ test("Linux固定快照经真实任务队列扫描，Dashboard和报告冻结结
     .send(body)
     .expect(202);
   expect(calls).toBe(1);
+  const stream = await liveStream;
+  expect(stream.status).toBe(200);
+  expect(stream.text).toMatch(/"status":"(queued|running)"/);
+  expect(stream.headers["content-type"]).toContain("text/event-stream");
+  expect(stream.text).toContain("event: progress");
+  expect(stream.text).toContain('"status":"succeeded"');
+  expect(stream.text).not.toContain("findings");
+  expect(stream.text).not.toContain("rawReport");
+  await h
+    .get(`/api/customers/b/assessments/${job.id}/events`)
+    .set(auth)
+    .expect(404);
+  await h.get(base + `/assessments/${job.id}/events`).expect(401);
+
   const paged = (
     await h
       .get(base + `/assessments/${job.id}?findingsOffset=0`)

@@ -1,3 +1,4 @@
+import { AssessmentLiveStatus } from "../assessments/AssessmentLiveStatus";
 import { requestId } from "../../request-id";
 import { useEffect, useRef, useState } from "react";
 import { api, ApiError } from "../../api";
@@ -84,12 +85,11 @@ export function WindowsAssessmentsPage({
       ),
       refresh(),
     ]).catch(fail);
-    const timer = setInterval(() => refresh().catch(fail), 1000);
+
     return () => {
-      clearInterval(timer);
       abort.current.abort();
     };
-  }, [customerId, token]);
+  }, [customerId, token, assetId]);
   async function upload() {
     if (!file) return;
     setError("");
@@ -218,6 +218,15 @@ export function WindowsAssessmentsPage({
           {j.createdAt} · {states[j.status]} · {j.id}
         </button>
       ))}
+      {job && (
+        <AssessmentLiveStatus
+          customerId={customerId}
+          token={token}
+          onUnauthorized={onUnauthorized}
+          jobId={job.id}
+          onComplete={refresh}
+        />
+      )}
       {job && (
         <article>
           <h3>任务 {job.id}</h3>

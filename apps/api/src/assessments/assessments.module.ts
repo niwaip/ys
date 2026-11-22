@@ -32,7 +32,7 @@ import {
   Post,
   Req,
 } from "@nestjs/common";
-import type { Response } from "express";
+import type { Request, Response } from "express";
 import { randomUUID, createHash } from "node:crypto";
 import { gzip } from "node:zlib";
 import { promisify } from "node:util";
@@ -292,6 +292,15 @@ export class AssessmentService {
       }
     }
     return { items, total: page.total, offset };
+  }
+  async progress(customer: string, id: string) {
+    const result = await this.db.query(
+      `SELECT id,status,created_at AS "createdAt",details->>'startedAt' AS "startedAt",details->>'finishedAt' AS "finishedAt",details->>'error' AS error FROM vulnerability_jobs WHERE customer_id=$1 AND id=$2`,
+      [customer, id],
+    );
+    if (!result.rows.length)
+      throw new NotFoundException("该客户下未找到漏洞评估任务");
+    return result.rows[0];
   }
   async get(
     customer: string,
@@ -572,6 +581,47 @@ class AssessmentsController {
       query.data.offset,
     );
   }
+  @Get(":assessmentId/events")
+  async events(req: AuthorizedRequest & Request, response: Response) {
+    if (!z.uuid().safeParse(req.params.assessmentId).success)
+      throw new BadRequestException("任务编号无效");
+    const read = () =>
+      this.assessments.progress(req.params.customerId, req.params.assessmentId);
+    const initial = await read(); // Authorize the specific customer/task before streaming headers.
+    if (response.destroyed) return;
+    response.setHeader("Content-Type", "text/event-stream; charset=utf-8");
+    response.setHeader("Cache-Control", "private, no-store");
+    response.setHeader("X-Accel-Buffering", "no");
+    response.flushHeaders();
+    let closed = false;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const close = () => {
+      closed = true;
+      if (timer) clearTimeout(timer);
+    };
+    response.on("close", close);
+    const send = async (state: Record<string, unknown>) => {
+      if (closed) return;
+      response.write(`event: progress\ndata: ${JSON.stringify(state)}\n\n`);
+      if (!["queued", "running"].includes(String(state.status))) {
+        close();
+        response.end();
+        return;
+      }
+      timer = setTimeout(async () => {
+        try {
+          await send(await read());
+        } catch {
+          if (!closed) {
+            response.write("event: unavailable\ndata: {}\n\n");
+            close();
+            response.end();
+          }
+        }
+      }, 1000);
+    };
+    await send(initial);
+  }
   @Get(":assessmentId/report")
   async report(req: AuthorizedRequest, response: Response) {
     if (!z.uuid().safeParse(req.params.assessmentId).success)
@@ -608,9 +658,11 @@ for (const method of [
   "get",
   "linuxInputs",
   "report",
+  "events",
 ] as const)
   Req()(AssessmentsController.prototype, method, 0);
 Res({ passthrough: true })(AssessmentsController.prototype, "report", 1);
+Res()(AssessmentsController.prototype, "events", 1);
 Inject(AssessmentService)(AssessmentsController, undefined, 0);
 Inject(WindowsAssessmentService)(AssessmentsController, undefined, 1);
 @Module({})

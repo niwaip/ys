@@ -1,3 +1,4 @@
+import { AssessmentLiveStatus } from "./AssessmentLiveStatus";
 import { useEffect, useRef, useState } from "react";
 import { api, ApiError } from "../../api";
 import { requestId } from "../../request-id";
@@ -93,36 +94,13 @@ export function LinuxAssessmentsPage(props: FeatureProps) {
         c.signal,
       );
       if (!c.signal.aborted) setHistory(h);
-      if (job && ["queued", "running"].includes(job.status)) {
-        const v = await api<Assessment>(
-          `${base}/assessments/${job.id}?findingsOffset=0`,
-          props.token,
-          {},
-          c.signal,
-        );
-        if (!c.signal.aborted) setJob(v);
-      }
     }
-    let timer: ReturnType<typeof setTimeout> | undefined;
-    async function poll() {
-      try {
-        await refresh();
-      } catch (e) {
-        if (!c.signal.aborted) fail(e);
-      }
-      if (
-        !c.signal.aborted &&
-        job &&
-        ["queued", "running"].includes(job.status)
-      )
-        timer = setTimeout(() => void poll(), 1500);
-    }
-    void poll();
-    return () => {
-      c.abort();
-      if (timer) clearTimeout(timer);
-    };
+    void refresh().catch((e) => {
+      if (!c.signal.aborted) fail(e);
+    });
+    return () => c.abort();
   }, [base, props.token, asset, job?.id, job?.status, historyOffset]);
+
   async function findingsPage(offset: number) {
     if (!job) return;
     try {
@@ -339,6 +317,20 @@ export function LinuxAssessmentsPage(props: FeatureProps) {
             </button>
           ))}
         </div>
+      )}
+      {job && (
+        <AssessmentLiveStatus
+          {...props}
+          jobId={job.id}
+          onComplete={async () => {
+            setJob(
+              await api<Assessment>(
+                `${base}/assessments/${job.id}?findingsOffset=0`,
+                props.token,
+              ),
+            );
+          }}
+        />
       )}
       {job && (
         <AssessmentDetails

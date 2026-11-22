@@ -1,3 +1,4 @@
+import { AssessmentLiveStatus } from "./AssessmentLiveStatus";
 import { requestId } from "../../request-id";
 import {
   AssessmentDetails,
@@ -68,9 +69,8 @@ export function AssessmentsPage({
       .then((r) => setSoftware(r.items))
       .catch(fail);
     refresh();
-    const timer = setInterval(refresh, 1000);
+
     return () => {
-      clearInterval(timer);
       controller.current.abort();
     };
   }, [customerId, token]);
@@ -219,6 +219,15 @@ export function AssessmentsPage({
           </button>
         </div>
       </div>
+      {job && (
+        <AssessmentLiveStatus
+          customerId={customerId}
+          token={token}
+          onUnauthorized={onUnauthorized}
+          jobId={job.id}
+          onComplete={refresh}
+        />
+      )}
       {job && <AssessmentDetails job={job} />}
     </section>
   );

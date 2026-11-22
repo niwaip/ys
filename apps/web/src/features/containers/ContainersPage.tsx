@@ -1,3 +1,4 @@
+import { AssessmentLiveStatus } from "../assessments/AssessmentLiveStatus";
 import { requestId } from "../../request-id";
 import { useEffect, useRef, useState } from "react";
 import type { FeatureProps } from "../../features";
@@ -92,9 +93,8 @@ export function ContainersPage({
   useEffect(() => {
     controller.current = new AbortController();
     refresh();
-    const timer = setInterval(refreshTasks, 1000);
+
     return () => {
-      clearInterval(timer);
       controller.current.abort();
     };
   }, [customerId, token]);
@@ -446,6 +446,15 @@ export function ContainersPage({
             </div>
           </div>
         </>
+      )}
+      {job && (
+        <AssessmentLiveStatus
+          customerId={customerId}
+          token={token}
+          onUnauthorized={onUnauthorized}
+          jobId={job.id}
+          onComplete={refreshTasks}
+        />
       )}
       {job && <AssessmentDetails job={job} />}
     </section>
