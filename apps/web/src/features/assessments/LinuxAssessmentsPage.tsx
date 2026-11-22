@@ -298,8 +298,8 @@ export function LinuxAssessmentsPage(props: FeatureProps) {
                   .catch(fail)
               }
             >
-              {assessmentStatusLabels[h.status]} · {h.createdAt} ·{" "}
-              {h.id.slice(0, 8)}
+              {assessmentStatusLabels[job?.id === h.id ? job.status : h.status]}{" "}
+              · {h.createdAt} · {h.id.slice(0, 8)}
             </button>
           ))}
         </div>
