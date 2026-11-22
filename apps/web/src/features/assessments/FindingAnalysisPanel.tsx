@@ -114,7 +114,11 @@ export function FindingAnalysisPanel({
             {s.text}{" "}
             <small className="muted">
               {s.sourceIds
-                .map((id) => (id === "finding" ? "[扫描事实]" : `[${id}]`))
+                .map((id) =>
+                  id === "finding"
+                    ? "[扫描事实]"
+                    : `[来源 ${(result?.sources.findIndex((s) => s.id === id) ?? -1) + 1}]`,
+                )
                 .join(" ")}
             </small>
           </p>
@@ -225,9 +229,9 @@ export function FindingAnalysisPanel({
                   : "扫描时漏洞库过期或时间未知"}
                 ，覆盖范围见扫描摘要。
               </p>
-              {result.sources.map((s) => (
+              {result.sources.map((s, i) => (
                 <p key={s.id}>
-                  [{s.id}]{" "}
+                  [来源 {i + 1}]{" "}
                   <a href={s.url} target="_blank" rel="noreferrer">
                     {s.title}
                   </a>

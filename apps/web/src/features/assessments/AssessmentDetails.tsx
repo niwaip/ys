@@ -259,9 +259,7 @@ export function AssessmentDetails({
                         <span className="cell-subtext">
                           {f.installedVersion}
                         </span>
-                        <small className="muted">
-                          {f.ecosystem} · {f.target}
-                        </small>
+                        <small className="muted">{f.ecosystem}</small>
                       </td>
                       <td>
                         <span>{f.fixedVersion ?? "来源未提供"}</span>
@@ -281,6 +279,7 @@ export function AssessmentDetails({
                         )}
                         <details>
                           <summary>查看证据</summary>
+                          <p>扫描目标：{f.target}</p>
                           <p>适用性：工具报告；未人工改判</p>
                           <p>
                             {f.componentId
