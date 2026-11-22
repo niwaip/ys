@@ -1,6 +1,6 @@
 # Linux 系统包 CVE 扫描
 
-本片将 Debian/Ubuntu 主机的不可变基础采集快照接入后台 Trivy 任务。入口：资产台账的“CVE评估”，或侧边栏“CVE评估 → Linux系统包扫描”。选择主机与固定快照后主动提交；采集和扫描均不自动确认基线或写回 NetBox。
+本片将 Debian/Ubuntu 主机的不可变基础采集快照接入后台 Trivy 任务。入口：资产台账的“CVE评估”，或侧边栏“CVE评估 → Linux系统包扫描”。选择主机并配置关注等级后，单击“扫描”自动使用最新接入的采集版本；采集和扫描均不自动确认基线或写回 NetBox。
 
 ## 固定输入与覆盖
 
@@ -17,7 +17,7 @@
 ## 接口与证据
 
 - `GET /api/customers/:customerId/assessments/linux-inputs?assetId=UUID&offset=0`：每页20个采集快照，提供可扫描状态和阻断原因。
-- `POST .../assessments`：`{assetId,snapshotId,idempotencyKey}`。同客户同输入同键回读原任务；页面重试保留键。“建立新扫描请求”生成新键，保留当前所选可扫描快照；未选择时选中当前批次首个可扫描快照，清空旧结果并显示准备完成提示。用户核对后点击“扫描所选Linux快照”才提交；没有可用快照时显示原因，不提交空任务。
+- `POST .../assessments`：`{assetId,snapshotId,idempotencyKey}`。同客户同输入同键回读原任务；网页仅保留“扫描”按钮，点击时读取最新接入版本再提交。若最新版本不支持则明确阻断，不自动回退旧版本；提交结果不明时重试保留同一输入与幂等键，成功后再次扫描创建独立请求。
 - `GET .../assessments?targetKind=linux&targetId=UUID&limit=20&offset=0`：分页历史摘要。
 - `GET .../assessments/:id?findingsOffset=0`：每页50条发现，返回 findingsPage 总量，不传原始整份报告。无此参数保留完整任务接口。
 - `GET .../assessments/:id/report`：客户范围的原始报告下载，gzip压缩传输JSON封装 `{content,contentHash}`，网页保存原始报告内容。避免下载时重复传输所有归一化发现；原始内容哈希保持不变。

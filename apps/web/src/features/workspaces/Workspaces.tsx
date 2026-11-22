@@ -292,7 +292,7 @@ export function AssessmentWorkspace(props: FeatureProps) {
         <div>
           <h1>CVE评估</h1>
           <p>
-            先选择资产范围和扫描内容，再配置固定资料版本；任务通过SSE实时显示状态。
+            先选择资产范围和扫描内容，再配置固定资料版本；任务状态实时更新。
           </p>
         </div>
       </div>

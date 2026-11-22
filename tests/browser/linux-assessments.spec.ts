@@ -13,47 +13,48 @@ test("Linux快照扫描分页、原始证据下载、历史回读及客户隔离
   });
   expect(assetResponse.ok()).toBe(true);
   const asset = await assetResponse.json();
+  const hostData = {
+    schemaVersion: "ys-host/1",
+    identity: { hostname: name },
+    collectedAt: null,
+    sections: {
+      os: {
+        status: "acquired",
+        data: {
+          id: "ubuntu",
+          version: "24.04",
+          kernel: "6.8",
+          architecture: "x86_64",
+        },
+      },
+      packages: {
+        status: "acquired",
+        data: [
+          {
+            manager: "dpkg",
+            name: "libssl3",
+            version: "3.0.1",
+            architecture: "amd64",
+            state: "installed",
+          },
+        ],
+      },
+    },
+    extensions: {
+      rawSections: {
+        os: 'ID=ubuntu\nVERSION_ID="24.04"\n',
+        lsbRelease: "DISTRIB_ID=Ubuntu\nDISTRIB_RELEASE=24.04\n",
+        dpkgStatus:
+          "Package: libssl3\nStatus: install ok installed\nArchitecture: amd64\nVersion: 3.0.1\nSource: openssl\n\n",
+      },
+    },
+  };
   const snapshotResponse = await request.post(`${api}/collections/manual`, {
     headers,
     data: {
       assetId: asset.id,
       note: "Browser fixed native metadata",
-      data: {
-        schemaVersion: "ys-host/1",
-        identity: { hostname: name },
-        collectedAt: null,
-        sections: {
-          os: {
-            status: "acquired",
-            data: {
-              id: "ubuntu",
-              version: "24.04",
-              kernel: "6.8",
-              architecture: "x86_64",
-            },
-          },
-          packages: {
-            status: "acquired",
-            data: [
-              {
-                manager: "dpkg",
-                name: "libssl3",
-                version: "3.0.1",
-                architecture: "amd64",
-                state: "installed",
-              },
-            ],
-          },
-        },
-        extensions: {
-          rawSections: {
-            os: 'ID=ubuntu\nVERSION_ID="24.04"\n',
-            lsbRelease: "DISTRIB_ID=Ubuntu\nDISTRIB_RELEASE=24.04\n",
-            dpkgStatus:
-              "Package: libssl3\nStatus: install ok installed\nArchitecture: amd64\nVersion: 3.0.1\nSource: openssl\n\n",
-          },
-        },
-      },
+      data: hostData,
     },
   });
   expect(snapshotResponse.ok()).toBe(true);
@@ -75,17 +76,13 @@ test("Linux快照扫描分页、原始证据下载、历史回读及客户隔离
   await page.getByRole("button", { name: "进入工作台" }).click();
   await page.locator("nav button").filter({ hasText: "CVE评估" }).click();
   await page.getByLabel("扫描主机").selectOption(asset.id);
+  await expect(page.getByLabel("Linux采集快照")).toHaveCount(0);
   await expect(
-    page.getByLabel("Linux采集快照").locator(`option[value="${snapshot.id}"]`),
-  ).toBeEnabled();
-  await page
-    .getByRole("button", { name: "建立新扫描请求", exact: true })
-    .click();
-  await expect(page.getByRole("status")).toContainText("新扫描请求已准备");
-  await expect(page.getByLabel("Linux采集快照")).toHaveValue(snapshot.id);
+    page.getByRole("button", { name: "扫描", exact: true }),
+  ).toHaveCount(1);
   await expect(
-    page.getByRole("button", { name: "扫描所选Linux快照", exact: true }),
-  ).toBeEnabled();
+    page.getByRole("button", { name: "建立新扫描请求" }),
+  ).toHaveCount(0);
   await expect(
     page.getByRole("checkbox", { name: "致命", exact: true }),
   ).toBeChecked();
@@ -95,17 +92,20 @@ test("Linux快照扫描分页、原始证据下载、历史回读及客户隔离
   await expect(
     page.getByRole("checkbox", { name: "中危", exact: true }),
   ).not.toBeChecked();
-  await expect(page.getByLabel("扫描任务进度")).toContainText("尚未开始");
-  await page.getByRole("button", { name: "扫描所选Linux快照" }).click();
+  await expect(page.getByLabel("扫描任务进度")).toContainText("等待开始扫描");
+  await page.getByRole("button", { name: "扫描", exact: true }).click();
   await expect(
     page.getByRole("heading", { name: "发现 120 条漏洞记录" }),
   ).toBeVisible();
   await expect(
-    page.getByText("实时状态（SSE）：执行成功", { exact: true }),
+    page.getByText("扫描完成，结果已生成。", { exact: true }),
   ).toBeVisible();
+  await expect(page.locator("main")).not.toContainText("SSE");
   expect(streams).toBeGreaterThanOrEqual(2);
   expect(submissions).toBe(1);
-  await expect(page.getByRole("list", { name: "扫描阶段" })).toBeVisible();
+  await expect(
+    page.getByRole("progressbar", { name: "扫描进度" }),
+  ).toHaveAttribute("value", "100");
   await page.getByRole("checkbox", { name: "高危", exact: true }).uncheck();
   await expect(
     page.getByText("当前关注等级显示 0 条，完整记录 120 条。", { exact: true }),
@@ -147,22 +147,24 @@ test("Linux快照扫描分页、原始证据下载、历史回读及客户隔离
     )
   ).json();
   const job = history.items[0];
-  await page
-    .getByRole("button", { name: "建立新扫描请求", exact: true })
-    .click();
-  await expect(page.getByRole("status")).toContainText("新扫描请求已准备");
-  await expect(
-    page.getByRole("heading", { name: "发现 120 条漏洞记录" }),
-  ).toHaveCount(0);
+  expect(job.target.snapshotId).toBe(snapshot.id);
+  const newer = await (
+    await request.post(`${api}/collections/manual`, {
+      headers,
+      data: {
+        assetId: asset.id,
+        note: "New collection after page loaded",
+        data: { ...hostData, collectedAt: new Date().toISOString() },
+      },
+    })
+  ).json();
   const rescanResponse = page.waitForResponse(
     (r) => r.url().endsWith("/assessments") && r.request().method() === "POST",
   );
-  await page
-    .getByRole("button", { name: "扫描所选Linux快照", exact: true })
-    .click();
+  await page.getByRole("button", { name: "扫描", exact: true }).click();
   const rescan = await (await rescanResponse).json();
   expect(rescan.id).not.toBe(job.id);
-  expect(rescan.target.snapshotId).toBe(snapshot.id);
+  expect(rescan.target.snapshotId).toBe(newer.id);
   await expect(
     page.getByRole("heading", { name: "发现 120 条漏洞记录" }),
   ).toBeVisible();
@@ -214,7 +216,7 @@ test("Linux快照扫描分页、原始证据下载、历史回读及客户隔离
   expect(errors).toEqual([]);
 });
 
-test("没有Linux快照时建立新扫描请求会说明原因，不提交空扫描", async ({
+test("没有最新Linux资料时单击扫描说明原因，不提交空任务", async ({
   page,
   request,
 }) => {
@@ -235,17 +237,25 @@ test("没有Linux快照时建立新扫描请求会说明原因，不提交空扫
   await page.getByRole("button", { name: "进入工作台" }).click();
   await page.locator("nav button").filter({ hasText: "CVE评估" }).click();
   await page.getByLabel("扫描主机").selectOption(asset.id);
+  await page.getByRole("button", { name: "扫描", exact: true }).click();
+  await expect(page.getByRole("alert")).toContainText("没有采集资料");
   await expect(
-    page.getByText("当前批次没有可扫描资料", { exact: false }),
-  ).toBeVisible();
-  await page
-    .getByRole("button", { name: "建立新扫描请求", exact: true })
-    .click();
-  await expect(page.getByRole("status")).toContainText(
-    "当前批次没有可扫描快照",
+    page.getByRole("button", { name: "扫描", exact: true }),
+  ).toBeEnabled();
+  expect(submissions).toBe(0);
+  await page.route("**/assessments/linux-inputs?**", (route) =>
+    route.fulfill({
+      json: {
+        items: [
+          { id: asset.id, supported: false, reason: "最新资料缺少dpkg" },
+          { id: asset.id, supported: true },
+        ],
+        total: 2,
+        offset: 0,
+      },
+    }),
   );
-  await expect(
-    page.getByRole("button", { name: "扫描所选Linux快照", exact: true }),
-  ).toBeDisabled();
+  await page.getByRole("button", { name: "扫描", exact: true }).click();
+  await expect(page.getByRole("alert")).toContainText("最新采集资料无法扫描");
   expect(submissions).toBe(0);
 });

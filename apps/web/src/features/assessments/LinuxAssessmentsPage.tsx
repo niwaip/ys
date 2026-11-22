@@ -25,19 +25,18 @@ type Inputs = {
 export function LinuxAssessmentsPage(props: FeatureProps) {
   const [assets, setAssets] = useState<AssetPage>(),
     [asset, setAsset] = useState(props.assetId ?? ""),
-    [inputs, setInputs] = useState<Inputs>(),
-    [snapshot, setSnapshot] = useState(""),
     [job, setJob] = useState<Assessment>(),
     [history, setHistory] = useState<AssessmentPage>(),
     [error, setError] = useState(""),
-    [notice, setNotice] = useState(""),
     [severities, setSeverities] = useState(defaultSeverities),
     [busy, setBusy] = useState(false),
-    [offset, setOffset] = useState(0),
     [assetOffset, setAssetOffset] = useState(0),
-    [historyOffset, setHistoryOffset] = useState(0),
-    [idempotencyKey, setIdempotencyKey] = useState(requestId);
-  const snapshotSelect = useRef<HTMLSelectElement>(null);
+    [historyOffset, setHistoryOffset] = useState(0);
+  const pending = useRef<
+    { assetId: string; snapshotId: string; idempotencyKey: string } | undefined
+  >(undefined);
+  const submission = useRef<AbortController | undefined>(undefined);
+  const submitting = useRef(false);
   const base = `/customers/${props.customerId}`;
   function fail(e: unknown) {
     if (e instanceof ApiError && e.status === 401) props.onUnauthorized();
@@ -59,32 +58,15 @@ export function LinuxAssessmentsPage(props: FeatureProps) {
     return () => c.abort();
   }, [base, props.token, props.assetId, assetOffset]);
   useEffect(() => {
-    setIdempotencyKey(requestId());
-  }, [asset, snapshot]);
-  useEffect(() => {
     setHistoryOffset(0);
-  }, [asset]);
-  useEffect(() => {
-    setNotice("");
-    setInputs(undefined);
-    setHistory(undefined);
-    setSnapshot("");
     setJob(undefined);
+    setHistory(undefined);
     setError("");
-    if (!asset) return;
-    const c = new AbortController();
-    api<Inputs>(
-      `${base}/assessments/linux-inputs?assetId=${asset}&offset=${offset}`,
-      props.token,
-      {},
-      c.signal,
-    )
-      .then(setInputs)
-      .catch((e) => {
-        if (!c.signal.aborted) fail(e);
-      });
-    return () => c.abort();
-  }, [base, props.token, asset, offset]);
+    setBusy(false);
+    submitting.current = false;
+    pending.current = undefined;
+    return () => submission.current?.abort();
+  }, [asset, base, props.token]);
   useEffect(() => {
     if (!asset) return;
     const c = new AbortController();
@@ -135,68 +117,73 @@ export function LinuxAssessmentsPage(props: FeatureProps) {
       fail(e);
     }
   }
-  function prepareNewRequest() {
-    setError("");
-    const selected =
-      inputs?.items.find((s) => s.id === snapshot && s.supported) ??
-      inputs?.items.find((s) => s.supported);
-    if (!selected) {
-      setNotice(
-        inputs
-          ? "当前批次没有可扫描快照。请查看其他批次，或到资产采集取得完整Linux资料。"
-          : "正在加载采集快照，请稍后再建立新扫描请求。",
-      );
-      snapshotSelect.current?.focus();
-      return;
-    }
-    setSnapshot(selected.id);
-    setIdempotencyKey(requestId());
-    setJob(undefined);
-    setNotice(
-      `新扫描请求已准备：${selected.os?.id ?? "Linux"} ${selected.os?.version ?? ""} · ${selected.packages ?? "未知"}包 · ${selected.importedAt}。请核对快照后点击“扫描所选Linux快照”开始扫描。`,
-    );
-    snapshotSelect.current?.focus();
-    snapshotSelect.current?.scrollIntoView({
-      block: "center",
-      behavior: "smooth",
-    });
-  }
   async function submit() {
+    if (submitting.current || !asset) return;
+    submitting.current = true;
     setBusy(true);
     setError("");
-    setNotice("");
+    setJob(undefined);
+    const c = new AbortController();
+    submission.current = c;
     try {
-      setJob(
-        await api<Assessment>(`${base}/assessments`, props.token, {
-          method: "POST",
-          body: JSON.stringify({
-            assetId: asset,
-            snapshotId: snapshot,
-            idempotencyKey,
-          }),
-        }),
+      if (!pending.current) {
+        const inputs = await api<Inputs>(
+          `${base}/assessments/linux-inputs?assetId=${asset}&offset=0`,
+          props.token,
+          {},
+          c.signal,
+        );
+        if (c.signal.aborted) return;
+        const latest = inputs.items[0];
+        if (!latest) throw Error("没有采集资料，请先执行资产基础采集。");
+        if (!latest.supported)
+          throw Error(
+            `最新采集资料无法扫描：${latest.reason ?? "缺少Linux系统包资料"}。请重新采集后再扫描。`,
+          );
+        pending.current = {
+          assetId: asset,
+          snapshotId: latest.id,
+          idempotencyKey: requestId(),
+        };
+      }
+      const result = await api<Assessment>(
+        `${base}/assessments`,
+        props.token,
+        { method: "POST", body: JSON.stringify(pending.current) },
+        c.signal,
       );
+      if (!c.signal.aborted) {
+        pending.current = undefined;
+        setJob(result);
+      }
     } catch (e) {
-      fail(e);
+      if (!c.signal.aborted) {
+        if (e instanceof ApiError && e.status < 500)
+          pending.current = undefined;
+        fail(e);
+      }
     } finally {
-      setBusy(false);
+      if (submission.current === c) {
+        submitting.current = false;
+        if (!c.signal.aborted) setBusy(false);
+      }
     }
   }
   return (
     <section className="software-page">
       <h2>Linux系统包CVE扫描</h2>
       <p>
-        支持Debian/Ubuntu的已安装dpkg系统包。目标无需Trivy；后台只扫描固定快照的发行版与包数据库，不扫描应用目录、容器、挂载卷或秘密。
+        支持Debian/Ubuntu的已安装dpkg系统包。目标无需Trivy；后台只扫描最新采集资料中的发行版与包数据库，不扫描应用目录、容器、挂载卷或秘密。
       </p>
       {!props.assetId && (
         <>
           <label>
             扫描主机
             <select
+              disabled={busy}
               value={asset}
               onChange={(e) => {
                 setAsset(e.target.value);
-                setOffset(0);
               }}
             >
               <option value="">选择在管资产</option>
@@ -226,62 +213,39 @@ export function LinuxAssessmentsPage(props: FeatureProps) {
       {error && <p role="alert">{error}</p>}
       {asset && (
         <div className="panel">
-          <label>
-            Linux采集快照
-            <select
-              ref={snapshotSelect}
-              value={snapshot}
-              onChange={(e) => {
-                setSnapshot(e.target.value);
-                setNotice("");
-              }}
-            >
-              <option value="">选择固定采集版本</option>
-              {inputs?.items.map((s) => (
-                <option key={s.id} value={s.id} disabled={!s.supported}>
-                  {s.importedAt} ·{" "}
-                  {s.supported
-                    ? `${s.os?.id} ${s.os?.version} · ${s.packages}包`
-                    : s.reason}
-                </option>
-              ))}
-            </select>
-          </label>
-          {!inputs && !error && <p>正在加载采集快照…</p>}
-          {inputs && !inputs.items.some((s) => s.supported) && (
-            <p>
-              当前批次没有可扫描资料；请查看其他批次，或在资产采集重新执行基础采集，取得完整dpkg数据库。
-            </p>
-          )}
-          <div className="pagination">
-            <button
-              disabled={!offset}
-              onClick={() => setOffset(Math.max(0, offset - 20))}
-            >
-              上一批快照
-            </button>
-            <button
-              disabled={!inputs || offset + 20 >= inputs.total}
-              onClick={() => setOffset(offset + 20)}
-            >
-              下一批快照
-            </button>
-          </div>
+          <p>扫描时自动使用最新采集资料，不会重新采集主机。</p>
           <SeverityControls value={severities} onChange={setSeverities} />
+          <button
+            className="primary"
+            disabled={
+              busy || (!!job && ["queued", "running"].includes(job.status))
+            }
+            onClick={() => void submit()}
+          >
+            {busy || (!!job && ["queued", "running"].includes(job.status))
+              ? "扫描中…"
+              : "扫描"}
+          </button>
           <div
             aria-label="扫描任务进度"
             className="panel"
             style={{ border: "2px solid #20735f", background: "#f0f8f5" }}
           >
-            <h3>扫描进度</h3>
             {!job && (
-              <p>
-                {busy
-                  ? "正在提交扫描任务…"
-                  : snapshot
-                    ? "输入已准备，尚未开始：点击“扫描所选Linux快照”提交扫描。"
-                    : "等待选择采集快照，尚未开始扫描。"}
-              </p>
+              <>
+                <h3>{busy ? "正在准备扫描" : "等待开始扫描"}</h3>
+                {busy && (
+                  <progress
+                    aria-label="扫描进度"
+                    style={{ width: "100%", height: "1rem" }}
+                  />
+                )}
+                <p>
+                  {busy
+                    ? "正在读取最新资料并提交任务…"
+                    : "配置完成后点击“扫描”开始。"}
+                </p>
+              </>
             )}
             {job && (
               <AssessmentLiveStatus
@@ -298,17 +262,6 @@ export function LinuxAssessmentsPage(props: FeatureProps) {
               />
             )}
           </div>
-          <button
-            className="primary"
-            disabled={busy || !snapshot}
-            onClick={() => void submit()}
-          >
-            扫描所选Linux快照
-          </button>
-          <button disabled={busy} onClick={prepareNewRequest}>
-            建立新扫描请求
-          </button>
-          {notice && <p role="status">{notice}</p>}
           <p>
             扫描只读取资料，不确认基线或写回NetBox。过期库与不足的覆盖会在结果中披露。
           </p>
