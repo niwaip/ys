@@ -454,3 +454,22 @@
     margin: 0;
   }
 }
+
+.component-groups {
+  min-width: 0;
+  margin: 16px 0;
+}
+.component-groups [role="group"] {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.component-groups button[aria-pressed="true"] {
+  background: #1b705d;
+  color: white;
+}
+.component-groups select {
+  box-sizing: border-box;
+  width: 100%;
+  max-width: 100%;
+}

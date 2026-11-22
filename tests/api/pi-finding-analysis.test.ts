@@ -70,6 +70,32 @@ test("Pi固定解析工具读取绑定事实并保存结构化产物，缺少保
       factHash: input.factHash,
       narrative: { explanation: { sourceIds: ["finding"] } },
     });
+    const recoveryEvents: string[] = [];
+    const corrected = await new PiFindingAnalysisExecutor({
+      ...config,
+      env: { YS_FINDING_FIXTURE_MODE: "invalid_then_correct" },
+    }).execute(
+      { ...input, id: "00000000-0000-4000-8000-000000000029" },
+      async (type, message) => {
+        recoveryEvents.push(type + ":" + message);
+      },
+      new AbortController().signal,
+    );
+    expect(corrected).toMatchObject({ factHash: input.factHash });
+    expect(
+      recoveryEvents.some((e) => e.startsWith("tool_arguments_invalid:")),
+    ).toBe(true);
+    expect(recoveryEvents.join(" ")).not.toContain("PRIVATE-FACT");
+    await expect(
+      new PiFindingAnalysisExecutor({
+        ...config,
+        env: { YS_FINDING_FIXTURE_MODE: "invalid_exhausted" },
+      }).execute(
+        { ...input, id: "00000000-0000-4000-8000-000000000030" },
+        async () => {},
+        new AbortController().signal,
+      ),
+    ).rejects.toMatchObject({ status: "failed" });
     await expect(
       new PiFindingAnalysisExecutor({
         ...config,

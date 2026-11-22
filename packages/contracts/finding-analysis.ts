@@ -20,6 +20,7 @@ export type FindingFacts = {
   finding: VulnerabilityFinding;
   coverage: AssessmentResult["coverage"];
   database: AssessmentResult["database"];
+  context?: import("./finding-context").FindingEvidence;
   advisory: { title?: string; description?: string };
 };
 export type AnalysisSection = { text: string; sourceIds: string[] };

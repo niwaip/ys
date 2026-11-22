@@ -24,6 +24,9 @@ emit lsbRelease cat /etc/lsb-release
 emit debianVersion cat /etc/debian_version
 emit kernel uname -r
 emit architecture uname -m
+emit virtualization systemd-detect-virt --vm
+emit xenNetback sh -c 'test -d /sys/module || exit 127; if test -d /sys/module/xen_netback; then printf true; else printf false; fi'
+emit listeningPorts ss -H -lntu
 emit packages sh -c 'if command -v dpkg-query >/dev/null 2>&1; then dpkg-query -W -f="dpkg\t\${Package}\t\${Version}\t\${Architecture}\t\${db:Status-Status}\n"; elif command -v rpm >/dev/null 2>&1; then rpm -qa --qf "rpm\t%{NAME}\t%{EPOCHNUM}:%{VERSION}-%{RELEASE}\t%{ARCH}\tinstalled\n"; else exit 127; fi'
 emit cpu cat /proc/cpuinfo
 emit memory cat /proc/meminfo
@@ -221,6 +224,20 @@ export async function collect(profile, scope, signal) {
         id: info.ID ?? null,
         version: info.VERSION_ID ?? null,
         kernel: values.kernel?.code === 0 ? values.kernel.text : null,
+        runtime: {
+          virtualization: section(values.virtualization, (text) => {
+            if (!text.trim()) throw Error("empty");
+            return text.trim();
+          }),
+          xenNetback: section(values.xenNetback, (text) => {
+            if (!["true", "false"].includes(text)) throw Error("boolean");
+            return text === "true";
+          }),
+          listeningPorts: section(values.listeningPorts, (text) => {
+            if (text.length > 16000) throw Error("limit");
+            return text;
+          }),
+        },
         architecture:
           values.architecture?.code === 0 ? values.architecture.text : null,
       },

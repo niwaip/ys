@@ -1,3 +1,6 @@
+import { assessmentRuntime } from "../assessments/runtime-context";
+import { findingContext } from "../assessments/finding-context";
+import { originalFindingEvidence } from "../assessments/scanner-match";
 import {
   BadRequestException,
   ConflictException,
@@ -131,22 +134,16 @@ export class FindingAnalysisService {
       const content = await linuxReportContent({
         artifact: r.rows[0].artifact,
       } as StoredAssessment);
-      if (content) {
-        const doc = JSON.parse(content),
-          ri = evidence.resultIndex,
-          vi = evidence.vulnerabilityIndex;
-        if (Number.isInteger(ri) && Number.isInteger(vi)) {
-          const candidate =
-            doc.Results?.[Number(ri)]?.Vulnerabilities?.[Number(vi)];
-          if (
-            candidate?.VulnerabilityID === finding.vulnerabilityId &&
-            candidate.PkgName === finding.packageName &&
-            candidate.InstalledVersion === finding.installedVersion
-          )
-            evidence = candidate;
-        }
-      }
+      evidence = originalFindingEvidence(finding, content);
     }
+    const input = row.input as FindingFacts["input"];
+    const runtime = await assessmentRuntime(
+      this.db,
+      customer,
+      row.target as FindingFacts["target"],
+      input,
+    );
+    const boundInput = { ...input, ...(runtime ? { runtime } : {}) };
     const advisory = {
       title:
         typeof evidence.Title === "string"
@@ -162,7 +159,7 @@ export class FindingAnalysisService {
       assessmentId,
       findingId,
       target: row.target as FindingFacts["target"],
-      input: row.input as FindingFacts["input"],
+      input: boundInput,
       outputHash: row.outputHash as string | null,
       finding: {
         ...finding,
@@ -175,6 +172,7 @@ export class FindingAnalysisService {
       coverage: row.coverage as FindingFacts["coverage"],
       database: row.database as FindingFacts["database"],
       advisory,
+      context: findingContext(finding, boundInput, evidence),
     };
   }
   async submit(
@@ -433,7 +431,7 @@ export class FindingAnalysisService {
           allowed = new Set(["finding", ...job.sources.map((s) => s.id)]);
         if (
           all.some((s) => s.sourceIds.some((id) => !allowed.has(id))) ||
-          !all.some((s) => s.sourceIds.includes("finding"))
+          !parsed.data.narrative.impact.sourceIds.includes("finding")
         )
           throw new AgentExecutionError(
             "failed",

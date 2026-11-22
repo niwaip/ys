@@ -31,6 +31,36 @@ process.stdin.on("data", async (chunk) => {
       text: "固定样例：可能影响组件使用方，需核实运行状态并测试升级。",
       sourceIds: ["finding"],
     };
+    if (
+      ["invalid_then_correct", "invalid_exhausted"].includes(
+        process.env.YS_FINDING_FIXTURE_MODE,
+      )
+    ) {
+      const attempts =
+        process.env.YS_FINDING_FIXTURE_MODE === "invalid_exhausted" ? 3 : 1;
+      for (let i = 0; i < attempts; i++) {
+        const toolCallId = `invalid-${i}`;
+        send({
+          type: "tool_execution_start",
+          toolName: "ys_finding_analysis",
+          toolCallId,
+        });
+        send({
+          type: "tool_execution_end",
+          toolName: "ys_finding_analysis",
+          toolCallId,
+          isError: true,
+          result: {
+            content: [
+              {
+                type: "text",
+                text: 'Invalid arguments for tool "ys_finding_analysis": malformed JSON\nReceived arguments: PRIVATE-FACT-MUST-NOT-LEAK',
+              },
+            ],
+          },
+        });
+      }
+    }
     if (process.env.YS_FINDING_FIXTURE_MODE !== "missing_tool")
       await invoke("ys_finding_analysis", {
         narrative: {

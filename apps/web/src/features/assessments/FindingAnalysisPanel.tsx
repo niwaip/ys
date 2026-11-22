@@ -187,6 +187,43 @@ export function FindingAnalysisPanel({
               )}{" "}
               · {result.model} {result.id !== job?.id ? "· 上次成功解析" : ""}
             </p>
+            {!result.facts.context && (
+              <p className="coverage-notice">
+                此解析使用旧版事实，未包含结构化匹配依据与运行环境。可重新解析；历史结果保持原样。
+              </p>
+            )}
+            {result.facts.context && (
+              <section className="analysis-section">
+                <h3>当前资产依据 · 独立于 AI 推断</h3>
+                <p>{result.facts.context.basis}</p>
+                <p>
+                  适用性：
+                  {result.facts.context.applicability.status ===
+                  "conditions_not_met"
+                    ? "采集时未发现适用条件"
+                    : "证据不足"}
+                  。{result.facts.context.applicability.reason}
+                </p>
+                <p>
+                  运行内核：{result.facts.context.runtime?.kernel ?? "未取得"} ·
+                  虚拟化：
+                  {result.facts.context.runtime?.virtualization?.status ===
+                  "acquired"
+                    ? result.facts.context.runtime.virtualization.data
+                    : "未取得"}
+                </p>
+                <p>
+                  资料来源：{result.facts.context.runtime?.origin ?? "未知"} ·
+                  环境采集时间：
+                  {result.facts.context.runtime?.collectedAt ?? "未知"}
+                  ；这些事实仅代表绑定的采集快照。
+                </p>
+                <small>
+                  规则：{result.facts.context.applicability.rule}
+                  ；扫描器原始匹配保留。
+                </small>
+              </section>
+            )}
             {result.research && (
               <p
                 className={

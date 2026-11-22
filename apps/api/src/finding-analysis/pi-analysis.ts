@@ -43,6 +43,7 @@ export class PiFindingAnalysisExecutor implements FindingAnalysisExecutor {
         skill: join(root, "tools/pi/skills/finding-analysis/SKILL.md"),
         tools: ["ys_finding_facts", "ys_finding_analysis"],
         requiredTools: ["ys_finding_facts", "ys_finding_analysis"],
+        parameterRecoveryTools: ["ys_finding_analysis"],
         prompt:
           "/skill:ys-finding-analysis 读取绑定单条漏洞事实与来源，生成中文漏洞说明、可能的系统影响、待核实条件和下一步建议。通过固定工具保存解析。",
       },

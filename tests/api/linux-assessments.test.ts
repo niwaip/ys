@@ -14,6 +14,10 @@ afterEach(async () => {
 test("Linux固定快照经真实任务队列扫描，Dashboard和报告冻结结果并保持客户及删除隔离", async () => {
   dir = await mkdtemp(join(tmpdir(), "ys-linux-"));
   let calls = 0;
+  let scenario = "single";
+  let analysisInput:
+    | import("../../packages/contracts/finding-analysis").FindingAnalysisInput
+    | undefined;
   app = await createApp(
     {
       databaseUrl: `pglite://${dir}`,
@@ -27,6 +31,30 @@ test("Linux固定快照经真实任务队列扫描，Dashboard和报告冻结结
     },
     [],
     {
+      findingResearchExecutor: {
+        execute: async () => {
+          throw Error("offline fixture");
+        },
+      },
+      findingAnalysisExecutor: {
+        execute: async (input) => {
+          analysisInput = input;
+          const section = {
+            text: "仅解释绑定事实，适用性由独立规则给出。",
+            sourceIds: ["finding"],
+          };
+          return {
+            schemaVersion: "finding-analysis-v1",
+            factHash: input.factHash,
+            narrative: {
+              explanation: section,
+              impact: section,
+              checks: [section],
+              nextSteps: [section],
+            },
+          };
+        },
+      },
       trivyExecutor: {
         execute: async (input) => {
           calls++;
@@ -66,17 +94,65 @@ test("Linux固定快照经真实任务队列扫描，Dashboard和报告冻结结
                       Epoch: 1,
                       Release: "0ubuntu1",
                       Arch: "amd64",
+                      SrcName: "openssl",
+                      SrcVersion: "3.0.1",
                     },
+                    ...(scenario === "multiarch"
+                      ? [
+                          {
+                            Name: "libssl3",
+                            Version: "3.0.1",
+                            Epoch: 1,
+                            Release: "0ubuntu1",
+                            Arch: "i386",
+                            SrcName: "openssl",
+                          },
+                        ]
+                      : []),
                   ],
-                  Vulnerabilities: [
-                    {
-                      VulnerabilityID: "CVE-2026-12345",
-                      PkgName: "libssl3",
-                      InstalledVersion: "1:3.0.1-0ubuntu1",
-                      Severity: "HIGH",
-                      FixedVersion: "3.0.2",
-                    },
-                  ],
+                  Vulnerabilities:
+                    scenario === "multiarch"
+                      ? ["amd64", "i386"].map((arch) => ({
+                          VulnerabilityID: "CVE-2026-12345",
+                          PkgName: "libssl3",
+                          InstalledVersion: "1:3.0.1-0ubuntu1",
+                          Severity: "HIGH",
+                          PkgIdentifier: {
+                            PURL: `pkg:deb/ubuntu/libssl3@1%3A3.0.1-0ubuntu1?arch=${arch}`,
+                          },
+                        }))
+                      : scenario === "groups"
+                        ? [
+                            ...Array.from({ length: 55 }, () => ({
+                              VulnerabilityID: "CVE-2026-12345",
+                              PkgName: "libssl3",
+                              InstalledVersion: "1:3.0.1-0ubuntu1",
+                              Severity: "HIGH",
+                            })),
+                            {
+                              VulnerabilityID: "CVE-2026-99287",
+                              PkgName: "other",
+                              InstalledVersion: "2",
+                              Severity: "LOW",
+                            },
+                          ]
+                        : [
+                            {
+                              VulnerabilityID:
+                                scenario === "xen"
+                                  ? "CVE-2026-99287"
+                                  : "CVE-2026-12345",
+                              PkgName: "libssl3",
+                              InstalledVersion: "1:3.0.1-0ubuntu1",
+                              Severity: "HIGH",
+                              FixedVersion: "3.0.2",
+                              Status: "affected",
+                              DataSource: {
+                                Name: "Ubuntu CVE Tracker",
+                                URL: "https://ubuntu.com/security",
+                              },
+                            },
+                          ],
                 },
               ],
             }),
@@ -105,6 +181,10 @@ test("Linux固定快照经真实任务队列扫描，Dashboard和报告冻结结
           version: "24.04",
           kernel: "6.8",
           architecture: "x86_64",
+          runtime: {
+            virtualization: { status: "acquired", data: "kvm", issues: [] },
+            xenNetback: { status: "acquired", data: false, issues: [] },
+          },
         },
       },
       packages: {
@@ -243,6 +323,55 @@ test("Linux固定快照经真实任务队列扫描，Dashboard和报告冻结结
       .expect(200)
   ).body;
   expect(paged.findingsPage).toEqual({ total: 1, offset: 0, limit: 50 });
+  expect(paged.findingStats).toMatchObject({
+    records: 1,
+    uniqueCves: 1,
+    components: 1,
+  });
+  expect(paged.componentGroups).toMatchObject([
+    {
+      packageName: "libssl3",
+      installedVersion: "1:3.0.1-0ubuntu1",
+      records: 1,
+      uniqueCves: 1,
+    },
+  ]);
+  expect(paged.input.runtime).toMatchObject({
+    kernel: "6.8",
+    virtualization: { status: "acquired", data: "kvm" },
+  });
+  const readableEvidence = (
+    await h
+      .get(
+        base +
+          `/assessments/${job.id}/findings/${paged.result.findings[0].id}/evidence`,
+      )
+      .set(auth)
+      .expect(200)
+  ).body;
+  expect(readableEvidence).toMatchObject({
+    sourcePackage: "openssl",
+    source: { name: "Ubuntu CVE Tracker" },
+    scannerStatus: "affected",
+    applicability: { status: "unknown" },
+  });
+  await h
+    .get(
+      `/api/customers/b/assessments/${job.id}/findings/${paged.result.findings[0].id}/evidence`,
+    )
+    .set(auth)
+    .expect(404);
+  const grouped = (
+    await h
+      .get(
+        base +
+          `/assessments/${job.id}?findingsOffset=0&component=${encodeURIComponent(paged.componentGroups[0].key)}`,
+      )
+      .set(auth)
+      .expect(200)
+  ).body;
+  expect(grouped.result.findings).toHaveLength(1);
+
   for (const [search, count] of [
     ["LiBSSL3", 1],
     ["CVE-2026-12345", 1],
@@ -368,6 +497,209 @@ test("Linux固定快照经真实任务队列扫描，Dashboard和报告冻结结
     .expect(200);
   expect(preview.text).toContain("CVE Linux系统包评估");
   expect(preview.text).toContain(done.execution.outputHash);
+  // Group summaries cover records beyond the first 50 and retain exact selection.
+  scenario = "groups";
+  const expanded = (
+    await h
+      .post(base + "/assessments")
+      .set(auth)
+      .send({ ...body, idempotencyKey: "grouped-scan" })
+      .expect(202)
+  ).body;
+  let expandedPage;
+  for (let i = 0; i < 100; i++) {
+    expandedPage = (
+      await h
+        .get(base + `/assessments/${expanded.id}?findingsOffset=0`)
+        .set(auth)
+        .expect(200)
+    ).body;
+    if (expandedPage.status === "succeeded") break;
+    await new Promise((r) => setTimeout(r, 10));
+  }
+  expect(expandedPage.findingStats).toEqual({
+    records: 56,
+    uniqueCves: 2,
+    components: 2,
+  });
+  expect(expandedPage.result.findings).toHaveLength(50);
+  expect(expandedPage.componentGroups).toMatchObject([
+    { packageName: "libssl3", records: 55, uniqueCves: 1 },
+    { packageName: "other", records: 1, uniqueCves: 1 },
+  ]);
+  const selected = (
+    await h
+      .get(
+        base +
+          `/assessments/${expanded.id}?findingsOffset=50&component=${encodeURIComponent(expandedPage.componentGroups[0].key)}`,
+      )
+      .set(auth)
+      .expect(200)
+  ).body;
+  expect(selected.result.findings).toHaveLength(5);
+  expect(selected.findingsPage.total).toBe(55);
+  const highGroups = (
+    await h
+      .get(
+        base + `/assessments/${expanded.id}?findingsOffset=0&severities=HIGH`,
+      )
+      .set(auth)
+      .expect(200)
+  ).body;
+  expect(highGroups.componentGroups).toHaveLength(1);
+  await h
+    .get(
+      base +
+        `/assessments/${expanded.id}?findingsOffset=0&component=invalid-json`,
+    )
+    .set(auth)
+    .expect(400);
+  await h
+    .get(`/api/customers/b/assessments/${expanded.id}?findingsOffset=0`)
+    .set(auth)
+    .expect(404);
+
+  scenario = "multiarch";
+  const multiData = structuredClone(data);
+  multiData.sections.packages.data.push({
+    ...multiData.sections.packages.data[0],
+    architecture: "i386",
+  });
+  multiData.extensions.rawSections.dpkgStatus +=
+    "Package: libssl3\nStatus: install ok installed\nArchitecture: i386\nVersion: 1:3.0.1-0ubuntu1\nSource: openssl\n\n";
+  const multiSnap = (
+    await h
+      .post(base + "/collections/manual")
+      .set(auth)
+      .send({ assetId: asset.id, note: "multiarch", data: multiData })
+      .expect(201)
+  ).body;
+  const multiJob = (
+    await h
+      .post(base + "/assessments")
+      .set(auth)
+      .send({ ...body, snapshotId: multiSnap.id, idempotencyKey: "multiarch" })
+      .expect(202)
+  ).body;
+  let multi;
+  for (let i = 0; i < 100; i++) {
+    multi = (
+      await h
+        .get(base + `/assessments/${multiJob.id}?findingsOffset=0`)
+        .set(auth)
+        .expect(200)
+    ).body;
+    if (multi.status === "succeeded") break;
+    await new Promise((r) => setTimeout(r, 10));
+  }
+  expect(multi.findingStats).toEqual({
+    records: 2,
+    uniqueCves: 1,
+    components: 2,
+  });
+  expect(
+    multi.componentGroups
+      .map((g: { componentId: string }) => g.componentId)
+      .sort(),
+  ).toEqual(["libssl3:amd64", "libssl3:i386"]);
+  const oneArch = (
+    await h
+      .get(
+        base +
+          `/assessments/${multiJob.id}?findingsOffset=0&component=${encodeURIComponent(multi.componentGroups[0].key)}`,
+      )
+      .set(auth)
+      .expect(200)
+  ).body;
+  expect(oneArch.result.findings).toHaveLength(1);
+  expect(oneArch.result.findings[0].componentId).toBe(
+    multi.componentGroups[0].componentId,
+  );
+  scenario = "xen";
+  for (const [label, collectedAt, virtualization, backend, expected] of [
+    ["kvm", "2026-11-22T00:00:00Z", "kvm", false, "conditions_not_met"],
+    ["missing-time", null, "kvm", false, "unknown"],
+    ["xen", "2026-11-22T00:00:00Z", "xen", false, "unknown"],
+    ["backend-present", "2026-11-22T00:00:00Z", "kvm", true, "unknown"],
+  ] as const) {
+    const observation = structuredClone(data);
+    observation.collectedAt = collectedAt as never;
+    observation.identity.hostname = `Linux-${label}`;
+    observation.sections.os.data.runtime.virtualization.data = virtualization;
+    observation.sections.os.data.runtime.xenNetback.data = backend;
+    const snap = (
+      await h
+        .post(base + "/collections/manual")
+        .set(auth)
+        .send({
+          assetId: asset.id,
+          note: "Runtime observation fixture",
+          data: observation,
+        })
+        .expect(201)
+    ).body;
+    const scan = (
+      await h
+        .post(base + "/assessments")
+        .set(auth)
+        .send({ ...body, snapshotId: snap.id, idempotencyKey: label })
+        .expect(202)
+    ).body;
+    let read;
+    for (let i = 0; i < 100; i++) {
+      read = (
+        await h
+          .get(base + `/assessments/${scan.id}?findingsOffset=0`)
+          .set(auth)
+          .expect(200)
+      ).body;
+      if (read.status === "succeeded") break;
+      await new Promise((r) => setTimeout(r, 10));
+    }
+    const context = (
+      await h
+        .get(
+          base +
+            `/assessments/${scan.id}/findings/${read.result.findings[0].id}/evidence`,
+        )
+        .set(auth)
+        .expect(200)
+    ).body;
+    expect(context.applicability.status).toBe(expected);
+    expect(context.runtime).toMatchObject({ kernel: "6.8", collectedAt });
+    expect(read.result.findings[0].applicability).toBe("tool_reported");
+    expect(read.result.findings[0].runtimeApplicability.status).toBe(expected);
+    if (label === "kvm") {
+      const path =
+        base +
+        `/assessments/${scan.id}/findings/${read.result.findings[0].id}/analyses`;
+      const task = (
+        await h
+          .post(path)
+          .set(auth)
+          .send({ idempotencyKey: "context-test" })
+          .expect(202)
+      ).body;
+      let completed;
+      for (let i = 0; i < 100; i++) {
+        completed = (
+          await h
+            .get(path + `/${task.id}`)
+            .set(auth)
+            .expect(200)
+        ).body;
+        if (completed.status === "succeeded") break;
+        await new Promise((r) => setTimeout(r, 10));
+      }
+      expect(completed.status).toBe("succeeded");
+      expect(analysisInput?.facts.context).toMatchObject({
+        sourcePackage: "openssl",
+        applicability: { status: "conditions_not_met" },
+        runtime: { kernel: "6.8", virtualization: { data: "kvm" } },
+      });
+      expect(completed.facts.context).toEqual(analysisInput?.facts.context);
+    }
+  }
   await h
     .delete(base + `/assets/${asset.id}`)
     .set(auth)
@@ -386,6 +718,8 @@ test("Linux固定快照经真实任务队列扫描，Dashboard和报告冻结结
   const { PGlite } = await import("@electric-sql/pglite");
   const seed = new PGlite(dir);
   const legacy = structuredClone(done);
+  delete legacy.input.runtime;
+  delete legacy.result.findings[0].match;
   legacy.result.findings[0].evidence = JSON.parse(
     legacy.execution.rawReport,
   ).Results[0].Vulnerabilities[0];
@@ -418,13 +752,30 @@ test("Linux固定快照经真实任务队列扫描，Dashboard和报告冻结结
     expect(restored.execution.outputHash).toBe(done.execution.outputHash);
     expect(restored.artifact).toBeUndefined();
     expect(restored.result.findings[0].evidence).toEqual(ref);
+    const oldContext = (
+      await request(app.getHttpServer())
+        .get(
+          base +
+            `/assessments/${job.id}/findings/${restored.result.findings[0].id}/evidence`,
+        )
+        .set(auth)
+        .expect(200)
+    ).body;
+    expect(oldContext).toMatchObject({
+      sourcePackage: "openssl",
+      runtime: { kernel: "6.8", virtualization: { data: "kvm" } },
+    });
+    expect(oldContext.applicability.status).toBe("unknown");
+
     const history = (
       await request(app.getHttpServer())
         .get(base + `/assessments?targetKind=linux&targetId=${asset.id}`)
         .set(auth)
         .expect(200)
     ).body;
-    expect(history.items[0]).toMatchObject({
+    expect(
+      history.items.find((item: { id: string }) => item.id === job.id),
+    ).toMatchObject({
       id: job.id,
       status: "succeeded",
       findingCount: 1,

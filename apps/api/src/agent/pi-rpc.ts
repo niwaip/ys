@@ -14,6 +14,7 @@ export type PiCapabilityRequest = {
   skill: string;
   tools: string[];
   requiredTools: string[];
+  parameterRecoveryTools?: string[];
   prompt: string;
 };
 export async function runPiCapability(
@@ -75,6 +76,8 @@ export async function runPiCapability(
       accepted = false;
     const started = new Map<string, string>();
     const completed = new Set<string>();
+    const ended = new Set<string>();
+    let parameterErrors = 0;
     let events = Promise.resolve();
     const commandId = randomUUID();
     const kill = () => {
@@ -158,9 +161,55 @@ export async function runPiCapability(
           if (
             !request.tools.includes(message.toolName) ||
             started.get(message.toolCallId) !== message.toolName ||
-            message.isError
+            ended.has(message.toolCallId)
           ) {
-            finish(new AgentExecutionError("failed", "固定工具执行失败"));
+            finish(new AgentExecutionError("failed", "工具结束事件与调用不符"));
+            return;
+          }
+          ended.add(message.toolCallId);
+          if (message.isError) {
+            completed.delete(message.toolName);
+            const text = Array.isArray(message.result?.content)
+              ? message.result.content.find(
+                  (c: { type?: string; text?: unknown }) =>
+                    c.type === "text" && typeof c.text === "string",
+                )?.text
+              : undefined;
+            const parameterError =
+              typeof text === "string" &&
+              (text.startsWith(
+                `Invalid arguments for tool "${message.toolName}":`,
+              ) ||
+                text.startsWith(
+                  `Validation failed for tool "${message.toolName}":`,
+                ));
+            if (
+              parameterError &&
+              request.parameterRecoveryTools?.includes(message.toolName)
+            ) {
+              parameterErrors++;
+              if (parameterErrors <= 2) {
+                event(
+                  "tool_arguments_invalid",
+                  `工具 ${message.toolName} 参数格式不符，等待模型修正（${parameterErrors}/2）`,
+                );
+                continue;
+              }
+              finish(
+                new AgentExecutionError(
+                  "failed",
+                  "工具参数连续校验失败，请重新解析",
+                ),
+              );
+            } else {
+              event(
+                "tool_failed",
+                parameterError
+                  ? "工具参数校验失败"
+                  : "固定工具执行失败；未取得有效产物",
+              );
+              finish(new AgentExecutionError("failed", "固定工具执行失败"));
+            }
             return;
           }
           completed.add(message.toolName);
@@ -172,6 +221,7 @@ export async function runPiCapability(
         if (message.type === terminal) {
           if (
             !accepted ||
+            [...started.keys()].some((id) => !ended.has(id)) ||
             request.requiredTools.some((tool) => !completed.has(tool))
           ) {
             finish(

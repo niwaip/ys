@@ -106,6 +106,26 @@ test("Linux快照扫描分页、原始证据下载、历史回读及客户隔离
   await expect(
     page.getByRole("progressbar", { name: "扫描进度" }),
   ).toHaveAttribute("value", "100");
+  await page.getByRole("button", { name: "按组件分组", exact: true }).click();
+  await expect(page.getByLabel("选择漏洞组件").locator("option")).toHaveCount(
+    2,
+  );
+  await expect(
+    page.getByLabel("选择漏洞组件").locator("option").nth(1),
+  ).toContainText("120 个 CVE / 120 条匹配");
+  await page.getByLabel("选择漏洞组件").selectOption({ index: 1 });
+  await expect(page.getByText("CVE-LINUX-000", { exact: true })).toBeVisible();
+  await page.getByRole("button", { name: "下一页漏洞" }).click();
+  await expect(page.getByText("CVE-LINUX-050", { exact: true })).toBeVisible();
+  await page.getByRole("button", { name: "逐条匹配", exact: true }).click();
+  const firstEvidence = page.locator(".findings-table tbody tr").first();
+  await firstEvidence.getByText("查看证据", { exact: true }).click();
+  await expect(firstEvidence).toContainText("证据不足，尚未确认受影响");
+  await expect(firstEvidence).toContainText("运行内核：6.8");
+  await expect(
+    firstEvidence.getByText("技术追溯信息", { exact: true }),
+  ).toBeVisible();
+  await firstEvidence.getByText("查看证据", { exact: true }).click();
   await page.getByRole("checkbox", { name: "高危", exact: true }).uncheck();
   await expect(
     page.getByText("当前关注等级显示 0 条，完整记录 120 条。", { exact: true }),

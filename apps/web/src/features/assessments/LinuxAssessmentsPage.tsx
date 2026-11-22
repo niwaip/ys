@@ -95,13 +95,14 @@ export function LinuxAssessmentsPage(props: FeatureProps) {
     offset = 0,
     levels = severities,
     search = "",
+    component = "",
   ) {
     resultRequest.current?.abort();
     const c = new AbortController();
     resultRequest.current = c;
     try {
       const value = await api<Assessment>(
-        `${base}/assessments/${id}?findingsOffset=${offset}&severities=${levels.join(",")}&search=${encodeURIComponent(search)}`,
+        `${base}/assessments/${id}?findingsOffset=${offset}&severities=${levels.join(",")}&search=${encodeURIComponent(search)}${component ? `&component=${encodeURIComponent(component)}` : ""}`,
         props.token,
         {},
         c.signal,
@@ -111,8 +112,13 @@ export function LinuxAssessmentsPage(props: FeatureProps) {
       if (!c.signal.aborted) fail(e);
     }
   }
-  function findingsPage(offset: number, levels = severities, search = "") {
-    if (job) void loadJob(job.id, offset, levels, search);
+  function findingsPage(
+    offset: number,
+    levels = severities,
+    search = "",
+    component = "",
+  ) {
+    if (job) void loadJob(job.id, offset, levels, search, component);
   }
   async function downloadEvidence() {
     if (!job) return;
@@ -290,8 +296,8 @@ export function LinuxAssessmentsPage(props: FeatureProps) {
           context={props}
           key={job.id}
           job={job}
-          onFindingsPage={(offset, levels, search) =>
-            void findingsPage(offset, levels, search)
+          onFindingsPage={(offset, levels, search, component) =>
+            void findingsPage(offset, levels, search, component)
           }
           selectedSeverities={severities}
           onSeveritiesChange={setSeverities}

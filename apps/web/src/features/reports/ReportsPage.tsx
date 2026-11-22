@@ -292,10 +292,10 @@ export function ReportsPage({
             <AssessmentDetails
               context={{ customerId, token, onUnauthorized }}
               job={linuxEvidence}
-              onFindingsPage={(offset, levels, search) =>
+              onFindingsPage={(offset, levels, search, component) =>
                 void run(async () => {
                   const next = await call<Assessment>(
-                    `${base}/assessments/${linuxEvidence.id}?findingsOffset=${offset}${levels ? "&severities=" + levels.join(",") : ""}&search=${encodeURIComponent(search ?? "")}`,
+                    `${base}/assessments/${linuxEvidence.id}?findingsOffset=${offset}${levels ? "&severities=" + levels.join(",") : ""}&search=${encodeURIComponent(search ?? "")}${component ? `&component=${encodeURIComponent(component)}` : ""}`,
                   );
                   if (
                     next.execution?.outputHash !==

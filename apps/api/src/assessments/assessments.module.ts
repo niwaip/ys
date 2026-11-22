@@ -1,3 +1,7 @@
+import { componentIdentitySchema } from "../../../../packages/contracts/finding-context";
+import { assessmentRuntime } from "./runtime-context";
+import { originalFindingEvidence } from "./scanner-match";
+import { findingContext } from "./finding-context";
 import {
   packLinuxAssessment,
   linuxReportContent,
@@ -84,6 +88,9 @@ const submitSchema = z.union([
     .strict(),
 ]);
 type Submission = z.infer<typeof submitSchema>;
+// Unresolved records stay separate rather than merging potentially different architectures.
+const componentIdentitySql =
+  "jsonb_build_array(value->>'componentId',value->>'packageName',value->>'installedVersion',value->>'ecosystem',value->>'target',CASE WHEN value->>'componentId' IS NULL THEN value->>'id' ELSE NULL END)";
 const cols = `id,customer_id AS "customerId",status,details`;
 function serialize(row: Record<string, unknown>): AnyAssessment {
   const { artifact, ...details } = row.details as StoredAssessment;
@@ -216,6 +223,7 @@ export class AssessmentService {
           ? {
               snapshotHash: (material as ReturnType<typeof linuxInput>)
                 .snapshotHash,
+              runtime: (material as ReturnType<typeof linuxInput>).runtime,
               scope:
                 "已安装dpkg系统包；不含应用依赖、容器、挂载卷和运行内核适用性验证",
             }
@@ -348,20 +356,61 @@ export class AssessmentService {
       throw new ConflictException("本任务没有可下载的原始报告");
     return compress(JSON.stringify({ content, contentHash: row.contentHash }));
   }
+  async evidence(customer: string, id: string, findingId: string) {
+    const rows = await this.db.query(
+      `SELECT details->'target' AS target,details->'input' AS input,details->'artifact' AS artifact,details#>>'{execution,rawReport}' AS content,
+       (SELECT value FROM jsonb_array_elements(COALESCE(details#>'{result,findings}','[]'::jsonb)) WHERE value->>'id'=$3 LIMIT 1) AS finding
+       FROM vulnerability_jobs WHERE customer_id=$1 AND id=$2`,
+      [customer, id, findingId],
+    );
+    const row = rows.rows[0];
+    if (!row?.finding) throw new NotFoundException("该扫描下未找到漏洞记录");
+    const job = { target: row.target, input: row.input } as Assessment;
+    if (!["linux", "software", "container"].includes(job.target.kind))
+      throw new BadRequestException("Windows 使用独立的证据结果");
+    const finding =
+      row.finding as import("../../../../packages/contracts/assessments").VulnerabilityFinding;
+    const content =
+      job.target.kind === "linux"
+        ? typeof row.content === "string"
+          ? row.content
+          : await linuxReportContent({
+              artifact: row.artifact,
+            } as StoredAssessment)
+        : undefined;
+    const raw = originalFindingEvidence(finding, content);
+    const runtime = await assessmentRuntime(
+      this.db,
+      customer,
+      job.target,
+      job.input,
+    );
+    return findingContext(finding, { ...job.input, runtime }, raw);
+  }
   async page(
     customer: string,
     id: string,
     offset: number,
     severities?: string[],
     search = "",
+    component = "",
   ) {
     const rows = await this.db.query(
       `WITH scoped AS (SELECT * FROM vulnerability_jobs WHERE customer_id=$1 AND id=$2),
        filtered AS (SELECT *, CASE WHEN $4::text[] IS NULL AND $5::text='' THEN details#>'{result,findings}' ELSE
-         (SELECT COALESCE(jsonb_agg(value ORDER BY ordinal),'[]'::jsonb) FROM jsonb_array_elements(COALESCE(details#>'{result,findings}','[]'::jsonb)) WITH ORDINALITY AS entries(value,ordinal) WHERE ($4::text[] IS NULL OR upper(value->>'severity')=ANY($4::text[])) AND ($5::text='' OR strpos(lower(concat_ws(' ',value->>'vulnerabilityId',value->>'packageName',value->>'installedVersion')),lower($5::text))>0)) END AS visible FROM scoped)
+         (SELECT COALESCE(jsonb_agg(value ORDER BY ordinal),'[]'::jsonb) FROM jsonb_array_elements(COALESCE(details#>'{result,findings}','[]'::jsonb)) WITH ORDINALITY AS entries(value,ordinal) WHERE ($4::text[] IS NULL OR upper(value->>'severity')=ANY($4::text[])) AND ($5::text='' OR strpos(lower(concat_ws(' ',value->>'vulnerabilityId',value->>'packageName',value->>'installedVersion')),lower($5::text))>0)) END AS visible FROM scoped),
+       selected AS (SELECT *, CASE WHEN $6::text='' THEN visible ELSE
+         (SELECT COALESCE(jsonb_agg(value ORDER BY ordinal),'[]'::jsonb) FROM jsonb_array_elements(COALESCE(visible,'[]'::jsonb)) WITH ORDINALITY AS entries(value,ordinal)
+          WHERE ${componentIdentitySql}=NULLIF($6::text,'')::jsonb) END AS shown FROM filtered)
        SELECT id,customer_id AS "customerId",status,
        jsonb_build_object(
-         'idempotencyKey',details->'idempotencyKey','target',details->'target','input',details->'input',
+          'findingStats', (SELECT jsonb_build_object('records',count(*),'uniqueCves',count(DISTINCT value->>'vulnerabilityId'),'components',count(DISTINCT ${componentIdentitySql})) FROM jsonb_array_elements(COALESCE(details#>'{result,findings}','[]'::jsonb))),
+         'componentGroups', (SELECT COALESCE(jsonb_agg(g ORDER BY g->>'packageName',g->>'installedVersion',g->>'key'),'[]'::jsonb) FROM (
+           SELECT jsonb_build_object('key',identity::text,'componentId',identity->0,'packageName',identity->1,'installedVersion',identity->2,'ecosystem',identity->3,'target',identity->4,'records',count(*),'uniqueCves',count(DISTINCT cve)) AS g FROM (
+             SELECT ${componentIdentitySql} AS identity,value->>'vulnerabilityId' AS cve FROM jsonb_array_elements(COALESCE(visible,'[]'::jsonb))
+           ) AS entries GROUP BY identity
+         ) AS groups),
+         'idempotencyKey',details->'idempotencyKey' ,'target',details->'target','input',details->'input',
          'createdAt',details->'createdAt','startedAt',details->'startedAt','finishedAt',details->'finishedAt','error',details->'error',
          'execution',CASE WHEN details ? 'execution' THEN jsonb_build_object(
            'status',details#>'{execution,status}','toolVersion',details#>'{execution,toolVersion}',
@@ -373,18 +422,31 @@ export class AssessmentService {
          'result',CASE WHEN details ? 'result' THEN jsonb_build_object(
            'outcome',details#>'{result,outcome}','coverage',details#>'{result,coverage}','database',details#>'{result,database}',
            'parserVersion',details#>'{result,parserVersion}',
-           'findings',COALESCE(jsonb_path_query_array(visible, ('$[' || $3::int || ' to ' || ($3::int+49) || ']')::jsonpath),'[]'::jsonb)
+           'findings',COALESCE(jsonb_path_query_array(shown, ('$[' || $3::int || ' to ' || ($3::int+49) || ']')::jsonpath),'[]'::jsonb)
          ) ELSE NULL END,
-         'findingsPage',jsonb_build_object('total',COALESCE(jsonb_array_length(visible),0),'offset',$3::int,'limit',50) || CASE WHEN $5::text='' THEN '{}'::jsonb ELSE jsonb_build_object('search',$5::text) END || CASE WHEN $4::text[] IS NULL AND $5::text='' THEN '{}'::jsonb ELSE jsonb_build_object('unfilteredTotal',COALESCE(jsonb_array_length(details#>'{result,findings}'),0),'severities',to_jsonb($4::text[])) END
-       ) AS details FROM filtered`,
-      [customer, id, offset, severities ?? null, search],
+         'findingsPage',jsonb_build_object('total',COALESCE(jsonb_array_length(shown),0),'offset',$3::int,'limit',50) || CASE WHEN $6::text='' THEN '{}'::jsonb ELSE jsonb_build_object('component',$6::text) END || CASE WHEN $5::text='' THEN '{}'::jsonb ELSE jsonb_build_object('search',$5::text) END || CASE WHEN $4::text[] IS NULL AND $5::text='' AND $6::text='' THEN '{}'::jsonb ELSE jsonb_build_object('unfilteredTotal',COALESCE(jsonb_array_length(details#>'{result,findings}'),0),'severities',to_jsonb($4::text[])) END
+       ) AS details FROM selected`,
+      [customer, id, offset, severities ?? null, search, component],
     );
     if (!rows.rows.length)
       throw new NotFoundException("该客户下未找到漏洞评估任务");
     const job = serialize(rows.rows[0]);
     if (job.target.kind !== "linux")
       throw new BadRequestException("此分页用于Linux扫描结果");
-    return job;
+    const linux = job as Assessment;
+    const runtime = await assessmentRuntime(
+      this.db,
+      customer,
+      linux.target,
+      linux.input,
+    );
+    if (linux.result)
+      linux.result.findings = linux.result.findings.map((f) => ({
+        ...f,
+        runtimeApplicability: findingContext(f, { ...linux.input, runtime })
+          .applicability,
+      }));
+    return linux;
   }
   async list(
     customer: string,
@@ -637,6 +699,19 @@ class AssessmentsController {
     };
     await send(initial);
   }
+  @Get(":assessmentId/findings/:findingId/evidence")
+  evidence(req: AuthorizedRequest) {
+    if (
+      !z.uuid().safeParse(req.params.assessmentId).success ||
+      !z.uuid().safeParse(req.params.findingId).success
+    )
+      throw new BadRequestException("漏洞记录编号无效");
+    return this.assessments.evidence(
+      req.params.customerId,
+      req.params.assessmentId,
+      req.params.findingId,
+    );
+  }
   @Get(":assessmentId/report")
   async report(req: AuthorizedRequest, response: Response) {
     if (!z.uuid().safeParse(req.params.assessmentId).success)
@@ -655,6 +730,18 @@ class AssessmentsController {
       .object({
         findingsOffset: z.coerce.number().int().min(0).max(1000000).optional(),
         search: z.string().trim().max(200).optional(),
+        component: z
+          .string()
+          .max(4000)
+          .refine((value) => {
+            try {
+              return componentIdentitySchema.safeParse(JSON.parse(value))
+                .success;
+            } catch {
+              return false;
+            }
+          })
+          .optional(),
         severities: z
           .string()
           .transform((v) => (v ? v.split(",") : []))
@@ -670,7 +757,8 @@ class AssessmentsController {
     if (!query.success) throw new BadRequestException("结果分页无效");
     if (
       (query.data.severities !== undefined ||
-        query.data.search !== undefined) &&
+        query.data.search !== undefined ||
+        query.data.component !== undefined) &&
       query.data.findingsOffset === undefined
     )
       throw new BadRequestException("等级筛选需指定结果分页");
@@ -681,6 +769,7 @@ class AssessmentsController {
         query.data.findingsOffset,
         query.data.severities,
         query.data.search,
+        query.data.component,
       );
     return this.assessments.get(req.params.customerId, req.params.assessmentId);
   }
@@ -692,6 +781,7 @@ for (const method of [
   "linuxInputs",
   "report",
   "events",
+  "evidence",
 ] as const)
   Req()(AssessmentsController.prototype, method, 0);
 Res({ passthrough: true })(AssessmentsController.prototype, "report", 1);

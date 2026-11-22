@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { runtimeObservationsSchema } from "./finding-context";
 export const collectionSectionNames = [
   "os",
   "packages",
@@ -89,6 +90,7 @@ export const hostCollectionSchema = z
           version: z.string().nullable(),
           kernel: z.string().nullable(),
           architecture: z.string().nullable(),
+          runtime: runtimeObservationsSchema.optional(),
         })
         .passthrough()
         .safeParse(v.sections.os.data).success

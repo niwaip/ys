@@ -1,3 +1,4 @@
+import { scannerMatch, sourceVersion } from "./scanner-match";
 import { z } from "zod";
 import { randomUUID } from "node:crypto";
 import type {
@@ -109,8 +110,27 @@ export function normalizeTrivy(
       if (c && c.version && (c.purl || linuxOs)) matched.add(c.id);
     }
     for (const v of r.Vulnerabilities ?? []) {
-      const c = match(v.PkgName, v.InstalledVersion, v.PkgIdentifier?.PURL);
+      let architecture: string | undefined;
+      if (linuxOs && v.PkgIdentifier?.PURL) {
+        try {
+          architecture =
+            new URL(v.PkgIdentifier.PURL).searchParams.get("arch") ?? undefined;
+        } catch {
+          /* Unparseable package identity remains unknown. */
+        }
+      }
+      const c = match(
+        v.PkgName,
+        v.InstalledVersion,
+        v.PkgIdentifier?.PURL,
+        architecture,
+      );
       if (!c) issues.push(`发现 ${v.VulnerabilityID} 无法唯一关联输入组件`);
+      const packages = r.Packages?.filter(
+        (p) =>
+          p.Name === v.PkgName && (!architecture || p.Arch === architecture),
+      );
+      const source = packages?.length === 1 ? packages[0] : undefined;
       findings.push({
         id: randomUUID(),
         componentId: c?.id ?? null,
@@ -123,6 +143,11 @@ export function normalizeTrivy(
         fixedVersion: v.FixedVersion || null,
         primaryUrl: v.PrimaryURL || null,
         applicability: "tool_reported",
+        match: scannerMatch(
+          v,
+          (linuxOs ? c?.raw.source : undefined) ?? source?.SrcName,
+          sourceVersion(source),
+        ),
         evidence: v,
       });
     }

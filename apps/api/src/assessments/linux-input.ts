@@ -1,4 +1,5 @@
 import { BadRequestException } from "@nestjs/common";
+import { runtimeObservationsSchema } from "../../../../packages/contracts/finding-context";
 import { createHash } from "node:crypto";
 import type { HostCollection } from "../../../../packages/contracts/collections";
 import type { SoftwareComponent } from "../../../../packages/contracts/software";
@@ -16,7 +17,12 @@ export function linuxInput(row: Record<string, unknown>, assetId: string) {
   const data = row.normalized as HostCollection;
   const raw = data.extensions.rawSections as
     Record<string, unknown> | undefined;
-  const os = data.sections.os?.data as { id?: string; version?: string } | null;
+  const os = data.sections.os?.data as {
+    id?: string;
+    version?: string;
+    kernel?: string | null;
+    runtime?: unknown;
+  } | null;
   if (
     data.sections.os?.status !== "acquired" ||
     data.sections.packages?.status !== "acquired" ||
@@ -127,5 +133,12 @@ export function linuxInput(row: Record<string, unknown>, assetId: string) {
     components,
     os: { id: os.id, version: os.version },
     collectedAt: data.collectedAt,
+    runtime: {
+      origin: typeof row.entry === "string" ? row.entry : null,
+      kernel:
+        typeof os.kernel === "string" ? os.kernel.trim().slice(0, 200) : null,
+      collectedAt: data.collectedAt,
+      ...(runtimeObservationsSchema.safeParse(os.runtime).data ?? {}),
+    },
   };
 }

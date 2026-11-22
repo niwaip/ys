@@ -33,7 +33,14 @@ export type VulnerabilityFinding = {
   fixedVersion: string | null;
   primaryUrl: string | null;
   applicability: "tool_reported";
+  runtimeApplicability?: import("./finding-context").ApplicabilityConclusion;
   evidence: Record<string, unknown>;
+  match?: {
+    sourcePackage: string | null;
+    sourceVersion: string | null;
+    scannerStatus: string | null;
+    source: { name: string; url: string | null } | null;
+  };
 };
 export type AssessmentResult = {
   outcome: "findings" | "no_findings";
@@ -67,6 +74,7 @@ export type Assessment = {
     version: string | null;
     snapshotHash?: string;
     scope?: string;
+    runtime?: import("./finding-context").RuntimeContext;
     provenance?: import("./collections").AssetVersionLink;
   };
   createdAt: string;
@@ -76,6 +84,8 @@ export type Assessment = {
   execution?: TrivyExecution;
   result?: AssessmentResult;
   replayed?: boolean;
+  findingStats?: { records: number; uniqueCves: number; components: number };
+  componentGroups?: import("./finding-context").ComponentFindingGroup[];
   findingsPage?: {
     total: number;
     offset: number;
@@ -83,6 +93,7 @@ export type Assessment = {
     unfilteredTotal?: number;
     severities?: string[];
     search?: string;
+    component?: string;
   };
 };
 
