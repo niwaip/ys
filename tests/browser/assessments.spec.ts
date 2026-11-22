@@ -49,7 +49,10 @@ test("软件后台评估呈现发现、覆盖、过期库和证据，刷新后�
   await expect(
     page.getByText("漏洞数据库已过期", { exact: true }),
   ).toBeVisible();
-  await expect(page.getByText("工具报告修复版本：4.19.2")).toBeVisible();
+  await expect(
+    page.getByRole("cell", { name: "4.19.2 工具报告，升级前需验证" }),
+  ).toBeVisible();
+  await page.getByText("任务详情与执行证据", { exact: true }).click();
   await page.getByText("原始 Trivy 报告", { exact: true }).click();
   await expect(page.getByText(/"SchemaVersion":2/)).toBeVisible();
   await page.getByRole("button", { name: "提交评估", exact: true }).click();

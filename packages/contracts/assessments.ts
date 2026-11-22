@@ -82,6 +82,7 @@ export type Assessment = {
     limit: number;
     unfilteredTotal?: number;
     severities?: string[];
+    search?: string;
   };
 };
 

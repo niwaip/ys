@@ -243,6 +243,30 @@ test("Linux固定快照经真实任务队列扫描，Dashboard和报告冻结结
       .expect(200)
   ).body;
   expect(paged.findingsPage).toEqual({ total: 1, offset: 0, limit: 50 });
+  for (const [search, count] of [
+    ["LiBSSL3", 1],
+    ["CVE-2026-12345", 1],
+    ["1:3.0.1", 1],
+    ["missing", 0],
+    ["%", 0],
+    ["_", 0],
+  ] as const) {
+    const found = (
+      await h
+        .get(
+          base +
+            `/assessments/${job.id}?findingsOffset=0&severities=HIGH&search=${encodeURIComponent(search)}`,
+        )
+        .set(auth)
+        .expect(200)
+    ).body;
+    expect(found.findingsPage).toMatchObject({
+      total: count,
+      unfilteredTotal: 1,
+      search,
+    });
+    expect(found.result.findings).toHaveLength(count);
+  }
   const high = (
     await h
       .get(

@@ -96,6 +96,7 @@ test("镜像详情保留digest版本、组件和评估证据，刷新及客户�
     .getByRole("button", { name: originalVersion!, exact: true })
     .click();
   await page.getByRole("button", { name: /镜像评估 执行成功/ }).click();
+  await page.getByText("任务详情与执行证据", { exact: true }).click();
   await page.getByText("原始 Trivy 报告", { exact: true }).click();
   await expect(page.getByText(/"SchemaVersion":2/)).toBeVisible();
   await page.screenshot({ path: "output/t06-container.png", fullPage: true });

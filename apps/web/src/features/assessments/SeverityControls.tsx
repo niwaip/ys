@@ -14,7 +14,7 @@ export function SeverityControls({
   onChange: (value: string[]) => void;
 }) {
   return (
-    <fieldset>
+    <fieldset className="severity-controls">
       <legend>关注等级</legend>
       <div style={{ display: "flex", flexWrap: "wrap", gap: "1rem" }}>
         {severityOptions.map(([id, label]) => (

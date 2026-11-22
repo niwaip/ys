@@ -1,3 +1,10 @@
+import { CveRecordResearch } from "./finding-analysis/public-cve";
+import { FindingAnalysisModule } from "./finding-analysis/finding-analysis.module";
+import {
+  configuredFindingAnalyst,
+  type FindingAnalysisExecutor,
+} from "./finding-analysis/pi-analysis";
+import type { PublicQueryExecutor } from "./agent/agent.module";
 import { BaselinesModule } from "./baselines/baselines.module";
 import { CollectionJobsModule } from "./collections/jobs.module";
 import type { CollectionExecutor } from "./collections/pi-collection";
@@ -77,6 +84,9 @@ export async function createApp(
   input: AppConfig,
   features: DynamicModule["imports"] = [],
   runtime: {
+    findingAnalysisExecutor?: FindingAnalysisExecutor;
+    findingResearchExecutor?: PublicQueryExecutor;
+    findingAnalysisTimeoutMs?: number;
     collectionExecutor?: CollectionExecutor;
     trivyExecutor?: TrivyExecutor;
     reportNarrationExecutor?: ReportNarrationExecutor;
@@ -120,6 +130,22 @@ export async function createApp(
           )
             ? [AgentModule.register(configuredPublicExecutor(config.pi))]
             : []),
+          FindingAnalysisModule.register({
+            executor:
+              runtime.findingAnalysisExecutor ??
+              configuredFindingAnalyst(config.pi),
+            researcher:
+              runtime.findingResearchExecutor ??
+              (config.pi?.scriptPath
+                ? configuredPublicExecutor(config.pi)
+                : new CveRecordResearch()),
+            operators: config.operators,
+            model:
+              [config.pi?.provider, config.pi?.model]
+                .filter(Boolean)
+                .join("/") || "未配置",
+            timeoutMs: runtime.findingAnalysisTimeoutMs ?? config.pi?.timeoutMs,
+          }),
           assessments,
           ReportsModule.register(assessments, {
             executor:

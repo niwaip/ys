@@ -1,3 +1,4 @@
+import { AssessmentHistoryTable } from "../assessments/AssessmentHistoryTable";
 import { AssessmentLiveStatus } from "../assessments/AssessmentLiveStatus";
 import type { Asset, AssetPage } from "../../../../../packages/contracts";
 import { LinuxAssessmentsPage } from "../assessments/LinuxAssessmentsPage";
@@ -190,21 +191,35 @@ function AssetAssessment({
           下一批关联
         </button>
       </div>
+      {job && (
+        <AssessmentLiveStatus
+          {...props}
+          jobId={job.id}
+          onComplete={async () => {
+            setJob(
+              await api<Assessment>(
+                `${base}/assessments/${job.id}`,
+                props.token,
+              ),
+            );
+          }}
+        />
+      )}
+      {job && <AssessmentDetails context={props} job={job} />}
       <h3>本资产关联版本评估历史</h3>
-      {history?.items.map((item) => (
-        <button
-          key={item.id}
-          disabled={busy}
-          onClick={() => {
+      {history && (
+        <AssessmentHistoryTable
+          items={history.items}
+          job={job}
+          busy={busy}
+          onSelect={(id) => {
             setError("");
-            void api<Assessment>(`${base}/assessments/${item.id}`, props.token)
+            void api<Assessment>(`${base}/assessments/${id}`, props.token)
               .then(setJob)
               .catch(fail);
           }}
-        >
-          {item.createdAt} · {item.status} · {item.id}
-        </button>
-      ))}
+        />
+      )}
       {history && !history.total && <p>尚无本资产关联版本评估任务。</p>}
       <div className="pagination">
         <button
@@ -220,21 +235,6 @@ function AssetAssessment({
           下一批关联评估
         </button>
       </div>
-      {job && (
-        <AssessmentLiveStatus
-          {...props}
-          jobId={job.id}
-          onComplete={async () => {
-            setJob(
-              await api<Assessment>(
-                `${base}/assessments/${job.id}`,
-                props.token,
-              ),
-            );
-          }}
-        />
-      )}
-      {job && <AssessmentDetails job={job} />}
     </section>
   );
 }
@@ -287,7 +287,7 @@ export function AssessmentWorkspace(props: FeatureProps) {
       ]
     : ["Linux系统包扫描", "软件漏洞评估", "Windows 补丁评估", "镜像漏洞评估"];
   return (
-    <>
+    <div className="assessment-workspace">
       <div className="page-heading">
         <div>
           <h1>CVE评估</h1>
@@ -378,6 +378,6 @@ export function AssessmentWorkspace(props: FeatureProps) {
           <ContainersPage {...props} />
         )}
       </div>
-    </>
+    </div>
   );
 }

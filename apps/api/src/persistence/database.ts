@@ -16,6 +16,10 @@ export const DATABASE = Symbol("DATABASE");
 // Numbered migrations are applied atomically; new features append migrations here.
 const migrations = [
   {
+    version: 25,
+    sql: `CREATE TABLE finding_analyses(id uuid PRIMARY KEY,customer_id text NOT NULL,assessment_id uuid NOT NULL,finding_id uuid NOT NULL,idempotency_key text NOT NULL,actor_key text NOT NULL,status text NOT NULL,details jsonb NOT NULL,created_at timestamptz NOT NULL DEFAULT now(),UNIQUE(customer_id,assessment_id,idempotency_key),FOREIGN KEY(customer_id,assessment_id) REFERENCES vulnerability_jobs(customer_id,id)); CREATE INDEX finding_analyses_scope ON finding_analyses(customer_id,assessment_id,finding_id,created_at DESC,id);`,
+  },
+  {
     version: 24,
     sql: `ALTER TABLE assets ADD COLUMN deleted_at timestamptz; ALTER TABLE assets ADD COLUMN deleted_by text; ALTER TABLE assets ADD COLUMN hardware_type text NOT NULL DEFAULT 'unknown' CHECK(hardware_type IN ('unknown','server','network')); CREATE TABLE asset_audit(id uuid PRIMARY KEY,customer_id text NOT NULL,asset_id uuid NOT NULL,action text NOT NULL,actor text NOT NULL,created_at timestamptz NOT NULL DEFAULT now(),FOREIGN KEY(customer_id,asset_id) REFERENCES assets(customer_id,id));`,
   },

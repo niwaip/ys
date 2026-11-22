@@ -1,3 +1,4 @@
+import { AssessmentHistoryTable } from "../assessments/AssessmentHistoryTable";
 import {
   SeverityControls,
   defaultSeverities,
@@ -148,7 +149,9 @@ export function ContainersPage({
           </p>
         </div>
       </header>
-      <SeverityControls value={severities} onChange={setSeverities} />
+      {!job?.result && (
+        <SeverityControls value={severities} onChange={setSeverities} />
+      )}
       {error && <p role="alert">{error}</p>}
       {message && <p role="status">{message}</p>}
       <form
@@ -411,45 +414,6 @@ export function ContainersPage({
             >
               新建镜像评估请求
             </button>
-            <p>本输入版本有 {history.total} 个评估任务</p>
-            {history.items.map((j) => (
-              <button
-                disabled={busy}
-                key={j.id}
-                onClick={() =>
-                  run(async () => {
-                    jobId.current = j.id;
-                    setJob(
-                      await call<Assessment>(`${base}/assessments/${j.id}`),
-                    );
-                  })
-                }
-              >
-                镜像评估 {assessmentStatusLabels[j.status]} · {j.id.slice(0, 8)}
-              </button>
-            ))}
-            <div>
-              <button
-                disabled={busy || offset.current === 0}
-                onClick={() => {
-                  offset.current = Math.max(0, offset.current - 20);
-                  refreshTasks();
-                }}
-              >
-                上一页评估
-              </button>
-              <button
-                disabled={
-                  busy || history.offset + history.limit >= history.total
-                }
-                onClick={() => {
-                  offset.current += 20;
-                  refreshTasks();
-                }}
-              >
-                下一页评估
-              </button>
-            </div>
           </div>
         </>
       )}
@@ -464,10 +428,49 @@ export function ContainersPage({
       )}
       {job && (
         <AssessmentDetails
+          context={{ customerId, token, onUnauthorized }}
           selectedSeverities={severities}
           onSeveritiesChange={setSeverities}
           job={job}
         />
+      )}
+      {snapshot && (
+        <div className="panel">
+          <h3>镜像评估历史</h3>
+          <p>本输入版本有 {history.total} 个评估任务</p>
+          <AssessmentHistoryTable
+            items={history.items}
+            job={job}
+            busy={busy}
+            prefix="镜像评估 "
+            onSelect={(id) =>
+              void run(async () => {
+                jobId.current = id;
+                setJob(await call<Assessment>(`${base}/assessments/${id}`));
+              })
+            }
+          />
+          <div>
+            <button
+              disabled={busy || offset.current === 0}
+              onClick={() => {
+                offset.current = Math.max(0, offset.current - 20);
+                refreshTasks();
+              }}
+            >
+              上一页评估
+            </button>
+            <button
+              disabled={busy || history.offset + history.limit >= history.total}
+              onClick={() => {
+                offset.current += 20;
+                refreshTasks();
+              }}
+            >
+              下一页评估
+            </button>
+          </div>
+        </div>
       )}
     </section>
   );

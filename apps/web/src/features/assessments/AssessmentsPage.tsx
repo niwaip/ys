@@ -1,3 +1,4 @@
+import { AssessmentHistoryTable } from "./AssessmentHistoryTable";
 import { SeverityControls, defaultSeverities } from "./SeverityControls";
 import { AssessmentLiveStatus } from "./AssessmentLiveStatus";
 import { requestId } from "../../request-id";
@@ -107,7 +108,9 @@ export function AssessmentsPage({
           </p>
         </div>
       </header>
-      <SeverityControls value={severities} onChange={setSeverities} />
+      {!job?.result && (
+        <SeverityControls value={severities} onChange={setSeverities} />
+      )}
       {error && <p role="alert">{error}</p>}
       {message && <p role="status">{message}</p>}
       <div className="panel">
@@ -184,23 +187,37 @@ export function AssessmentsPage({
           新建评估请求
         </button>
       </div>
+      {job && (
+        <AssessmentLiveStatus
+          customerId={customerId}
+          token={token}
+          onUnauthorized={onUnauthorized}
+          jobId={job.id}
+          onComplete={refresh}
+        />
+      )}
+      {job && (
+        <AssessmentDetails
+          context={{ customerId, token, onUnauthorized }}
+          selectedSeverities={severities}
+          onSeveritiesChange={setSeverities}
+          job={job}
+        />
+      )}
       <div className="panel">
         <h2>评估历史</h2>
         <p>{history.total} 个任务</p>
-        {history.items.map((j) => (
-          <button
-            key={j.id}
-            disabled={busy}
-            onClick={() =>
-              run(async () => {
-                selectedJob.current = j.id;
-                setJob(await call<Assessment>(`${base}/assessments/${j.id}`));
-              })
-            }
-          >
-            {labels[j.status]} · {j.createdAt} · {j.id.slice(0, 8)}
-          </button>
-        ))}
+        <AssessmentHistoryTable
+          items={history.items}
+          job={job}
+          busy={busy}
+          onSelect={(id) =>
+            void run(async () => {
+              selectedJob.current = id;
+              setJob(await call<Assessment>(`${base}/assessments/${id}`));
+            })
+          }
+        />
         <div>
           <button
             disabled={busy || history.offset === 0}
@@ -222,22 +239,6 @@ export function AssessmentsPage({
           </button>
         </div>
       </div>
-      {job && (
-        <AssessmentLiveStatus
-          customerId={customerId}
-          token={token}
-          onUnauthorized={onUnauthorized}
-          jobId={job.id}
-          onComplete={refresh}
-        />
-      )}
-      {job && (
-        <AssessmentDetails
-          selectedSeverities={severities}
-          onSeveritiesChange={setSeverities}
-          job={job}
-        />
-      )}
     </section>
   );
 }

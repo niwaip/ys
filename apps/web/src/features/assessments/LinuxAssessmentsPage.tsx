@@ -1,3 +1,4 @@
+import { AssessmentHistoryTable } from "./AssessmentHistoryTable";
 import { SeverityControls, defaultSeverities } from "./SeverityControls";
 import { AssessmentLiveStatus } from "./AssessmentLiveStatus";
 import { useEffect, useRef, useState } from "react";
@@ -37,6 +38,7 @@ export function LinuxAssessmentsPage(props: FeatureProps) {
   >(undefined);
   const submission = useRef<AbortController | undefined>(undefined);
   const submitting = useRef(false);
+  const resultRequest = useRef<AbortController | undefined>(undefined);
   const base = `/customers/${props.customerId}`;
   function fail(e: unknown) {
     if (e instanceof ApiError && e.status === 401) props.onUnauthorized();
@@ -65,7 +67,10 @@ export function LinuxAssessmentsPage(props: FeatureProps) {
     setBusy(false);
     submitting.current = false;
     pending.current = undefined;
-    return () => submission.current?.abort();
+    return () => {
+      submission.current?.abort();
+      resultRequest.current?.abort();
+    };
   }, [asset, base, props.token]);
   useEffect(() => {
     if (!asset) return;
@@ -85,18 +90,29 @@ export function LinuxAssessmentsPage(props: FeatureProps) {
     return () => c.abort();
   }, [base, props.token, asset, job?.id, job?.status, historyOffset]);
 
-  async function findingsPage(offset: number, levels = severities) {
-    if (!job) return;
+  async function loadJob(
+    id: string,
+    offset = 0,
+    levels = severities,
+    search = "",
+  ) {
+    resultRequest.current?.abort();
+    const c = new AbortController();
+    resultRequest.current = c;
     try {
-      setJob(
-        await api<Assessment>(
-          `${base}/assessments/${job.id}?findingsOffset=${offset}&severities=${levels.join(",")}`,
-          props.token,
-        ),
+      const value = await api<Assessment>(
+        `${base}/assessments/${id}?findingsOffset=${offset}&severities=${levels.join(",")}&search=${encodeURIComponent(search)}`,
+        props.token,
+        {},
+        c.signal,
       );
+      if (!c.signal.aborted) setJob(value);
     } catch (e) {
-      fail(e);
+      if (!c.signal.aborted) fail(e);
     }
+  }
+  function findingsPage(offset: number, levels = severities, search = "") {
+    if (job) void loadJob(job.id, offset, levels, search);
   }
   async function downloadEvidence() {
     if (!job) return;
@@ -214,7 +230,9 @@ export function LinuxAssessmentsPage(props: FeatureProps) {
       {asset && (
         <div className="panel">
           <p>扫描时自动使用最新采集资料，不会重新采集主机。</p>
-          <SeverityControls value={severities} onChange={setSeverities} />
+          {!job?.result && (
+            <SeverityControls value={severities} onChange={setSeverities} />
+          )}
           <button
             className="primary"
             disabled={
@@ -267,6 +285,19 @@ export function LinuxAssessmentsPage(props: FeatureProps) {
           </p>
         </div>
       )}
+      {job && (
+        <AssessmentDetails
+          context={props}
+          key={job.id}
+          job={job}
+          onFindingsPage={(offset, levels, search) =>
+            void findingsPage(offset, levels, search)
+          }
+          selectedSeverities={severities}
+          onSeveritiesChange={setSeverities}
+          onDownloadEvidence={() => void downloadEvidence()}
+        />
+      )}
       {history && (
         <div className="panel">
           <h3>本主机Linux扫描历史</h3>
@@ -286,33 +317,12 @@ export function LinuxAssessmentsPage(props: FeatureProps) {
               下一批扫描
             </button>
           </div>
-          {history.items.map((h) => (
-            <button
-              key={h.id}
-              onClick={() =>
-                void api<Assessment>(
-                  `${base}/assessments/${h.id}?findingsOffset=0`,
-                  props.token,
-                )
-                  .then(setJob)
-                  .catch(fail)
-              }
-            >
-              {assessmentStatusLabels[job?.id === h.id ? job.status : h.status]}{" "}
-              · {h.createdAt} · {h.id.slice(0, 8)}
-            </button>
-          ))}
+          <AssessmentHistoryTable
+            items={history.items}
+            job={job}
+            onSelect={(id) => void loadJob(id)}
+          />
         </div>
-      )}
-      {job && (
-        <AssessmentDetails
-          key={job.id}
-          job={job}
-          onFindingsPage={(offset, levels) => void findingsPage(offset, levels)}
-          selectedSeverities={severities}
-          onSeveritiesChange={setSeverities}
-          onDownloadEvidence={() => void downloadEvidence()}
-        />
       )}
     </section>
   );

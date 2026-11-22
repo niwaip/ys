@@ -616,7 +616,12 @@ export function SoftwareHistoryPage({
           </button>
         </div>
       )}
-      {batch && <AssessmentDetails job={batch} />}
+      {batch && (
+        <AssessmentDetails
+          context={{ customerId, token, onUnauthorized }}
+          job={batch}
+        />
+      )}
     </section>
   );
 }

@@ -353,11 +353,12 @@ export class AssessmentService {
     id: string,
     offset: number,
     severities?: string[],
+    search = "",
   ) {
     const rows = await this.db.query(
       `WITH scoped AS (SELECT * FROM vulnerability_jobs WHERE customer_id=$1 AND id=$2),
-       filtered AS (SELECT *, CASE WHEN $4::text[] IS NULL THEN details#>'{result,findings}' ELSE
-         (SELECT COALESCE(jsonb_agg(value ORDER BY ordinal),'[]'::jsonb) FROM jsonb_array_elements(COALESCE(details#>'{result,findings}','[]'::jsonb)) WITH ORDINALITY AS entries(value,ordinal) WHERE upper(value->>'severity')=ANY($4::text[])) END AS visible FROM scoped)
+       filtered AS (SELECT *, CASE WHEN $4::text[] IS NULL AND $5::text='' THEN details#>'{result,findings}' ELSE
+         (SELECT COALESCE(jsonb_agg(value ORDER BY ordinal),'[]'::jsonb) FROM jsonb_array_elements(COALESCE(details#>'{result,findings}','[]'::jsonb)) WITH ORDINALITY AS entries(value,ordinal) WHERE ($4::text[] IS NULL OR upper(value->>'severity')=ANY($4::text[])) AND ($5::text='' OR strpos(lower(concat_ws(' ',value->>'vulnerabilityId',value->>'packageName',value->>'installedVersion')),lower($5::text))>0)) END AS visible FROM scoped)
        SELECT id,customer_id AS "customerId",status,
        jsonb_build_object(
          'idempotencyKey',details->'idempotencyKey','target',details->'target','input',details->'input',
@@ -374,9 +375,9 @@ export class AssessmentService {
            'parserVersion',details#>'{result,parserVersion}',
            'findings',COALESCE(jsonb_path_query_array(visible, ('$[' || $3::int || ' to ' || ($3::int+49) || ']')::jsonpath),'[]'::jsonb)
          ) ELSE NULL END,
-         'findingsPage',jsonb_build_object('total',COALESCE(jsonb_array_length(visible),0),'offset',$3::int,'limit',50) || CASE WHEN $4::text[] IS NULL THEN '{}'::jsonb ELSE jsonb_build_object('unfilteredTotal',COALESCE(jsonb_array_length(details#>'{result,findings}'),0),'severities',to_jsonb($4::text[])) END
+         'findingsPage',jsonb_build_object('total',COALESCE(jsonb_array_length(visible),0),'offset',$3::int,'limit',50) || CASE WHEN $5::text='' THEN '{}'::jsonb ELSE jsonb_build_object('search',$5::text) END || CASE WHEN $4::text[] IS NULL AND $5::text='' THEN '{}'::jsonb ELSE jsonb_build_object('unfilteredTotal',COALESCE(jsonb_array_length(details#>'{result,findings}'),0),'severities',to_jsonb($4::text[])) END
        ) AS details FROM filtered`,
-      [customer, id, offset, severities ?? null],
+      [customer, id, offset, severities ?? null, search],
     );
     if (!rows.rows.length)
       throw new NotFoundException("该客户下未找到漏洞评估任务");
@@ -653,6 +654,7 @@ class AssessmentsController {
     const query = z
       .object({
         findingsOffset: z.coerce.number().int().min(0).max(1000000).optional(),
+        search: z.string().trim().max(200).optional(),
         severities: z
           .string()
           .transform((v) => (v ? v.split(",") : []))
@@ -667,7 +669,8 @@ class AssessmentsController {
       .safeParse(req.query);
     if (!query.success) throw new BadRequestException("结果分页无效");
     if (
-      query.data.severities !== undefined &&
+      (query.data.severities !== undefined ||
+        query.data.search !== undefined) &&
       query.data.findingsOffset === undefined
     )
       throw new BadRequestException("等级筛选需指定结果分页");
@@ -677,6 +680,7 @@ class AssessmentsController {
         req.params.assessmentId,
         query.data.findingsOffset,
         query.data.severities,
+        query.data.search,
       );
     return this.assessments.get(req.params.customerId, req.params.assessmentId);
   }

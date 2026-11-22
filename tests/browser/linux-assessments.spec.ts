@@ -117,6 +117,31 @@ test("Linux快照扫描分页、原始证据下载、历史回读及客户隔离
     }),
   ).toBeVisible();
 
+  await page
+    .getByRole("searchbox", { name: "检索漏洞记录" })
+    .fill("CVE-LINUX-119");
+  await expect(
+    page.getByText("当前关注等级显示 1 条，完整记录 120 条。", { exact: true }),
+  ).toBeVisible();
+  await expect(page.getByText("CVE-LINUX-119", { exact: true })).toBeVisible();
+  await page.getByRole("button", { name: "AI解析", exact: true }).click();
+  const analysis = page.getByRole("dialog", { name: "漏洞 AI 解析" });
+  await expect(analysis.getByRole("alert")).toContainText("Pi未配置");
+  await page.keyboard.press("Escape");
+  await expect(analysis).toHaveCount(0);
+  await page.getByRole("searchbox", { name: "检索漏洞记录" }).fill("");
+  await expect(
+    page.getByText("当前关注等级显示 120 条，完整记录 120 条。", {
+      exact: true,
+    }),
+  ).toBeVisible();
+  const resultTop = await page
+    .locator(".assessment-results")
+    .evaluate((el) => el.getBoundingClientRect().top);
+  const historyTop = await page
+    .getByRole("heading", { name: "本主机Linux扫描历史" })
+    .evaluate((el) => el.getBoundingClientRect().top);
+  expect(historyTop).toBeGreaterThan(resultTop);
   await expect(page.getByText("CVE-LINUX-000", { exact: true })).toBeVisible();
   await expect(page.getByText("CVE-LINUX-050", { exact: true })).toHaveCount(0);
   await page.getByRole("button", { name: "下一页漏洞" }).click();
@@ -128,6 +153,7 @@ test("Linux快照扫描分页、原始证据下载、历史回读及客户隔离
       () => document.documentElement.scrollWidth <= innerWidth,
     ),
   ).toBe(true);
+  await page.getByText("任务详情与执行证据", { exact: true }).click();
   const download = page.waitForEvent("download");
   await page.getByRole("button", { name: "下载原始Trivy报告" }).click();
   expect((await download).suggestedFilename()).toMatch(/^trivy-.*\.json$/);
