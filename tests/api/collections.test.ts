@@ -495,6 +495,29 @@ test("显式软件版本关联绑定固定主机快照，独立评估及报告�
       })
       .expect(202)
   ).body;
+  const scopedHistory = await http
+    .get(
+      `/api/customers/acme/assessments?assetId=${asset.id}&targetKind=software`,
+    )
+    .set(auth)
+    .expect(200);
+  expect(scopedHistory.body.items.map((x: { id: string }) => x.id)).toContain(
+    job.id,
+  );
+  expect(
+    (
+      await http
+        .get(
+          `/api/customers/other/assessments?assetId=${asset.id}&targetKind=software`,
+        )
+        .set(auth)
+        .expect(200)
+    ).body.items,
+  ).toEqual([]);
+  await http
+    .get("/api/customers/acme/assessments?assetId=invalid")
+    .set(auth)
+    .expect(400);
   expect(job.input.provenance).toMatchObject({
     id: link.id,
     assetId: asset.id,

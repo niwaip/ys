@@ -6,7 +6,10 @@ import { api, ApiError } from "../../api";
 import { requestId } from "../../request-id";
 import type { FeatureProps } from "../../features";
 import type { AssetVersionLink } from "../../../../../packages/contracts/collections";
-import type { Assessment } from "../../../../../packages/contracts/assessments";
+import type {
+  Assessment,
+  AssessmentPage,
+} from "../../../../../packages/contracts/assessments";
 import { AssessmentDetails } from "../assessments/AssessmentDetails";
 import { CollectionsPage } from "../collections/CollectionsPage";
 import { ImportsPage } from "../imports/ImportsPage";
@@ -78,6 +81,8 @@ function AssetAssessment({
 }: FeatureProps & { assetId: string; kind: "software" | "container" }) {
   const [links, setLinks] = useState<AssetVersionLink[]>([]),
     [offset, setOffset] = useState(0),
+    [historyOffset, setHistoryOffset] = useState(0),
+    [history, setHistory] = useState<AssessmentPage>(),
     [job, setJob] = useState<Assessment>(),
     [error, setError] = useState(""),
     [busy, setBusy] = useState(false),
@@ -107,6 +112,22 @@ function AssetAssessment({
     });
     return () => c.abort();
   }, [base, assetId, props.token, offset]);
+  async function refreshHistory(signal?: AbortSignal) {
+    const page = await api<AssessmentPage>(
+      `${base}/assessments?assetId=${assetId}&targetKind=${kind}&limit=20&offset=${historyOffset}`,
+      props.token,
+      {},
+      signal,
+    );
+    if (!signal?.aborted) setHistory(page);
+  }
+  useEffect(() => {
+    const c = new AbortController();
+    void refreshHistory(c.signal).catch((e) => {
+      if (!c.signal.aborted) fail(e);
+    });
+    return () => c.abort();
+  }, [base, props.token, assetId, kind, historyOffset, job?.id, job?.status]);
   async function assess(link: AssetVersionLink) {
     setBusy(true);
     setError("");
@@ -167,6 +188,36 @@ function AssetAssessment({
           onClick={() => setOffset(offset + 100)}
         >
           下一批关联
+        </button>
+      </div>
+      <h3>本资产关联版本评估历史</h3>
+      {history?.items.map((item) => (
+        <button
+          key={item.id}
+          disabled={busy}
+          onClick={() => {
+            setError("");
+            void api<Assessment>(`${base}/assessments/${item.id}`, props.token)
+              .then(setJob)
+              .catch(fail);
+          }}
+        >
+          {item.createdAt} · {item.status} · {item.id}
+        </button>
+      ))}
+      {history && !history.total && <p>尚无本资产关联版本评估任务。</p>}
+      <div className="pagination">
+        <button
+          disabled={!historyOffset}
+          onClick={() => setHistoryOffset(Math.max(0, historyOffset - 20))}
+        >
+          上一批关联评估
+        </button>
+        <button
+          disabled={!history || historyOffset + 20 >= history.total}
+          onClick={() => setHistoryOffset(historyOffset + 20)}
+        >
+          下一批关联评估
         </button>
       </div>
       {job && (

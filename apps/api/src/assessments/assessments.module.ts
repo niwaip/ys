@@ -385,6 +385,7 @@ export class AssessmentService {
       targetKind?: "software" | "container" | "windows" | "linux";
       targetId?: string;
       versionId?: string;
+      assetId?: string;
     } = {},
   ): Promise<AnyAssessmentPage> {
     const limit = page.limit ?? 50,
@@ -405,6 +406,10 @@ export class AssessmentService {
       where += ` AND details#>>'{target,kind}'=$${params.length}`;
     }
     for (const [name, expression] of [
+      [
+        "assetId",
+        "COALESCE(details#>>'{target,assetId}',details#>>'{input,provenance,assetId}')",
+      ],
       [
         "targetId",
         "COALESCE(details#>>'{target,softwareId}',details#>>'{target,containerId}',details#>>'{target,assetId}')",
@@ -557,6 +562,7 @@ class AssessmentsController {
           .enum(["software", "container", "windows", "linux"])
           .optional(),
         targetId: z.uuid().optional(),
+        assetId: z.uuid().optional(),
         versionId: z.uuid().optional(),
         offset: z.coerce.number().int().min(0).max(1000000).optional(),
       })
