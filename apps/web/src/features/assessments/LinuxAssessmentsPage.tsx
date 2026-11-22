@@ -1,3 +1,4 @@
+import { SeverityControls, defaultSeverities } from "./SeverityControls";
 import { AssessmentLiveStatus } from "./AssessmentLiveStatus";
 import { useEffect, useRef, useState } from "react";
 import { api, ApiError } from "../../api";
@@ -30,6 +31,7 @@ export function LinuxAssessmentsPage(props: FeatureProps) {
     [history, setHistory] = useState<AssessmentPage>(),
     [error, setError] = useState(""),
     [notice, setNotice] = useState(""),
+    [severities, setSeverities] = useState(defaultSeverities),
     [busy, setBusy] = useState(false),
     [offset, setOffset] = useState(0),
     [assetOffset, setAssetOffset] = useState(0),
@@ -101,12 +103,12 @@ export function LinuxAssessmentsPage(props: FeatureProps) {
     return () => c.abort();
   }, [base, props.token, asset, job?.id, job?.status, historyOffset]);
 
-  async function findingsPage(offset: number) {
+  async function findingsPage(offset: number, levels = severities) {
     if (!job) return;
     try {
       setJob(
         await api<Assessment>(
-          `${base}/assessments/${job.id}?findingsOffset=${offset}`,
+          `${base}/assessments/${job.id}?findingsOffset=${offset}&severities=${levels.join(",")}`,
           props.token,
         ),
       );
@@ -265,6 +267,37 @@ export function LinuxAssessmentsPage(props: FeatureProps) {
               下一批快照
             </button>
           </div>
+          <SeverityControls value={severities} onChange={setSeverities} />
+          <div
+            aria-label="扫描任务进度"
+            className="panel"
+            style={{ border: "2px solid #20735f", background: "#f0f8f5" }}
+          >
+            <h3>扫描进度</h3>
+            {!job && (
+              <p>
+                {busy
+                  ? "正在提交扫描任务…"
+                  : snapshot
+                    ? "输入已准备，尚未开始：点击“扫描所选Linux快照”提交扫描。"
+                    : "等待选择采集快照，尚未开始扫描。"}
+              </p>
+            )}
+            {job && (
+              <AssessmentLiveStatus
+                {...props}
+                jobId={job.id}
+                onComplete={async () => {
+                  setJob(
+                    await api<Assessment>(
+                      `${base}/assessments/${job.id}?findingsOffset=0`,
+                      props.token,
+                    ),
+                  );
+                }}
+              />
+            )}
+          </div>
           <button
             className="primary"
             disabled={busy || !snapshot}
@@ -319,24 +352,12 @@ export function LinuxAssessmentsPage(props: FeatureProps) {
         </div>
       )}
       {job && (
-        <AssessmentLiveStatus
-          {...props}
-          jobId={job.id}
-          onComplete={async () => {
-            setJob(
-              await api<Assessment>(
-                `${base}/assessments/${job.id}?findingsOffset=0`,
-                props.token,
-              ),
-            );
-          }}
-        />
-      )}
-      {job && (
         <AssessmentDetails
           key={job.id}
           job={job}
-          onFindingsPage={(offset) => void findingsPage(offset)}
+          onFindingsPage={(offset, levels) => void findingsPage(offset, levels)}
+          selectedSeverities={severities}
+          onSeveritiesChange={setSeverities}
           onDownloadEvidence={() => void downloadEvidence()}
         />
       )}

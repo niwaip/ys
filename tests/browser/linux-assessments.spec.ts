@@ -86,6 +86,16 @@ test("Linux快照扫描分页、原始证据下载、历史回读及客户隔离
   await expect(
     page.getByRole("button", { name: "扫描所选Linux快照", exact: true }),
   ).toBeEnabled();
+  await expect(
+    page.getByRole("checkbox", { name: "致命", exact: true }),
+  ).toBeChecked();
+  await expect(
+    page.getByRole("checkbox", { name: "高危", exact: true }),
+  ).toBeChecked();
+  await expect(
+    page.getByRole("checkbox", { name: "中危", exact: true }),
+  ).not.toBeChecked();
+  await expect(page.getByLabel("扫描任务进度")).toContainText("尚未开始");
   await page.getByRole("button", { name: "扫描所选Linux快照" }).click();
   await expect(
     page.getByRole("heading", { name: "发现 120 条漏洞记录" }),
@@ -95,6 +105,18 @@ test("Linux快照扫描分页、原始证据下载、历史回读及客户隔离
   ).toBeVisible();
   expect(streams).toBeGreaterThanOrEqual(2);
   expect(submissions).toBe(1);
+  await expect(page.getByRole("list", { name: "扫描阶段" })).toBeVisible();
+  await page.getByRole("checkbox", { name: "高危", exact: true }).uncheck();
+  await expect(
+    page.getByText("当前关注等级显示 0 条，完整记录 120 条。", { exact: true }),
+  ).toBeVisible();
+  await page.getByRole("checkbox", { name: "高危", exact: true }).check();
+  await expect(
+    page.getByText("当前关注等级显示 120 条，完整记录 120 条。", {
+      exact: true,
+    }),
+  ).toBeVisible();
+
   await expect(page.getByText("CVE-LINUX-000", { exact: true })).toBeVisible();
   await expect(page.getByText("CVE-LINUX-050", { exact: true })).toHaveCount(0);
   await page.getByRole("button", { name: "下一页漏洞" }).click();

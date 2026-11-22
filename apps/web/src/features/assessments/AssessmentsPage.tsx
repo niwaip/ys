@@ -1,3 +1,4 @@
+import { SeverityControls, defaultSeverities } from "./SeverityControls";
 import { AssessmentLiveStatus } from "./AssessmentLiveStatus";
 import { requestId } from "../../request-id";
 import {
@@ -31,6 +32,7 @@ export function AssessmentsPage({
       offset: 0,
     }),
     [job, setJob] = useState<Assessment>(),
+    [severities, setSeverities] = useState(defaultSeverities),
     [key, setKey] = useState(() => requestId()),
     [busy, setBusy] = useState(false),
     [error, setError] = useState(""),
@@ -105,6 +107,7 @@ export function AssessmentsPage({
           </p>
         </div>
       </header>
+      <SeverityControls value={severities} onChange={setSeverities} />
       {error && <p role="alert">{error}</p>}
       {message && <p role="status">{message}</p>}
       <div className="panel">
@@ -228,7 +231,13 @@ export function AssessmentsPage({
           onComplete={refresh}
         />
       )}
-      {job && <AssessmentDetails job={job} />}
+      {job && (
+        <AssessmentDetails
+          selectedSeverities={severities}
+          onSeveritiesChange={setSeverities}
+          job={job}
+        />
+      )}
     </section>
   );
 }

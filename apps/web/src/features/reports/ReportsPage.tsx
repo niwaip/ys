@@ -291,10 +291,10 @@ export function ReportsPage({
           {linuxEvidence && (
             <AssessmentDetails
               job={linuxEvidence}
-              onFindingsPage={(offset) =>
+              onFindingsPage={(offset, levels) =>
                 void run(async () => {
                   const next = await call<Assessment>(
-                    `${base}/assessments/${linuxEvidence.id}?findingsOffset=${offset}`,
+                    `${base}/assessments/${linuxEvidence.id}?findingsOffset=${offset}${levels ? "&severities=" + levels.join(",") : ""}`,
                   );
                   if (
                     next.execution?.outputHash !==

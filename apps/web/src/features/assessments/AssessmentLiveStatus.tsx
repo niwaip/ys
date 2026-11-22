@@ -15,8 +15,14 @@ export function AssessmentLiveStatus({
   complete.current = onComplete;
   const unauthorized = useRef(onUnauthorized);
   unauthorized.current = onUnauthorized;
+  const box = useRef<HTMLDivElement>(null);
+  const [sawRunning, setSawRunning] = useState(false);
+  const [status, setStatus] = useState<AssessmentStatus>();
   const [message, setMessage] = useState("连接实时状态…");
   useEffect(() => {
+    box.current?.scrollIntoView({ block: "center", behavior: "smooth" });
+    setStatus(undefined);
+    setSawRunning(false);
     const controller = new AbortController();
     let retry: ReturnType<typeof setTimeout> | undefined;
     async function connect() {
@@ -66,6 +72,8 @@ export function AssessmentLiveStatus({
             if (data.id !== jobId || !(data.status in assessmentStatusLabels))
               throw Error("实时状态无效");
             const status = data.status as AssessmentStatus;
+            setStatus(status);
+            if (status === "running") setSawRunning(true);
             setMessage(assessmentStatusLabels[status]);
             if (!["queued", "running"].includes(status)) {
               await complete.current();
@@ -89,9 +97,54 @@ export function AssessmentLiveStatus({
       if (retry) clearTimeout(retry);
     };
   }, [customerId, token, jobId]);
+  const stage = !status
+    ? 0
+    : status === "queued"
+      ? 1
+      : status === "running"
+        ? 2
+        : 3;
   return (
-    <p role="status" aria-live="polite">
-      实时状态（SSE）：{message}
-    </p>
+    <div ref={box}>
+      <ol
+        aria-label="扫描阶段"
+        style={{
+          display: "flex",
+          flexWrap: "wrap",
+          gap: "1.5rem",
+          paddingLeft: "1.5rem",
+        }}
+      >
+        {[
+          "任务已提交",
+          "排队等待",
+          "正在扫描",
+          status === "succeeded"
+            ? "扫描完成"
+            : stage === 3
+              ? "任务已结束"
+              : "等待结果",
+        ].map((label, i) => (
+          <li
+            key={i}
+            aria-current={stage === i ? "step" : undefined}
+            style={{
+              fontWeight: stage === i ? 700 : 400,
+              color: i <= stage ? "#17604c" : "#64746e",
+            }}
+          >
+            {i < stage && (i !== 2 || status === "succeeded" || sawRunning)
+              ? "✓ "
+              : stage === i && stage < 3
+                ? "● "
+                : ""}
+            {label}
+          </li>
+        ))}
+      </ol>
+      <p role="status" aria-live="polite">
+        实时状态（SSE）：{message}
+      </p>
+    </div>
   );
 }

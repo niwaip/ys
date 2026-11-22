@@ -1,4 +1,5 @@
-import { useState } from "react";
+import { SeverityControls, defaultSeverities } from "./SeverityControls";
+import { useEffect, useRef, useState } from "react";
 import type { Assessment } from "../../../../../packages/contracts/assessments";
 export const assessmentStatusLabels = {
   queued: "等待执行",
@@ -24,24 +25,51 @@ export function AssessmentDetails({
   job,
   onFindingsPage,
   onDownloadEvidence,
+  selectedSeverities,
+  onSeveritiesChange,
 }: {
   job: Assessment;
-  onFindingsPage?: (offset: number) => void;
+  onFindingsPage?: (offset: number, severities?: string[]) => void;
+  selectedSeverities?: string[];
+  onSeveritiesChange?: (severities: string[]) => void;
   onDownloadEvidence?: () => void;
 }) {
   const labels = assessmentStatusLabels;
   const [page, setPage] = useState(0);
   const pageSize = 50;
-  const total = job.findingsPage?.total ?? job.result?.findings.length ?? 0;
+  const [localSeverities, setLocalSeverities] = useState(defaultSeverities);
+  const severities = selectedSeverities ?? localSeverities;
+  const changeSeverities = (value: string[]) => {
+    setPage(0);
+    (onSeveritiesChange ?? setLocalSeverities)(value);
+  };
+  const requested = severities.join(",");
+  const received = job.findingsPage?.severities?.join(",");
+  const pageCallback = useRef(onFindingsPage);
+  pageCallback.current = onFindingsPage;
+  useEffect(() => {
+    if (job.result && job.findingsPage && received !== requested)
+      pageCallback.current?.(0, severities);
+  }, [job.id, !!job.result, !!job.findingsPage, received, requested]);
+  const pending = !!job.findingsPage && received !== requested;
+  const visible = pending
+    ? []
+    : (job.result?.findings ?? []).filter((f) =>
+        severities.includes(f.severity.toUpperCase()),
+      );
+  const total = job.findingsPage
+    ? pending
+      ? 0
+      : job.findingsPage.total
+    : visible.length;
+  const originalTotal =
+    job.findingsPage?.unfilteredTotal ??
+    job.findingsPage?.total ??
+    job.result?.findings.length ??
+    0;
   const currentPage = job.findingsPage
     ? Math.floor(job.findingsPage.offset / pageSize)
-    : Math.min(
-        page,
-        Math.max(
-          0,
-          Math.ceil((job.result?.findings.length ?? 0) / pageSize) - 1,
-        ),
-      );
+    : Math.min(page, Math.max(0, Math.ceil(total / pageSize) - 1));
   return (
     <div className="panel">
       <h2>任务详情</h2>
@@ -72,7 +100,7 @@ export function AssessmentDetails({
         <>
           <h3>
             {job.result.outcome === "findings"
-              ? `发现 ${total} 条漏洞记录`
+              ? `发现 ${originalTotal} 条漏洞记录`
               : "本次工具未报告漏洞"}
           </h3>
           <p>
@@ -88,6 +116,17 @@ export function AssessmentDetails({
           {job.result.coverage.issues.map((issue, i) => (
             <p key={i}>{issue}</p>
           ))}
+          {!selectedSeverities && (
+            <SeverityControls value={severities} onChange={changeSeverities} />
+          )}
+          <p>
+            {pending
+              ? "正在加载关注等级结果…"
+              : `当前关注等级显示 ${total} 条，完整记录 ${originalTotal} 条。`}
+          </p>
+          {!pending && !total && (
+            <p>所选等级没有记录，不代表完整扫描没有其他问题。</p>
+          )}
           <table>
             <thead>
               <tr>
@@ -97,7 +136,7 @@ export function AssessmentDetails({
               </tr>
             </thead>
             <tbody>
-              {job.result.findings
+              {visible
                 .slice(
                   job.findingsPage ? 0 : currentPage * pageSize,
                   job.findingsPage ? pageSize : (currentPage + 1) * pageSize,
@@ -148,7 +187,7 @@ export function AssessmentDetails({
               disabled={!currentPage}
               onClick={() =>
                 onFindingsPage
-                  ? onFindingsPage((currentPage - 1) * pageSize)
+                  ? onFindingsPage((currentPage - 1) * pageSize, severities)
                   : setPage(currentPage - 1)
               }
             >
@@ -161,7 +200,7 @@ export function AssessmentDetails({
               disabled={(currentPage + 1) * pageSize >= total}
               onClick={() =>
                 onFindingsPage
-                  ? onFindingsPage((currentPage + 1) * pageSize)
+                  ? onFindingsPage((currentPage + 1) * pageSize, severities)
                   : setPage(currentPage + 1)
               }
             >

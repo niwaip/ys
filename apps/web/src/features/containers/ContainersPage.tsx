@@ -1,3 +1,7 @@
+import {
+  SeverityControls,
+  defaultSeverities,
+} from "../assessments/SeverityControls";
 import { AssessmentLiveStatus } from "../assessments/AssessmentLiveStatus";
 import { requestId } from "../../request-id";
 import { useEffect, useRef, useState } from "react";
@@ -43,6 +47,7 @@ export function ContainersPage({
       offset: 0,
     }),
     [job, setJob] = useState<Assessment>(),
+    [severities, setSeverities] = useState(defaultSeverities),
     [error, setError] = useState(""),
     [message, setMessage] = useState(""),
     [busy, setBusy] = useState(false);
@@ -143,6 +148,7 @@ export function ContainersPage({
           </p>
         </div>
       </header>
+      <SeverityControls value={severities} onChange={setSeverities} />
       {error && <p role="alert">{error}</p>}
       {message && <p role="status">{message}</p>}
       <form
@@ -456,7 +462,13 @@ export function ContainersPage({
           onComplete={refreshTasks}
         />
       )}
-      {job && <AssessmentDetails job={job} />}
+      {job && (
+        <AssessmentDetails
+          selectedSeverities={severities}
+          onSeveritiesChange={setSeverities}
+          job={job}
+        />
+      )}
     </section>
   );
 }

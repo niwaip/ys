@@ -76,7 +76,13 @@ export type Assessment = {
   execution?: TrivyExecution;
   result?: AssessmentResult;
   replayed?: boolean;
-  findingsPage?: { total: number; offset: number; limit: number };
+  findingsPage?: {
+    total: number;
+    offset: number;
+    limit: number;
+    unfilteredTotal?: number;
+    severities?: string[];
+  };
 };
 
 export type AssessmentSummary = Omit<Assessment, "execution" | "result"> & {

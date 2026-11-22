@@ -243,6 +243,37 @@ test("Linux固定快照经真实任务队列扫描，Dashboard和报告冻结结
       .expect(200)
   ).body;
   expect(paged.findingsPage).toEqual({ total: 1, offset: 0, limit: 50 });
+  const high = (
+    await h
+      .get(
+        base +
+          `/assessments/${job.id}?findingsOffset=0&severities=CRITICAL,HIGH`,
+      )
+      .set(auth)
+      .expect(200)
+  ).body;
+  expect(high.findingsPage).toMatchObject({
+    total: 1,
+    unfilteredTotal: 1,
+    severities: ["CRITICAL", "HIGH"],
+  });
+  const low = (
+    await h
+      .get(base + `/assessments/${job.id}?findingsOffset=0&severities=LOW`)
+      .set(auth)
+      .expect(200)
+  ).body;
+  expect(low.findingsPage).toMatchObject({ total: 0, unfilteredTotal: 1 });
+  expect(low.result.findings).toEqual([]);
+  expect(low.execution.outputHash).toBe(paged.execution.outputHash);
+  await h
+    .get(base + `/assessments/${job.id}?findingsOffset=0&severities=INVALID`)
+    .set(auth)
+    .expect(400);
+  await h
+    .get(base + `/assessments/${job.id}?severities=HIGH`)
+    .set(auth)
+    .expect(400);
   expect(paged.execution.rawReport).toBeUndefined();
   expect(paged.artifact).toBeUndefined();
   const ref = paged.result.findings[0].evidence;
