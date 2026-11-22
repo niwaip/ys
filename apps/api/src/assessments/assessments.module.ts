@@ -406,8 +406,8 @@ export class AssessmentService {
        jsonb_build_object(
           'findingStats', (SELECT jsonb_build_object('records',count(*),'uniqueCves',count(DISTINCT value->>'vulnerabilityId'),'components',count(DISTINCT ${componentIdentitySql})) FROM jsonb_array_elements(COALESCE(details#>'{result,findings}','[]'::jsonb))),
          'componentGroups', (SELECT COALESCE(jsonb_agg(g ORDER BY g->>'packageName',g->>'installedVersion',g->>'key'),'[]'::jsonb) FROM (
-           SELECT jsonb_build_object('key',identity::text,'componentId',identity->0,'packageName',identity->1,'installedVersion',identity->2,'ecosystem',identity->3,'target',identity->4,'records',count(*),'uniqueCves',count(DISTINCT cve)) AS g FROM (
-             SELECT ${componentIdentitySql} AS identity,value->>'vulnerabilityId' AS cve FROM jsonb_array_elements(COALESCE(visible,'[]'::jsonb))
+           SELECT jsonb_build_object('key',identity::text,'componentId',identity->0,'packageName',identity->1,'installedVersion',identity->2,'ecosystem',identity->3,'target',identity->4,'records',count(*),'uniqueCves',count(DISTINCT cve),'severities',jsonb_build_object('CRITICAL',count(*) FILTER (WHERE severity='CRITICAL'),'HIGH',count(*) FILTER (WHERE severity='HIGH'),'MEDIUM',count(*) FILTER (WHERE severity='MEDIUM'),'LOW',count(*) FILTER (WHERE severity='LOW'),'UNKNOWN',count(*) FILTER (WHERE severity NOT IN ('CRITICAL','HIGH','MEDIUM','LOW')))) AS g FROM (
+             SELECT ${componentIdentitySql} AS identity,value->>'vulnerabilityId' AS cve,upper(value->>'severity') AS severity FROM jsonb_array_elements(COALESCE(visible,'[]'::jsonb))
            ) AS entries GROUP BY identity
          ) AS groups),
          'idempotencyKey',details->'idempotencyKey' ,'target',details->'target','input',details->'input',

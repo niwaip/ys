@@ -45,6 +45,26 @@ test("Windows资料保存独立快照、原文、未知字段和跨客户隔离"
       .set(auth)
       .send({ fileName: "host.json", content: JSON.stringify(data) });
   const first = (await upload(raw).expect(201)).body;
+  const scoped = (
+    await http
+      .get(`/api/customers/acme/windows/imports?assetId=${first.assetId}`)
+      .set(auth)
+      .expect(200)
+  ).body;
+  expect(scoped.items).toHaveLength(1);
+  await http
+    .get("/api/customers/acme/windows/imports?assetId=bad-id")
+    .set(auth)
+    .expect(400);
+  expect(
+    (
+      await http
+        .get(`/api/customers/river/windows/imports?assetId=${first.assetId}`)
+        .set(auth)
+        .expect(200)
+    ).body.items,
+  ).toEqual([]);
+
   expect(first).toMatchObject({
     status: "imported",
     customerId: "acme",

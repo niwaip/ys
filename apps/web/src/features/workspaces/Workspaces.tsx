@@ -238,13 +238,24 @@ function AssetAssessment({
     </section>
   );
 }
+type AssessmentSupport = {
+  status: "ready" | "missing" | "failed";
+  reason: string;
+};
 export function AssessmentWorkspace(props: FeatureProps) {
   const [tab, setTab] = useState(0),
     [selectedAsset, setSelectedAsset] = useState(""),
     [assets, setAssets] = useState<AssetPage>(),
     [assetInfo, setAssetInfo] = useState<Asset>(),
     [error, setError] = useState(""),
-    [offset, setOffset] = useState(0);
+    [offset, setOffset] = useState(0),
+    [capabilityVersion, setCapabilityVersion] = useState(0),
+    [capabilities, setCapabilities] = useState<{
+      assetId: string;
+      customerId: string;
+      linux: AssessmentSupport;
+      windows: AssessmentSupport;
+    }>();
   useEffect(() => {
     setSelectedAsset("");
     setTab(0);
@@ -278,6 +289,82 @@ export function AssessmentWorkspace(props: FeatureProps) {
     });
     return () => c.abort();
   }, [props.customerId, props.token, props.assetId, assetId, offset]);
+  useEffect(() => {
+    setCapabilities(undefined);
+    if (!assetId) return;
+    const c = new AbortController();
+    const base = `/customers/${props.customerId}`;
+    Promise.allSettled([
+      api<{ items: { supported: boolean; reason?: string }[] }>(
+        `${base}/assessments/linux-inputs?assetId=${assetId}&offset=0`,
+        props.token,
+        {},
+        c.signal,
+      ),
+      api<{ items: { assetId?: string; snapshotId?: string }[] }>(
+        `${base}/windows/imports?assetId=${assetId}`,
+        props.token,
+        {},
+        c.signal,
+      ),
+    ]).then(([linux, windows]) => {
+      if (c.signal.aborted) return;
+      if (
+        [linux, windows].some(
+          (r) =>
+            r.status === "rejected" &&
+            r.reason instanceof ApiError &&
+            r.reason.status === 401,
+        )
+      ) {
+        props.onUnauthorized();
+        return;
+      }
+      const linuxReady =
+        linux.status === "fulfilled" &&
+        linux.value.items[0]?.supported === true;
+      const windowsReady =
+        windows.status === "fulfilled" &&
+        windows.value.items.some(
+          (x) => x.assetId === assetId && !!x.snapshotId,
+        );
+      setCapabilities({
+        assetId,
+        customerId: props.customerId,
+        linux:
+          linux.status === "rejected"
+            ? { status: "failed", reason: "Linux资料读取失败，请刷新后重试。" }
+            : {
+                status: linuxReady ? "ready" : "missing",
+                reason: linuxReady
+                  ? "Linux系统包资料可用于评估；执行前仍会校验最新资料。"
+                  : (linux.value.items[0]?.reason ??
+                    "没有采集资料，请先执行资产基础采集。"),
+              },
+        windows:
+          windows.status === "rejected"
+            ? {
+                status: "failed",
+                reason: "Windows资料读取失败，请刷新后重试。",
+              }
+            : {
+                status: windowsReady ? "ready" : "missing",
+                reason: windowsReady
+                  ? "已取得绑定资产的Windows资料，评估仍需有效补丁规则。"
+                  : "没有绑定本资产的Windows采集资料。",
+              },
+      });
+    });
+    return () => c.abort();
+  }, [assetId, props.customerId, props.token, capabilityVersion]);
+  const capability =
+    capabilities?.assetId === assetId &&
+    capabilities.customerId === props.customerId
+      ? capabilities
+      : undefined;
+  const assetReady =
+    assetInfo?.id === assetId && assetInfo.customerId === props.customerId;
+  const isNetwork = assetReady && assetInfo.hardwareType === "network";
   const labels = assetId
     ? [
         "Linux系统包扫描",
@@ -292,22 +379,23 @@ export function AssessmentWorkspace(props: FeatureProps) {
         <div>
           <h1>CVE评估</h1>
           <p>
-            先选择资产范围和扫描内容，再配置固定资料版本；任务状态实时更新。
+            选择一次评估对象，再查看可用的资料与评估方式。独立软件、镜像可直接切换下方入口。
           </p>
         </div>
       </div>
       {!props.assetId && (
         <section className="asset-panel">
           <label>
-            评估资产范围
+            评估对象
             <select
+              aria-label="评估对象"
               value={selectedAsset}
               onChange={(e) => {
                 setSelectedAsset(e.target.value);
                 setTab(0);
               }}
             >
-              <option value="">全部对象（按类型选择）</option>
+              <option value="">选择资产（独立软件或镜像可直接进入）</option>
               {assetInfo &&
                 !assets?.items.some((a) => a.id === assetInfo.id) && (
                   <option value={assetInfo.id}>{assetInfo.name}</option>
@@ -349,7 +437,7 @@ export function AssessmentWorkspace(props: FeatureProps) {
           </p>
           {props.assetId && (
             <button onClick={() => props.onNavigate?.("assessment-workspace")}>
-              切换到全部对象
+              切换评估对象
             </button>
           )}
           {assetInfo?.hardwareType === "network" && (
@@ -361,11 +449,60 @@ export function AssessmentWorkspace(props: FeatureProps) {
       )}
       {error && <p role="alert">{error}</p>}
       <Tabs labels={labels} active={tab} change={setTab} />
+      {assetId && (
+        <div className="assessment-capabilities" role="status">
+          <p>
+            {tab === 0
+              ? (capability?.linux.reason ?? "正在检查Linux评估资料…")
+              : tab === 2
+                ? (capability?.windows.reason ?? "正在检查Windows评估资料…")
+                : "仅评估明确关联到本资产的固定SBOM版本。"}
+          </p>
+          {isNetwork && (
+            <p>
+              厂商固件评估尚未接入。设备分类不会被当作操作系统；只有明确支持的系统包资料或关联SBOM可评估。
+            </p>
+          )}
+          <button onClick={() => setCapabilityVersion((v) => v + 1)}>
+            刷新资料状态
+          </button>
+        </div>
+      )}
       <div key={`${props.customerId}:${assetId || "all"}:${tab}`}>
-        {tab === 0 ? (
-          <LinuxAssessmentsPage {...scoped} />
+        {assetId && !assetReady ? (
+          <p>
+            {error
+              ? "评估对象读取失败，请刷新页面或重新选择。"
+              : "正在读取评估对象与设备分类…"}
+          </p>
+        ) : tab === 0 ? (
+          !assetId ? (
+            <p>请先选择评估对象。此入口不会批量扫描全部资产。</p>
+          ) : (
+            <LinuxAssessmentsPage
+              {...scoped}
+              hideScan={isNetwork && capability?.linux.status !== "ready"}
+              scanUnavailable={
+                capability?.linux.status === "ready"
+                  ? undefined
+                  : (capability?.linux.reason ?? "正在检查Linux评估资料…")
+              }
+            />
+          )
         ) : tab === 2 ? (
-          <WindowsAssessmentsPage {...scoped} />
+          <WindowsAssessmentsPage
+            {...scoped}
+            hideScan={
+              !!assetId && isNetwork && capability?.windows.status !== "ready"
+            }
+            scanUnavailable={
+              assetId
+                ? capability?.windows.status === "ready"
+                  ? undefined
+                  : (capability?.windows.reason ?? "正在检查Windows评估资料…")
+                : undefined
+            }
+          />
         ) : assetId ? (
           <AssetAssessment
             {...scoped}

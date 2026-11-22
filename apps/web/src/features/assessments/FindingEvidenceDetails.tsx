@@ -8,12 +8,14 @@ export function FindingEvidenceDetails({
   finding,
   assessmentId,
   context,
+  initialOpen = false,
 }: {
   finding: VulnerabilityFinding;
   assessmentId: string;
   context?: FeatureProps;
+  initialOpen?: boolean;
 }) {
-  const [open, setOpen] = useState(false),
+  const [open, setOpen] = useState(initialOpen),
     [evidence, setEvidence] = useState<FindingEvidence>(),
     [error, setError] = useState("");
   useEffect(() => {
@@ -35,7 +37,7 @@ export function FindingEvidenceDetails({
     return () => c.abort();
   }, [open, context?.customerId, context?.token, assessmentId, finding.id]);
   return (
-    <details onToggle={(e) => setOpen(e.currentTarget.open)}>
+    <details open={open} onToggle={(e) => setOpen(e.currentTarget.open)}>
       <summary>查看证据</summary>
       <p>
         扫描匹配：{finding.packageName} · {finding.installedVersion}

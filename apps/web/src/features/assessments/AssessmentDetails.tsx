@@ -1,3 +1,8 @@
+import { FindingSourcePanel } from "./FindingSourcePanel";
+import {
+  findingGroupKey,
+  groupFindings,
+} from "../../../../../packages/contracts/finding-groups";
 import { FindingEvidenceDetails } from "./FindingEvidenceDetails";
 import { SeverityControls, defaultSeverities } from "./SeverityControls";
 import { useEffect, useRef, useState } from "react";
@@ -60,14 +65,15 @@ export function AssessmentDetails({
     [localSeverities, setLocalSeverities] = useState(defaultSeverities),
     [query, setQuery] = useState(""),
     [search, setSearch] = useState(""),
-    [grouped, setGrouped] = useState(false),
+    [grouped, setGrouped] = useState(true),
     [component, setComponent] = useState(""),
-    [analysis, setAnalysis] = useState<VulnerabilityFinding>();
+    [analysis, setAnalysis] = useState<VulnerabilityFinding>(),
+    [source, setSource] = useState<VulnerabilityFinding>();
   const severities = selectedSeverities ?? localSeverities,
     pageSize = 50;
   useEffect(() => {
     setComponent("");
-    setGrouped(false);
+    setGrouped(true);
   }, [job.id]);
   const requested = severities.join(","),
     received = job.findingsPage?.severities?.join(",");
@@ -105,10 +111,67 @@ export function AssessmentDetails({
     (received !== requested ||
       (job.findingsPage.search ?? "") !== search ||
       (job.findingsPage.component ?? "") !== component);
+  const groupFiltersCurrent =
+    !job.findingsPage ||
+    (received === requested && (job.findingsPage.search ?? "") === search);
+  const groups = !groupFiltersCurrent
+    ? []
+    : (job.componentGroups ??
+      groupFindings(
+        (job.result?.findings ?? []).filter(
+          (f) =>
+            severities.includes(f.severity.toUpperCase()) &&
+            `${f.vulnerabilityId} ${f.packageName} ${f.installedVersion}`
+              .toLowerCase()
+              .includes(search.toLowerCase()),
+        ),
+      ));
+  const [groupPage, setGroupPage] = useState(0);
+  useEffect(() => {
+    setGroupPage(0);
+  }, [job.id, search, requested]);
+  const autoOpened = useRef("");
+  useEffect(() => {
+    const key = `${job.id}/${search}/${requested}`;
+    if (
+      groupFiltersCurrent &&
+      !pending &&
+      grouped &&
+      groups.length === 1 &&
+      !component &&
+      autoOpened.current !== key
+    ) {
+      autoOpened.current = key;
+      setComponent(groups[0].key);
+    }
+  }, [
+    job.id,
+    search,
+    requested,
+    grouped,
+    groups.length,
+    groups[0]?.key,
+    component,
+    groupFiltersCurrent,
+    pending,
+  ]);
+  useEffect(() => {
+    if (
+      groupFiltersCurrent &&
+      !pending &&
+      component &&
+      !groups.some((g) => g.key === component)
+    )
+      setComponent("");
+  }, [groupFiltersCurrent, pending, component, groups]);
   const visible = pending
     ? []
     : (job.result?.findings ?? []).filter(
         (f) =>
+          (job.findingsPage ||
+            !grouped ||
+            !component ||
+            findingGroupKey(f) === component) &&
           severities.includes(f.severity.toUpperCase()) &&
           (!!job.findingsPage ||
             `${f.vulnerabilityId} ${f.packageName} ${f.installedVersion}`
@@ -242,7 +305,7 @@ export function AssessmentDetails({
               }}
             />
           </div>
-          {job.componentGroups && (
+          {job.result && (
             <div className="component-groups">
               <div role="group" aria-label="结果显示方式">
                 <button
@@ -280,7 +343,7 @@ export function AssessmentDetails({
                       }}
                     >
                       <option value="">选择组件查看漏洞</option>
-                      {job.componentGroups.map((g) => (
+                      {groups.map((g) => (
                         <option key={g.key} value={g.key}>
                           {g.packageName} · {g.installedVersion} ·{" "}
                           {g.componentId ?? "组件关联未知"} · {g.uniqueCves} 个
@@ -289,10 +352,61 @@ export function AssessmentDetails({
                       ))}
                     </select>
                   </label>
+                  <div className="component-cards">
+                    {groups
+                      .slice(groupPage * 20, (groupPage + 1) * 20)
+                      .map((g) => (
+                        <article key={g.key} className="component-card">
+                          <button
+                            aria-expanded={component === g.key}
+                            onClick={() => {
+                              setComponent(component === g.key ? "" : g.key);
+                              setPage(0);
+                            }}
+                          >
+                            <strong>{g.packageName}</strong> ·{" "}
+                            {g.installedVersion} ·{" "}
+                            {g.componentId ?? "组件关联未知"}
+                            <span>
+                              {g.uniqueCves} 个 CVE / {g.records} 条匹配 ·{" "}
+                              {component === g.key ? "收起漏洞" : "展开漏洞"}
+                            </span>
+                          </button>
+                          <p>
+                            {Object.entries(g.severities ?? {})
+                              .filter(([, n]) => n > 0)
+                              .map(
+                                ([level, n]) =>
+                                  `${severityLabels[level] ?? level} ${n}`,
+                              )
+                              .join(" · ")}
+                          </p>
+                          <small>
+                            适用性需逐条核实，匹配数量不代表已确认受影响。
+                          </small>
+                        </article>
+                      ))}
+                  </div>
+                  {groups.length > 20 && (
+                    <div className="pagination">
+                      <button
+                        disabled={!groupPage}
+                        onClick={() => setGroupPage((v) => v - 1)}
+                      >
+                        上一批组件
+                      </button>
+                      <span>组件第 {groupPage + 1} 页</span>
+                      <button
+                        disabled={(groupPage + 1) * 20 >= groups.length}
+                        onClick={() => setGroupPage((v) => v + 1)}
+                      >
+                        下一批组件
+                      </button>
+                    </div>
+                  )}
                   <p>
-                    {job.componentGroups.length} 个组件组 ·{" "}
-                    {job.componentGroups.reduce((sum, g) => sum + g.records, 0)}{" "}
-                    条筛选后匹配
+                    {groups.length} 个组件组 ·{" "}
+                    {groups.reduce((sum, g) => sum + g.records, 0)} 条筛选后匹配
                   </p>
                 </>
               )}
@@ -317,7 +431,7 @@ export function AssessmentDetails({
                 <thead>
                   <tr>
                     <th>漏洞 / 严重程度</th>
-                    <th>组件 / 安装版本</th>
+                    {!grouped && <th>组件 / 安装版本</th>}
                     <th>修复版本</th>
                     <th>运行适用性</th>
                     <th>来源与证据</th>
@@ -345,13 +459,15 @@ export function AssessmentDetails({
                               f.severity}
                           </span>
                         </td>
-                        <td>
-                          <strong>{f.packageName}</strong>
-                          <span className="cell-subtext">
-                            {f.installedVersion}
-                          </span>
-                          <small className="muted">{f.ecosystem}</small>
-                        </td>
+                        {!grouped && (
+                          <td>
+                            <strong>{f.packageName}</strong>
+                            <span className="cell-subtext">
+                              {f.installedVersion}
+                            </span>
+                            <small className="muted">{f.ecosystem}</small>
+                          </td>
+                        )}
                         <td>
                           <span>
                             {f.fixedVersion ?? "扫描结果未提供修复版本"}
@@ -372,16 +488,12 @@ export function AssessmentDetails({
                           </small>
                         </td>
                         <td>
-                          {f.primaryUrl &&
-                            /^https?:\/\//.test(f.primaryUrl) && (
-                              <a
-                                href={f.primaryUrl}
-                                target="_blank"
-                                rel="noreferrer"
-                              >
-                                漏洞来源 ↗
-                              </a>
-                            )}
+                          <button
+                            className="source-button"
+                            onClick={() => setSource(f)}
+                          >
+                            漏洞来源与依据
+                          </button>
                           <FindingEvidenceDetails
                             finding={f}
                             assessmentId={job.id}
@@ -464,6 +576,16 @@ export function AssessmentDetails({
           </>
         )}
       </details>
+      {source && (
+        <FindingSourcePanel
+          key={`${job.id}/${source.id}`}
+          finding={source}
+          assessmentId={job.id}
+          context={context}
+          scannedAt={job.finishedAt}
+          onClose={() => setSource(undefined)}
+        />
+      )}
       {analysis && context && (
         <FindingAnalysisPanel
           key={`${job.id}/${analysis.id}`}

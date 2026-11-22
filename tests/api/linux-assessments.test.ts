@@ -523,6 +523,8 @@ test("Linux固定快照经真实任务队列扫描，Dashboard和报告冻结结
     components: 2,
   });
   expect(expandedPage.result.findings).toHaveLength(50);
+  expect(expandedPage.componentGroups[0].severities.HIGH).toBe(55);
+  expect(expandedPage.componentGroups[1].severities.LOW).toBe(1);
   expect(expandedPage.componentGroups).toMatchObject([
     { packageName: "libssl3", records: 55, uniqueCves: 1 },
     { packageName: "other", records: 1, uniqueCves: 1 },

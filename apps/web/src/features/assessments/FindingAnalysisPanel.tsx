@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { lazy, Suspense, useEffect, useRef, useState } from "react";
 import { api, ApiError } from "../../api";
 import { requestId } from "../../request-id";
 import type { FeatureProps } from "../../features";
@@ -7,6 +7,9 @@ import type {
   FindingAnalysis,
   AnalysisSection,
 } from "../../../../../packages/contracts/finding-analysis";
+const AnalysisMarkdown = lazy(() =>
+  import("./AnalysisMarkdown").then((m) => ({ default: m.AnalysisMarkdown })),
+);
 export function FindingAnalysisPanel({
   context,
   assessmentId,
@@ -24,7 +27,8 @@ export function FindingAnalysisPanel({
     [previous, setPrevious] = useState<FindingAnalysis>(),
     [error, setError] = useState(""),
     [busy, setBusy] = useState(false),
-    [ready, setReady] = useState(false);
+    [ready, setReady] = useState(false),
+    [copyState, setCopyState] = useState("");
   const base = `/customers/${context.customerId}/assessments/${assessmentId}/findings/${finding.id}/analyses`;
   const active = job && ["queued", "running"].includes(job.status);
   const fail = (e: unknown) => {
@@ -110,8 +114,10 @@ export function FindingAnalysisPanel({
       <section className="analysis-section">
         <h3>{title}</h3>
         {rows.map((s, i) => (
-          <p key={i}>
-            {s.text}{" "}
+          <div key={i}>
+            <Suspense fallback={<p>{s.text}</p>}>
+              <AnalysisMarkdown>{s.text}</AnalysisMarkdown>
+            </Suspense>
             <small className="muted">
               {s.sourceIds
                 .map((id) =>
@@ -121,7 +127,7 @@ export function FindingAnalysisPanel({
                 )
                 .join(" ")}
             </small>
-          </p>
+          </div>
         ))}
       </section>
     );
@@ -160,10 +166,45 @@ export function FindingAnalysisPanel({
           </div>
         )}
         {job && !active && job.status !== "succeeded" && (
-          <p role="alert">
-            解析未完成：{job.error ?? job.status}。
-            {previous ? "上次成功的解析保留。" : "可重新发起解析。"}
-          </p>
+          <div role="alert" className="analysis-failure">
+            <h3>解析未完成</h3>
+            <p>
+              失败阶段：
+              {job.events.some(
+                (e) =>
+                  e.type === "tool_started" &&
+                  e.message.includes("ys_finding_analysis"),
+              )
+                ? "生成并保存解析"
+                : job.events.some((e) => e.type === "analysis")
+                  ? "AI解析执行"
+                  : job.events.some((e) => e.type === "research")
+                    ? "公开资料查询或准备"
+                    : "任务准备"}
+            </p>
+            <p>原因：{job.error ?? job.status}</p>
+            {job.error === "固定工具执行失败" && (
+              <p>此历史任务没有保存更细的错误分类，无法还原具体原因。</p>
+            )}
+            <p>
+              下一步：
+              {job.status === "unavailable"
+                ? "请先联系管理员配置或恢复解析运行能力，再重新解析。"
+                : job.status === "timed_out"
+                  ? "请检查服务连接或稍后重新解析。"
+                  : "可重新解析；若重复失败，请提供下方任务编号以便核查。"}
+              {previous
+                ? "上次成功的解析仍然保留。"
+                : "尚未生成可用解析，不代表未发现漏洞。"}
+            </p>
+            <details>
+              <summary>失败任务详情</summary>
+              <p>任务编号：{job.id}</p>
+              <p>
+                最后进展：{job.events.at(-1)?.message ?? "没有已保存的进展记录"}
+              </p>
+            </details>
+          </div>
         )}
         {ready && (
           <button
@@ -181,6 +222,44 @@ export function FindingAnalysisPanel({
         )}
         {result?.narrative && (
           <>
+            <button
+              onClick={async () => {
+                const n = result.narrative!;
+                const sections: [string, AnalysisSection[]][] = [
+                  ["当前系统影响 · 待核实推断", [n.impact]],
+                  ["漏洞说明", [n.explanation]],
+                  ["需要核实", n.checks],
+                  ["下一步计划", n.nextSteps],
+                ];
+                const markdown =
+                  `# ${finding.vulnerabilityId}\n\n${finding.packageName} · ${finding.installedVersion}\n\n` +
+                  sections
+                    .map(
+                      ([title, rows]) =>
+                        `## ${title}\n\n` +
+                        rows
+                          .map(
+                            (r) =>
+                              `${r.text}\n\n引用：${r.sourceIds.join(", ")}`,
+                          )
+                          .join("\n\n"),
+                    )
+                    .join("\n\n") +
+                  "\n\n## 来源\n\n" +
+                  result.sources
+                    .map((s, i) => `${i + 1}. ${s.title} — ${s.url}`)
+                    .join("\n");
+                try {
+                  await navigator.clipboard.writeText(markdown);
+                  setCopyState("Markdown 已复制");
+                } catch {
+                  setCopyState("复制未成功，请使用浏览器选择并复制正文。");
+                }
+              }}
+            >
+              复制 Markdown
+            </button>
+            <span role="status">{copyState}</span>
             <p className="muted">
               {new Date(result.finishedAt ?? result.createdAt).toLocaleString(
                 "zh-CN",
@@ -253,8 +332,8 @@ export function FindingAnalysisPanel({
                 ))}
               </p>
             )}
-            {section("漏洞说明", [result.narrative.explanation])}
             {section("系统影响 · 待核实推断", [result.narrative.impact])}
+            {section("漏洞说明", [result.narrative.explanation])}
             {section("需要核实", result.narrative.checks)}
             {section("下一步计划 · 建议", result.narrative.nextSteps)}
             <section className="analysis-section">
@@ -268,17 +347,23 @@ export function FindingAnalysisPanel({
               </p>
               {result.sources.map((s, i) => (
                 <p key={s.id}>
-                  [来源 {i + 1}]{" "}
-                  <a href={s.url} target="_blank" rel="noreferrer">
-                    {s.title}
-                  </a>
+                  [来源 {i + 1}] <strong>{s.title}</strong>
                   <br />
                   <small>
                     {new Date(s.retrievedAt).toLocaleString("zh-CN")} ·{" "}
                     {s.origin === "scanner"
                       ? "工具提供的链接，未重新抓取"
-                      : "公开查询"}
+                      : "公开查询"}{" "}
+                    · 仅展示已保存来源信息，未抓取完整原文。
                   </small>
+                  {/^https?:\/\//i.test(s.url) && (
+                    <>
+                      <br />
+                      <a href={s.url} target="_blank" rel="noreferrer">
+                        打开来源原文 ↗
+                      </a>
+                    </>
+                  )}
                 </p>
               ))}
             </section>

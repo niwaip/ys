@@ -23,7 +23,9 @@ type Inputs = {
   total: number;
   offset: number;
 };
-export function LinuxAssessmentsPage(props: FeatureProps) {
+export function LinuxAssessmentsPage(
+  props: FeatureProps & { scanUnavailable?: string; hideScan?: boolean },
+) {
   const [assets, setAssets] = useState<AssetPage>(),
     [asset, setAsset] = useState(props.assetId ?? ""),
     [job, setJob] = useState<Assessment>(),
@@ -233,7 +235,8 @@ export function LinuxAssessmentsPage(props: FeatureProps) {
         </>
       )}
       {error && <p role="alert">{error}</p>}
-      {asset && (
+      {props.scanUnavailable && <p role="status">{props.scanUnavailable}</p>}
+      {asset && !props.hideScan && (
         <div className="panel">
           <p>扫描时自动使用最新采集资料，不会重新采集主机。</p>
           {!job?.result && (
@@ -242,7 +245,9 @@ export function LinuxAssessmentsPage(props: FeatureProps) {
           <button
             className="primary"
             disabled={
-              busy || (!!job && ["queued", "running"].includes(job.status))
+              !!props.scanUnavailable ||
+              busy ||
+              (!!job && ["queued", "running"].includes(job.status))
             }
             onClick={() => void submit()}
           >

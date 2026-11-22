@@ -47,25 +47,23 @@ test("Dashboard首屏、四组导航、资产删除恢复与明确评估入口",
   await expect(
     page.getByRole("heading", { name: `当前资产：${name}`, exact: true }),
   ).toBeVisible();
-  await expect(page.getByLabel("评估资产范围")).toHaveCount(0);
+  await expect(page.getByLabel("评估对象")).toHaveCount(0);
   await page.getByRole("tab", { name: "本资产关联镜像", exact: true }).click();
   await expect(
     page.getByRole("heading", { name: `资产评估 · ${name}`, exact: true }),
   ).toBeVisible();
-  await page
-    .getByRole("button", { name: "切换到全部对象", exact: true })
-    .click();
-  await expect(page.getByLabel("评估资产范围")).toBeVisible();
+  await page.getByRole("button", { name: "切换评估对象", exact: true }).click();
+  await expect(page.getByLabel("评估对象")).toBeVisible();
   const assetValue = await page
-    .getByLabel("评估资产范围")
+    .getByLabel("评估对象")
     .locator("option")
     .filter({ hasText: name })
     .getAttribute("value");
-  await page.getByLabel("评估资产范围").selectOption(assetValue!);
+  await page.getByLabel("评估对象").selectOption(assetValue!);
   await expect(
     page.getByRole("heading", { name: `当前资产：${name}`, exact: true }),
   ).toBeVisible();
-  await page.getByLabel("评估资产范围").selectOption("");
+  await page.getByLabel("评估对象").selectOption("");
   await page.getByRole("tab", { name: "软件漏洞评估", exact: true }).click();
   await expect(page.getByLabel("软件对象")).toBeVisible();
   await page.getByRole("tab", { name: "镜像漏洞评估", exact: true }).click();

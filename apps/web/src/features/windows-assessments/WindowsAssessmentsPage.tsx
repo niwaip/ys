@@ -37,7 +37,9 @@ export function WindowsAssessmentsPage({
   token,
   onUnauthorized,
   assetId,
-}: FeatureProps) {
+  scanUnavailable,
+  hideScan,
+}: FeatureProps & { scanUnavailable?: string; hideScan?: boolean }) {
   const [snapshots, setSnapshots] = useState<WindowsMaterial[]>([]),
     [rules, setRules] = useState<WindowsRuleMaterial[]>([]),
     [snapshotId, setSnapshotId] = useState(""),
@@ -73,7 +75,9 @@ export function WindowsAssessmentsPage({
   useEffect(() => {
     abort.current = new AbortController();
     Promise.all([
-      call<{ items: WindowsMaterial[] }>("/windows/imports").then((x) =>
+      call<{ items: WindowsMaterial[] }>(
+        `/windows/imports${assetId ? `?assetId=${assetId}` : ""}`,
+      ).then((x) =>
         setSnapshots(
           x.items.filter(
             (x) => !!x.snapshotId && (!assetId || x.assetId === assetId),
@@ -143,66 +147,74 @@ export function WindowsAssessmentsPage({
         x64。读取固定快照，按上传的来源规则离线评估；规则清单不代表完整或最新的
         Windows 漏洞库。
       </p>
-      <div className="windows-assessments-input">
-        <h3>准备源戳规则</h3>
-        <p>
-          JSON 必须附微软来源 URL、抓取时间、来源内容及
-          SHA-256。系统校验内容哈希，上传内容真实性由操作人员核实。
-        </p>
-        <label>
-          Windows 规则 JSON
-          <input
-            type="file"
-            accept=".json"
-            onChange={(e) => setFile(e.target.files?.[0] ?? null)}
-          />
-        </label>
-        <button disabled={!file || busy} onClick={upload}>
-          导入源戳规则
-        </button>
-        <h3>选择固定评估输入</h3>
-        <label>
-          主机快照
-          <select
-            value={snapshotId}
-            onChange={(e) => {
-              setSnapshotId(e.target.value);
-              setRequestKey(requestId());
-            }}
+      {scanUnavailable && <p role="status">{scanUnavailable}</p>}
+      {!hideScan && (
+        <div className="windows-assessments-input">
+          <h3>准备源戳规则</h3>
+          <p>
+            JSON 必须附微软来源 URL、抓取时间、来源内容及
+            SHA-256。系统校验内容哈希，上传内容真实性由操作人员核实。
+          </p>
+          <label>
+            Windows 规则 JSON
+            <input
+              type="file"
+              accept=".json"
+              onChange={(e) => setFile(e.target.files?.[0] ?? null)}
+            />
+          </label>
+          <button disabled={!file || busy} onClick={upload}>
+            导入源戳规则
+          </button>
+          <h3>选择固定评估输入</h3>
+          <label>
+            主机快照
+            <select
+              value={snapshotId}
+              onChange={(e) => {
+                setSnapshotId(e.target.value);
+                setRequestKey(requestId());
+              }}
+            >
+              <option value="">请选择快照</option>
+              {snapshots.map((s) => (
+                <option key={s.id} value={s.snapshotId!}>
+                  {s.snapshot.hostname} · {s.snapshot.osBuild ?? "未知 Build"} /{" "}
+                  {s.snapshot.ubr ?? "未知 UBR"} ·{" "}
+                  {s.snapshot.collectedAt ?? "未知采集时间"} · {s.snapshotId}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label>
+            Windows 规则版本
+            <select
+              value={ruleId}
+              onChange={(e) => {
+                setRuleId(e.target.value);
+                setRequestKey(requestId());
+              }}
+            >
+              <option value="">请选择规则</option>
+              {rules.map((r) => (
+                <option key={r.id} value={r.id}>
+                  {r.fileName} · {r.rules.ruleVersion} ·{" "}
+                  {r.contentHash.slice(0, 12)}
+                </option>
+              ))}
+            </select>
+          </label>
+          <button
+            disabled={!!scanUnavailable || !snapshotId || !ruleId || busy}
+            onClick={submit}
           >
-            <option value="">请选择快照</option>
-            {snapshots.map((s) => (
-              <option key={s.id} value={s.snapshotId!}>
-                {s.snapshot.hostname} · {s.snapshot.osBuild ?? "未知 Build"} /{" "}
-                {s.snapshot.ubr ?? "未知 UBR"} ·{" "}
-                {s.snapshot.collectedAt ?? "未知采集时间"} · {s.snapshotId}
-              </option>
-            ))}
-          </select>
-        </label>
-        <label>
-          Windows 规则版本
-          <select
-            value={ruleId}
-            onChange={(e) => {
-              setRuleId(e.target.value);
-              setRequestKey(requestId());
-            }}
-          >
-            <option value="">请选择规则</option>
-            {rules.map((r) => (
-              <option key={r.id} value={r.id}>
-                {r.fileName} · {r.rules.ruleVersion} ·{" "}
-                {r.contentHash.slice(0, 12)}
-              </option>
-            ))}
-          </select>
-        </label>
-        <button disabled={!snapshotId || !ruleId || busy} onClick={submit}>
-          开始 Windows 评估
-        </button>
-        <button onClick={() => setRequestKey(requestId())}>新建评估请求</button>
-      </div>
+            开始 Windows 评估
+          </button>
+          <button onClick={() => setRequestKey(requestId())}>
+            新建评估请求
+          </button>
+        </div>
+      )}
       {error && <p role="alert">{error}</p>}
       <h3>Windows 评估历史</h3>
       {history.map((j) => (

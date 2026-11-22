@@ -75,7 +75,7 @@ test("Linux快照扫描分页、原始证据下载、历史回读及客户隔离
   await page.getByLabel("操作员访问令牌").fill("browser-test-secret-token");
   await page.getByRole("button", { name: "进入工作台" }).click();
   await page.locator("nav button").filter({ hasText: "CVE评估" }).click();
-  await page.getByLabel("扫描主机").selectOption(asset.id);
+  await page.getByLabel("评估对象", { exact: true }).selectOption(asset.id);
   await expect(page.getByLabel("Linux采集快照")).toHaveCount(0);
   await expect(
     page.getByRole("button", { name: "扫描", exact: true }),
@@ -106,6 +106,13 @@ test("Linux快照扫描分页、原始证据下载、历史回读及客户隔离
   await expect(
     page.getByRole("progressbar", { name: "扫描进度" }),
   ).toHaveAttribute("value", "100");
+  await expect(
+    page.getByRole("button", { name: "按组件分组", exact: true }),
+  ).toHaveAttribute("aria-pressed", "true");
+  await page.screenshot({
+    path: "output/verification/assessment-components.png",
+    fullPage: false,
+  });
   await page.getByRole("button", { name: "按组件分组", exact: true }).click();
   await expect(page.getByLabel("选择漏洞组件").locator("option")).toHaveCount(
     2,
@@ -149,6 +156,138 @@ test("Linux快照扫描分页、原始证据下载、历史回读及客户隔离
   await expect(analysis.getByRole("alert")).toContainText("Pi未配置");
   await page.keyboard.press("Escape");
   await expect(analysis).toHaveCount(0);
+  await page.route("**/findings/*/analyses", async (route) => {
+    if (route.request().method() !== "GET") return route.continue();
+    const response = await route.fetch();
+    const body = await response.json();
+    const previous = body.items[0];
+    const section = {
+      text: "## 核实结论\n\n- **仍需核实**\n- 当前资料有边界\n\n| 条件 | 状态 |\n| --- | --- |\n| Xen | 未知 |\n\n![remote](https://tracking.invalid/pixel)\n<script>window.markdownExecuted=true</script>\n[unsafe](javascript:alert(1))",
+      sourceIds: ["finding"],
+    };
+    await route.fulfill({
+      json: {
+        items: [
+          {
+            ...previous,
+            status: "succeeded",
+            narrative: {
+              explanation: section,
+              impact: section,
+              checks: [section],
+              nextSteps: [section],
+            },
+          },
+        ],
+      },
+    });
+  });
+  await page.getByRole("button", { name: "AI解析", exact: true }).click();
+  await expect(
+    analysis.getByRole("heading", { name: "核实结论", exact: true }),
+  ).toHaveCount(4);
+  await expect(analysis.locator("table")).toHaveCount(4);
+  await expect(analysis.locator("img")).toHaveCount(0);
+  await expect(analysis.locator('a[href^="javascript:"]')).toHaveCount(0);
+  expect(
+    await page.evaluate(
+      () =>
+        (window as unknown as { markdownExecuted?: boolean }).markdownExecuted,
+    ),
+  ).toBeUndefined();
+  await expect(
+    analysis.getByRole("button", { name: "复制 Markdown" }),
+  ).toBeVisible();
+  await page.context().grantPermissions(["clipboard-read", "clipboard-write"]);
+  await analysis.getByRole("button", { name: "复制 Markdown" }).click();
+  await expect(
+    analysis.getByText("Markdown 已复制", { exact: true }),
+  ).toBeVisible();
+  expect(await page.evaluate(() => navigator.clipboard.readText())).toContain(
+    "## 当前系统影响",
+  );
+  await page.screenshot({
+    path: "output/verification/assessment-markdown.png",
+    fullPage: false,
+  });
+
+  await page.keyboard.press("Escape");
+  await page
+    .getByRole("button", { name: "漏洞来源与依据", exact: true })
+    .click();
+  const source = page.getByRole("dialog", { name: "漏洞来源与依据" });
+  await expect(source).toContainText("未重新抓取完整来源原文");
+  await expect(source).toContainText("匹配依据");
+  await expect(
+    source.getByRole("link", { name: "打开来源原文 ↗" }),
+  ).toHaveAttribute("target", "_blank");
+  await source.getByRole("button", { name: "关闭来源详情" }).click();
+  // Changing from one matching group to another must not reuse the old group's key.
+  const assessmentList = await (
+    await request.get(
+      `${api}/assessments?targetKind=linux&targetId=${asset.id}`,
+      { headers },
+    )
+  ).json();
+  const reference = await (
+    await request.get(
+      `${api}/assessments/${assessmentList.items[0].id}?findingsOffset=0&severities=CRITICAL,HIGH&search=CVE-LINUX-119`,
+      { headers },
+    )
+  ).json();
+  const alternate = {
+    ...reference.result.findings[0],
+    id: "alternate-fixture",
+    componentId: "alternate:amd64",
+    packageName: "alternate",
+    vulnerabilityId: "CVE-ALTERNATE",
+  };
+  const alternateKey = JSON.stringify([
+    alternate.componentId,
+    alternate.packageName,
+    alternate.installedVersion,
+    alternate.ecosystem,
+    alternate.target,
+    null,
+  ]);
+  await page.route("**/assessments/*?*", async (route) => {
+    const url = new URL(route.request().url());
+    if (url.searchParams.get("search") !== "alternate") return route.continue();
+    const selected = url.searchParams.get("component") ?? "";
+    const matches =
+      !selected || JSON.stringify(JSON.parse(selected)) === alternateKey;
+    await route.fulfill({
+      json: {
+        ...reference,
+        result: { ...reference.result, findings: matches ? [alternate] : [] },
+        componentGroups: [
+          {
+            key: alternateKey,
+            componentId: alternate.componentId,
+            packageName: "alternate",
+            installedVersion: alternate.installedVersion,
+            ecosystem: alternate.ecosystem,
+            target: alternate.target,
+            records: 1,
+            uniqueCves: 1,
+            severities: { HIGH: 1 },
+          },
+        ],
+        findingsPage: {
+          total: matches ? 1 : 0,
+          unfilteredTotal: 120,
+          offset: 0,
+          limit: 50,
+          search: "alternate",
+          severities: ["CRITICAL", "HIGH"],
+          ...(selected ? { component: selected } : {}),
+        },
+      },
+    });
+  });
+  await page.getByRole("searchbox", { name: "检索漏洞记录" }).fill("alternate");
+  await expect(page.getByText("CVE-ALTERNATE", { exact: true })).toBeVisible();
+
   await page.getByRole("searchbox", { name: "检索漏洞记录" }).fill("");
   await expect(
     page.getByText("当前关注等级显示 120 条，完整记录 120 条。", {
@@ -178,7 +317,7 @@ test("Linux快照扫描分页、原始证据下载、历史回读及客户隔离
   await page.getByRole("button", { name: "下载原始Trivy报告" }).click();
   expect((await download).suggestedFilename()).toMatch(/^trivy-.*\.json$/);
   await page.reload();
-  await page.getByLabel("扫描主机").selectOption(asset.id);
+  await page.getByLabel("评估对象", { exact: true }).selectOption(asset.id);
   await page
     .getByRole("button", { name: /执行成功 ·/ })
     .first()
@@ -262,7 +401,7 @@ test("Linux快照扫描分页、原始证据下载、历史回读及客户隔离
   expect(errors).toEqual([]);
 });
 
-test("没有最新Linux资料时单击扫描说明原因，不提交空任务", async ({
+test("没有最新Linux资料时提前说明原因并禁止提交空任务", async ({
   page,
   request,
 }) => {
@@ -282,12 +421,14 @@ test("没有最新Linux资料时单击扫描说明原因，不提交空任务", 
   await page.getByLabel("操作员访问令牌").fill("browser-test-secret-token");
   await page.getByRole("button", { name: "进入工作台" }).click();
   await page.locator("nav button").filter({ hasText: "CVE评估" }).click();
-  await page.getByLabel("扫描主机").selectOption(asset.id);
-  await page.getByRole("button", { name: "扫描", exact: true }).click();
-  await expect(page.getByRole("alert")).toContainText("没有采集资料");
+  await page.getByLabel("评估对象", { exact: true }).selectOption(asset.id);
   await expect(
     page.getByRole("button", { name: "扫描", exact: true }),
-  ).toBeEnabled();
+  ).toBeDisabled();
+  await expect(page.getByText(/没有采集资料/).first()).toBeVisible();
+  await expect(
+    page.getByRole("button", { name: "扫描", exact: true }),
+  ).toBeDisabled();
   expect(submissions).toBe(0);
   await page.route("**/assessments/linux-inputs?**", (route) =>
     route.fulfill({
@@ -301,7 +442,10 @@ test("没有最新Linux资料时单击扫描说明原因，不提交空任务", 
       },
     }),
   );
-  await page.getByRole("button", { name: "扫描", exact: true }).click();
-  await expect(page.getByRole("alert")).toContainText("最新采集资料无法扫描");
+  await page.getByRole("button", { name: "刷新资料状态" }).click();
+  await expect(page.getByText(/最新资料缺少dpkg/).first()).toBeVisible();
+  await expect(
+    page.getByRole("button", { name: "扫描", exact: true }),
+  ).toBeDisabled();
   expect(submissions).toBe(0);
 });

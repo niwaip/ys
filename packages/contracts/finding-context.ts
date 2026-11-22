@@ -61,6 +61,7 @@ export type ComponentFindingGroup = {
   installedVersion: string;
   ecosystem: string;
   target: string;
+  severities?: Record<string, number>;
   records: number;
   uniqueCves: number;
 };

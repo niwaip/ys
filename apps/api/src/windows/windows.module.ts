@@ -52,10 +52,10 @@ export class WindowsService {
     if (!r.rows.length) throw new NotFoundException("该客户下未找到快照");
     return r.rows[0];
   }
-  async list(customer: string) {
+  async list(customer: string, assetId?: string) {
     const r = await this.db.query(
-      `SELECT ${cols} FROM import_materials WHERE customer_id=$1 AND format='windows-json' ORDER BY imported_at DESC,id LIMIT 100`,
-      [customer],
+      `SELECT ${cols} FROM import_materials WHERE customer_id=$1 AND format='windows-json' AND ($2::text IS NULL OR result->>'assetId'=$2::text) ORDER BY imported_at DESC,id LIMIT 100`,
+      [customer, assetId ?? null],
     );
     return {
       items: r.rows.map((x) => {
@@ -173,7 +173,12 @@ class WindowsController {
     );
   }
   @Get("imports") list(req: AuthorizedRequest) {
-    return this.service.list(req.params.customerId);
+    const input = z
+      .object({ assetId: z.uuid().optional() })
+      .strict()
+      .safeParse(req.query);
+    if (!input.success) throw new BadRequestException("评估资产编号无效");
+    return this.service.list(req.params.customerId, input.data.assetId);
   }
   @Get("snapshots/:snapshotId") snapshot(req: AuthorizedRequest) {
     if (!z.uuid().safeParse(req.params.snapshotId).success)

@@ -473,3 +473,66 @@
   width: 100%;
   max-width: 100%;
 }
+
+.component-cards {
+  display: grid;
+  gap: 10px;
+  margin: 14px 0;
+}
+.component-card {
+  border: 1px solid #d6e0db;
+  border-radius: 10px;
+  padding: 12px;
+  min-width: 0;
+}
+.component-card button {
+  width: 100%;
+  text-align: left;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+.component-card button span {
+  display: block;
+  margin-top: 6px;
+}
+.component-card p {
+  margin: 8px 0;
+}
+.analysis-markdown {
+  overflow-wrap: anywhere;
+  line-height: 1.75;
+}
+.analysis-markdown p {
+  white-space: pre-line;
+}
+.analysis-markdown table {
+  border-collapse: collapse;
+  width: 100%;
+  display: block;
+  overflow-x: auto;
+}
+.analysis-markdown th,
+.analysis-markdown td {
+  padding: 8px;
+  border: 1px solid #d6e0db;
+}
+.analysis-markdown pre {
+  overflow-x: auto;
+  max-width: 100%;
+}
+.analysis-markdown blockquote {
+  border-left: 3px solid #20735f;
+  padding-left: 14px;
+}
+.analysis-failure {
+  padding: 14px;
+  background: #fff0ed;
+  border-radius: 10px;
+  margin-bottom: 16px;
+}
+.assessment-capabilities {
+  margin: 12px 0;
+  padding: 12px;
+  border: 1px solid #d6e0db;
+  border-radius: 10px;
+}
