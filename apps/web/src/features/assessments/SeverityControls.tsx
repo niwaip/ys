@@ -15,7 +15,7 @@ export function SeverityControls({
 }) {
   return (
     <fieldset className="severity-controls">
-      <legend>关注等级</legend>
+      <legend>结果关注等级（仅筛选显示）</legend>
       <div style={{ display: "flex", flexWrap: "wrap", gap: "1rem" }}>
         {severityOptions.map(([id, label]) => (
           <label key={id}>

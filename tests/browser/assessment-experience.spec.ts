@@ -21,6 +21,15 @@ test("评估对象只选择一次，网络设备缺少支持资料时不提供�
   await page.getByLabel("操作员访问令牌").fill("browser-test-secret-token");
   await page.getByRole("button", { name: "进入工作台" }).click();
   await page.locator("nav button").filter({ hasText: "CVE评估" }).click();
+  const conditions = page.getByRole("region", {
+    name: "扫描条件",
+    exact: true,
+  });
+  await expect(conditions).toBeVisible();
+  await expect(conditions.getByLabel("评估对象", { exact: true })).toHaveCount(
+    1,
+  );
+  await expect(conditions.getByRole("tab")).toHaveCount(4);
   await expect(page.getByLabel("评估对象", { exact: true })).toHaveCount(1);
   await expect(page.getByLabel("扫描主机", { exact: true })).toHaveCount(0);
   await page.getByLabel("评估对象", { exact: true }).selectOption(asset.id);
@@ -29,7 +38,13 @@ test("评估对象只选择一次，网络设备缺少支持资料时不提供�
     page.getByRole("button", { name: "扫描", exact: true }),
   ).toHaveCount(0);
   await page.getByRole("tab", { name: "本资产关联SBOM", exact: true }).click();
-  await expect(page.getByText(/尚无关联SBOM/)).toBeVisible();
+  await expect(conditions.getByText(/尚无关联SBOM/)).toBeVisible();
+  await expect(
+    conditions.getByRole("heading", { name: "本资产关联版本评估历史" }),
+  ).toHaveCount(0);
+  await expect(
+    page.getByRole("heading", { name: "本资产关联版本评估历史" }),
+  ).toBeVisible();
   await page.route(`**/windows/imports?assetId=${asset.id}`, (route) =>
     route.fulfill({ status: 500, json: { message: "fixture lookup failed" } }),
   );

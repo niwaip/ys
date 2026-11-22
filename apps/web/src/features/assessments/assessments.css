@@ -536,3 +536,113 @@
   border: 1px solid #d6e0db;
   border-radius: 10px;
 }
+
+.scan-conditions {
+  min-width: 0;
+}
+.scan-conditions > h2 {
+  margin: 0 0 20px;
+}
+.scan-conditions h3 {
+  margin: 16px 0 10px;
+  font-size: 15px;
+}
+.scan-conditions p {
+  font-size: 13px;
+  line-height: 1.7;
+  overflow-wrap: anywhere;
+}
+.scan-conditions .scan-object > label {
+  font-size: 13px;
+  color: #223b34;
+}
+.scan-object-pages {
+  margin-top: 10px;
+}
+.scan-object-pages .pagination {
+  margin: 8px 0;
+  padding: 0;
+  border: 0;
+}
+.scan-object-summary {
+  margin: 12px 0 20px;
+}
+.scan-object-summary summary,
+.scan-material-preparation summary,
+.scan-object-pages summary {
+  cursor: pointer;
+  color: #527567;
+  font-size: 13px;
+}
+.scan-type-conditions {
+  border-top: 1px solid #dde5df;
+  margin-top: 16px;
+  padding-top: 6px;
+}
+.scan-type-conditions:empty {
+  display: none;
+}
+.scan-type-conditions .page-header {
+  margin: 0;
+  padding: 0;
+}
+.scan-type-conditions .panel,
+.scan-type-conditions .windows-assessments-input {
+  border: 0;
+  padding: 0;
+  margin: 12px 0 0;
+  background: transparent;
+}
+.scan-type-conditions label {
+  margin: 14px 0;
+}
+.scan-type-conditions button {
+  margin: 8px 8px 0 0;
+}
+.scan-conditions .assessment-capabilities {
+  background: #f4f8f5;
+  border: 0;
+  padding: 12px 16px;
+}
+.scan-input-summary {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px 24px;
+  font-size: 12px;
+}
+.scan-input-summary dt {
+  color: #718079;
+  margin-bottom: 4px;
+}
+.scan-input-summary dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+.scan-material-preparation {
+  margin: 16px 0;
+  padding: 12px 0;
+  border-bottom: 1px solid #dde5df;
+}
+@media (max-width: 760px) {
+  .scan-input-summary {
+    grid-template-columns: 1fr;
+  }
+}
+.scan-conditions button:not(.primary):not(.secondary) {
+  border: 1px solid #cbd9d1;
+  border-radius: 7px;
+  padding: 8px 12px;
+  background: #fff;
+  color: #36594b;
+}
+.scan-type-conditions [role="alert"] {
+  background: #fff0ed;
+  color: #963a29;
+  border-radius: 8px;
+  padding: 12px;
+}
+.scan-conditions input[type="file"] {
+  display: block;
+  max-width: 100%;
+  margin-top: 8px;
+}

@@ -39,7 +39,22 @@ test("软件后台评估呈现发现、覆盖、过期库和证据，刷新后�
   await page
     .getByRole("combobox", { name: "SBOM 输入版本", exact: true })
     .selectOption({ index: 1 });
-  await page.getByRole("button", { name: "提交评估", exact: true }).click();
+  const conditions = page.getByRole("region", {
+    name: "扫描条件",
+    exact: true,
+  });
+  await expect(
+    conditions.getByRole("combobox", { name: "软件对象", exact: true }),
+  ).toHaveValue(/.+/);
+  await expect(
+    conditions.getByRole("combobox", { name: "SBOM 输入版本", exact: true }),
+  ).toHaveValue(/.+/);
+  await conditions
+    .getByRole("button", { name: "提交评估", exact: true })
+    .click();
+  await expect(
+    conditions.getByRole("heading", { name: "评估历史", exact: true }),
+  ).toHaveCount(0);
   await expect(
     page.getByText("CVE-2099-FIXTURE", { exact: true }),
   ).toBeVisible();

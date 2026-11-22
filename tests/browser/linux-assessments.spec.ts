@@ -76,6 +76,17 @@ test("Linux快照扫描分页、原始证据下载、历史回读及客户隔离
   await page.getByRole("button", { name: "进入工作台" }).click();
   await page.locator("nav button").filter({ hasText: "CVE评估" }).click();
   await page.getByLabel("评估对象", { exact: true }).selectOption(asset.id);
+  const conditions = page.getByRole("region", {
+    name: "扫描条件",
+    exact: true,
+  });
+  await expect(
+    conditions.getByText(snapshot.id, { exact: true }),
+  ).toBeVisible();
+  await expect(
+    conditions.getByRole("button", { name: "扫描", exact: true }),
+  ).toBeEnabled();
+  await expect(conditions.getByLabel("扫描任务进度")).toHaveCount(0);
   await expect(page.getByLabel("Linux采集快照")).toHaveCount(0);
   await expect(
     page.getByRole("button", { name: "扫描", exact: true }),
@@ -93,6 +104,10 @@ test("Linux快照扫描分页、原始证据下载、历史回读及客户隔离
     page.getByRole("checkbox", { name: "中危", exact: true }),
   ).not.toBeChecked();
   await expect(page.getByLabel("扫描任务进度")).toContainText("等待开始扫描");
+  await page.screenshot({
+    path: "output/verification/scan-conditions-linux.png",
+    fullPage: true,
+  });
   await page.getByRole("button", { name: "扫描", exact: true }).click();
   await expect(
     page.getByRole("heading", { name: "发现 120 条漏洞记录" }),

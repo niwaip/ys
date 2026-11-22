@@ -1,3 +1,4 @@
+import { ScanConditions, ScanConditionsHeading } from "./ScanConditions";
 import { AssessmentHistoryTable } from "./AssessmentHistoryTable";
 import { SeverityControls, defaultSeverities } from "./SeverityControls";
 import { AssessmentLiveStatus } from "./AssessmentLiveStatus";
@@ -195,66 +196,77 @@ export function LinuxAssessmentsPage(
   }
   return (
     <section className="software-page">
-      <h2>Linux系统包CVE扫描</h2>
-      <p>
-        支持Debian/Ubuntu的已安装dpkg系统包。目标无需Trivy；后台只扫描最新采集资料中的发行版与包数据库，不扫描应用目录、容器、挂载卷或秘密。
-      </p>
-      {!props.assetId && (
-        <>
-          <label>
-            扫描主机
-            <select
-              disabled={busy}
-              value={asset}
-              onChange={(e) => {
-                setAsset(e.target.value);
-              }}
-            >
-              <option value="">选择在管资产</option>
-              {assets?.items.map((a) => (
-                <option key={a.id} value={a.id}>
-                  {a.name}
-                </option>
-              ))}
-            </select>
-          </label>
-          <div className="pagination">
+      <ScanConditions>
+        <ScanConditionsHeading standaloneLevel={2}>
+          Linux系统包CVE扫描
+        </ScanConditionsHeading>
+        <p>
+          支持Debian/Ubuntu的已安装dpkg系统包。目标无需Trivy；后台只扫描最新采集资料中的发行版与包数据库，不扫描应用目录、容器、挂载卷或秘密。
+        </p>
+        {!props.assetId && (
+          <>
+            <label>
+              扫描主机
+              <select
+                disabled={busy}
+                value={asset}
+                onChange={(e) => {
+                  setAsset(e.target.value);
+                }}
+              >
+                <option value="">选择在管资产</option>
+                {assets?.items.map((a) => (
+                  <option key={a.id} value={a.id}>
+                    {a.name}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <div className="pagination">
+              <button
+                disabled={!assetOffset}
+                onClick={() => setAssetOffset(Math.max(0, assetOffset - 100))}
+              >
+                上一批主机
+              </button>
+              <button
+                disabled={!assets || assetOffset + 100 >= assets.total}
+                onClick={() => setAssetOffset(assetOffset + 100)}
+              >
+                下一批主机
+              </button>
+            </div>
+          </>
+        )}
+        {error && <p role="alert">{error}</p>}
+        {props.scanUnavailable && <p role="status">{props.scanUnavailable}</p>}
+        {asset && !props.hideScan && (
+          <div>
+            <p>输入资料：扫描时自动固定最新采集资料，不会重新采集主机。</p>
             <button
-              disabled={!assetOffset}
-              onClick={() => setAssetOffset(Math.max(0, assetOffset - 100))}
+              className="primary"
+              disabled={
+                !!props.scanUnavailable ||
+                busy ||
+                (!!job && ["queued", "running"].includes(job.status))
+              }
+              onClick={() => void submit()}
             >
-              上一批主机
+              {busy || (!!job && ["queued", "running"].includes(job.status))
+                ? "扫描中…"
+                : "扫描"}
             </button>
-            <button
-              disabled={!assets || assetOffset + 100 >= assets.total}
-              onClick={() => setAssetOffset(assetOffset + 100)}
-            >
-              下一批主机
-            </button>
+            <p>
+              扫描只读取资料，不确认基线或写回NetBox。过期库与不足的覆盖会在结果中披露。
+            </p>
           </div>
-        </>
-      )}
-      {error && <p role="alert">{error}</p>}
-      {props.scanUnavailable && <p role="status">{props.scanUnavailable}</p>}
+        )}
+      </ScanConditions>
       {asset && !props.hideScan && (
         <div className="panel">
-          <p>扫描时自动使用最新采集资料，不会重新采集主机。</p>
           {!job?.result && (
             <SeverityControls value={severities} onChange={setSeverities} />
           )}
-          <button
-            className="primary"
-            disabled={
-              !!props.scanUnavailable ||
-              busy ||
-              (!!job && ["queued", "running"].includes(job.status))
-            }
-            onClick={() => void submit()}
-          >
-            {busy || (!!job && ["queued", "running"].includes(job.status))
-              ? "扫描中…"
-              : "扫描"}
-          </button>
           <div
             aria-label="扫描任务进度"
             className="panel"
@@ -291,9 +303,6 @@ export function LinuxAssessmentsPage(
               />
             )}
           </div>
-          <p>
-            扫描只读取资料，不确认基线或写回NetBox。过期库与不足的覆盖会在结果中披露。
-          </p>
         </div>
       )}
       {job && (

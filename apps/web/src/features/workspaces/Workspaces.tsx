@@ -1,3 +1,7 @@
+import {
+  ScanConditions,
+  ScanConditionsTarget,
+} from "../assessments/ScanConditions";
 import { AssessmentHistoryTable } from "../assessments/AssessmentHistoryTable";
 import { AssessmentLiveStatus } from "../assessments/AssessmentLiveStatus";
 import type { Asset, AssetPage } from "../../../../../packages/contracts";
@@ -153,44 +157,48 @@ function AssetAssessment({
   }
   return (
     <section className="asset-panel workspace-panel">
-      <h2>资产评估 · {name}</h2>
-      <p>Linux系统包请使用“Linux系统包扫描”；网络设备的厂商规则评估尚未接入</p>
-      <p>
-        仅以下明确关联本资产的固定SBOM版本可独立评估；镜像结果不覆盖运行容器可写层或挂载卷。
-      </p>
-      {error && <p role="alert">{error}</p>}
-      {!links.some((link) => link.kind === kind) && (
-        <p>尚无关联SBOM，请先在采集资料详情关联软件或镜像输入版本。</p>
-      )}
-      {links
-        .filter((link) => link.kind === kind)
-        .map((link) => (
-          <article key={link.id}>
-            <strong>
-              {link.kind === "software" ? "软件" : "镜像"} · {link.basis}
-            </strong>
-            <p>
-              固定版本 {link.versionId} · 采集时间 {link.snapshot.importedAt}
-            </p>
-            <button disabled={busy} onClick={() => void assess(link)}>
-              评估此关联版本
-            </button>
-          </article>
-        ))}
-      <div className="pagination">
-        <button
-          disabled={!offset}
-          onClick={() => setOffset(Math.max(0, offset - 100))}
-        >
-          上一批关联
-        </button>
-        <button
-          disabled={links.length < 100}
-          onClick={() => setOffset(offset + 100)}
-        >
-          下一批关联
-        </button>
-      </div>
+      <ScanConditions>
+        <h3>关联输入版本 · {name}</h3>
+        <p>
+          Linux系统包请使用“Linux系统包扫描”；网络设备的厂商规则评估尚未接入
+        </p>
+        <p>
+          仅以下明确关联本资产的固定SBOM版本可独立评估；镜像结果不覆盖运行容器可写层或挂载卷。
+        </p>
+        {error && <p role="alert">{error}</p>}
+        {!links.some((link) => link.kind === kind) && (
+          <p>尚无关联SBOM，请先在采集资料详情关联软件或镜像输入版本。</p>
+        )}
+        {links
+          .filter((link) => link.kind === kind)
+          .map((link) => (
+            <article key={link.id}>
+              <strong>
+                {link.kind === "software" ? "软件" : "镜像"} · {link.basis}
+              </strong>
+              <p>
+                固定版本 {link.versionId} · 采集时间 {link.snapshot.importedAt}
+              </p>
+              <button disabled={busy} onClick={() => void assess(link)}>
+                评估此关联版本
+              </button>
+            </article>
+          ))}
+        <div className="pagination">
+          <button
+            disabled={!offset}
+            onClick={() => setOffset(Math.max(0, offset - 100))}
+          >
+            上一批关联
+          </button>
+          <button
+            disabled={links.length < 100}
+            onClick={() => setOffset(offset + 100)}
+          >
+            下一批关联
+          </button>
+        </div>
+      </ScanConditions>
       {job && (
         <AssessmentLiveStatus
           {...props}
@@ -243,6 +251,8 @@ type AssessmentSupport = {
   reason: string;
 };
 export function AssessmentWorkspace(props: FeatureProps) {
+  const [conditionsTarget, setConditionsTarget] =
+    useState<HTMLDivElement | null>(null);
   const [tab, setTab] = useState(0),
     [selectedAsset, setSelectedAsset] = useState(""),
     [assets, setAssets] = useState<AssetPage>(),
@@ -255,6 +265,12 @@ export function AssessmentWorkspace(props: FeatureProps) {
       customerId: string;
       linux: AssessmentSupport;
       windows: AssessmentSupport;
+      linuxInput?: {
+        id: string;
+        importedAt: string;
+        os?: { id: string; version: string };
+        packages?: number;
+      };
     }>();
   useEffect(() => {
     setSelectedAsset("");
@@ -295,7 +311,16 @@ export function AssessmentWorkspace(props: FeatureProps) {
     const c = new AbortController();
     const base = `/customers/${props.customerId}`;
     Promise.allSettled([
-      api<{ items: { supported: boolean; reason?: string }[] }>(
+      api<{
+        items: {
+          id: string;
+          importedAt: string;
+          os?: { id: string; version: string };
+          packages?: number;
+          supported: boolean;
+          reason?: string;
+        }[];
+      }>(
         `${base}/assessments/linux-inputs?assetId=${assetId}&offset=0`,
         props.token,
         {},
@@ -331,6 +356,8 @@ export function AssessmentWorkspace(props: FeatureProps) {
       setCapabilities({
         assetId,
         customerId: props.customerId,
+        linuxInput:
+          linux.status === "fulfilled" ? linux.value.items[0] : undefined,
         linux:
           linux.status === "rejected"
             ? { status: "failed", reason: "Linux资料读取失败，请刷新后重试。" }
@@ -374,147 +401,199 @@ export function AssessmentWorkspace(props: FeatureProps) {
       ]
     : ["Linux系统包扫描", "软件漏洞评估", "Windows 补丁评估", "镜像漏洞评估"];
   return (
-    <div className="assessment-workspace">
-      <div className="page-heading">
-        <div>
-          <h1>CVE评估</h1>
-          <p>
-            选择一次评估对象，再查看可用的资料与评估方式。独立软件、镜像可直接切换下方入口。
-          </p>
-        </div>
-      </div>
-      {!props.assetId && (
-        <section className="asset-panel">
-          <label>
-            评估对象
-            <select
-              aria-label="评估对象"
-              value={selectedAsset}
-              onChange={(e) => {
-                setSelectedAsset(e.target.value);
-                setTab(0);
-              }}
-            >
-              <option value="">选择资产（独立软件或镜像可直接进入）</option>
-              {assetInfo &&
-                !assets?.items.some((a) => a.id === assetInfo.id) && (
-                  <option value={assetInfo.id}>{assetInfo.name}</option>
-                )}
-              {assets?.items.map((a) => (
-                <option key={a.id} value={a.id}>
-                  {a.name} ·{" "}
-                  {a.hardwareType === "network"
-                    ? "网络设备"
-                    : a.hardwareType === "server"
-                      ? "服务器"
-                      : "主机"}
-                </option>
-              ))}
-            </select>
-          </label>
-          <div className="pagination">
-            <button
-              disabled={!offset}
-              onClick={() => setOffset(Math.max(0, offset - 100))}
-            >
-              上一批资产
-            </button>
-            <button
-              disabled={!assets || offset + 100 >= assets.total}
-              onClick={() => setOffset(offset + 100)}
-            >
-              下一批资产
-            </button>
+    <ScanConditionsTarget.Provider value={conditionsTarget}>
+      <div className="assessment-workspace">
+        <div className="page-heading">
+          <div>
+            <h1>CVE评估</h1>
+            <p>
+              在扫描条件中选择对象、扫描内容与输入资料，再开始评估。结果和历史记录显示在下方。
+            </p>
           </div>
-        </section>
-      )}
-      {assetId && (
-        <section className="asset-panel">
-          <h2>当前资产：{assetInfo?.name ?? "正在读取…"}</h2>
-          <p>
-            资产编号：{assetId}
-            ；以下扫描只使用该资产的快照或明确关联的组件资料。
-          </p>
-          {props.assetId && (
-            <button onClick={() => props.onNavigate?.("assessment-workspace")}>
-              切换评估对象
-            </button>
-          )}
-          {assetInfo?.hardwareType === "network" && (
-            <p>
-              网络设备厂商固件CVE规则尚未接入。可评估明确关联的软件/镜像SBOM，不将未知显示为无风险。
-            </p>
-          )}
-        </section>
-      )}
-      {error && <p role="alert">{error}</p>}
-      <Tabs labels={labels} active={tab} change={setTab} />
-      {assetId && (
-        <div className="assessment-capabilities" role="status">
-          <p>
-            {tab === 0
-              ? (capability?.linux.reason ?? "正在检查Linux评估资料…")
-              : tab === 2
-                ? (capability?.windows.reason ?? "正在检查Windows评估资料…")
-                : "仅评估明确关联到本资产的固定SBOM版本。"}
-          </p>
-          {isNetwork && (
-            <p>
-              厂商固件评估尚未接入。设备分类不会被当作操作系统；只有明确支持的系统包资料或关联SBOM可评估。
-            </p>
-          )}
-          <button onClick={() => setCapabilityVersion((v) => v + 1)}>
-            刷新资料状态
-          </button>
         </div>
-      )}
-      <div key={`${props.customerId}:${assetId || "all"}:${tab}`}>
-        {assetId && !assetReady ? (
-          <p>
-            {error
-              ? "评估对象读取失败，请刷新页面或重新选择。"
-              : "正在读取评估对象与设备分类…"}
-          </p>
-        ) : tab === 0 ? (
-          !assetId ? (
-            <p>请先选择评估对象。此入口不会批量扫描全部资产。</p>
-          ) : (
-            <LinuxAssessmentsPage
+        <section
+          className="asset-panel scan-conditions"
+          aria-labelledby="scan-conditions-title"
+        >
+          <h2 id="scan-conditions-title">扫描条件</h2>
+          {!props.assetId && (
+            <div className="scan-object">
+              <label>
+                评估对象
+                <select
+                  aria-label="评估对象"
+                  value={selectedAsset}
+                  onChange={(e) => {
+                    setSelectedAsset(e.target.value);
+                    setTab(0);
+                  }}
+                >
+                  <option value="">选择资产（独立软件或镜像可直接进入）</option>
+                  {assetInfo &&
+                    !assets?.items.some((a) => a.id === assetInfo.id) && (
+                      <option value={assetInfo.id}>{assetInfo.name}</option>
+                    )}
+                  {assets?.items.map((a) => (
+                    <option key={a.id} value={a.id}>
+                      {a.name} ·{" "}
+                      {a.hardwareType === "network"
+                        ? "网络设备"
+                        : a.hardwareType === "server"
+                          ? "服务器"
+                          : "主机"}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              {(!!offset || (assets?.total ?? 0) > 100) && (
+                <details className="scan-object-pages">
+                  <summary>
+                    更多资产（当前第 {Math.floor(offset / 100) + 1} 批）
+                  </summary>
+                  <div className="pagination">
+                    <button
+                      disabled={!offset}
+                      onClick={() => setOffset(Math.max(0, offset - 100))}
+                    >
+                      上一批资产
+                    </button>
+                    <button
+                      disabled={!assets || offset + 100 >= assets.total}
+                      onClick={() => setOffset(offset + 100)}
+                    >
+                      下一批资产
+                    </button>
+                  </div>
+                </details>
+              )}
+            </div>
+          )}
+          {assetId && (
+            <div className="scan-object-summary">
+              <h3>当前资产：{assetInfo?.name ?? "正在读取…"}</h3>
+              <p>仅使用本资产的快照或明确关联的组件资料。</p>
+              <details>
+                <summary>对象资料</summary>
+                <p>资产编号：{assetId}</p>
+              </details>
+              {props.assetId && (
+                <button
+                  onClick={() => props.onNavigate?.("assessment-workspace")}
+                >
+                  切换评估对象
+                </button>
+              )}
+              {assetInfo?.hardwareType === "network" && (
+                <p>
+                  网络设备厂商固件CVE规则尚未接入。可评估明确关联的软件/镜像SBOM，不将未知显示为无风险。
+                </p>
+              )}
+            </div>
+          )}
+          {error && <p role="alert">{error}</p>}
+          <h3>扫描内容</h3>
+          <Tabs labels={labels} active={tab} change={setTab} />
+          {assetId && (
+            <div className="assessment-capabilities" role="status">
+              <p>
+                {tab === 0
+                  ? (capability?.linux.reason ?? "正在检查Linux评估资料…")
+                  : tab === 2
+                    ? (capability?.windows.reason ?? "正在检查Windows评估资料…")
+                    : "仅评估明确关联到本资产的固定SBOM版本。"}
+              </p>
+              {tab === 0 && capability?.linuxInput && (
+                <dl className="scan-input-summary">
+                  <div>
+                    <dt>输入策略</dt>
+                    <dd>执行时固定最新采集资料；不会重新采集主机</dd>
+                  </div>
+                  <div>
+                    <dt>当前最新资料</dt>
+                    <dd>{capability.linuxInput.id}</dd>
+                  </div>
+                  <div>
+                    <dt>导入时间</dt>
+                    <dd>{capability.linuxInput.importedAt}</dd>
+                  </div>
+                  <div>
+                    <dt>系统 / 包数量</dt>
+                    <dd>
+                      {capability.linuxInput.os
+                        ? `${capability.linuxInput.os.id} ${capability.linuxInput.os.version}`
+                        : "系统未知"}{" "}
+                      · {capability.linuxInput.packages ?? "未知"} 个包
+                    </dd>
+                  </div>
+                </dl>
+              )}
+              {tab === 0 && capability?.linuxInput && (
+                <p>当前预览可能在提交前更新，最终以任务绑定的快照为准。</p>
+              )}
+              {isNetwork && (
+                <p>
+                  厂商固件评估尚未接入。设备分类不会被当作操作系统；只有明确支持的系统包资料或关联SBOM可评估。
+                </p>
+              )}
+              <button onClick={() => setCapabilityVersion((v) => v + 1)}>
+                刷新资料状态
+              </button>
+            </div>
+          )}
+          <div ref={setConditionsTarget} className="scan-type-conditions" />
+        </section>
+        <div key={`${props.customerId}:${assetId || "all"}:${tab}`}>
+          {assetId && !assetReady ? (
+            <ScanConditions>
+              <p>
+                {error
+                  ? "评估对象读取失败，请刷新页面或重新选择。"
+                  : "正在读取评估对象与设备分类…"}
+              </p>
+            </ScanConditions>
+          ) : tab === 0 ? (
+            !assetId ? (
+              <ScanConditions>
+                <p>请先选择评估对象。此入口不会批量扫描全部资产。</p>
+              </ScanConditions>
+            ) : (
+              <LinuxAssessmentsPage
+                {...scoped}
+                hideScan={isNetwork && capability?.linux.status !== "ready"}
+                scanUnavailable={
+                  capability?.linux.status === "ready"
+                    ? undefined
+                    : (capability?.linux.reason ?? "正在检查Linux评估资料…")
+                }
+              />
+            )
+          ) : tab === 2 ? (
+            <WindowsAssessmentsPage
               {...scoped}
-              hideScan={isNetwork && capability?.linux.status !== "ready"}
+              hideScan={
+                !!assetId && isNetwork && capability?.windows.status !== "ready"
+              }
               scanUnavailable={
-                capability?.linux.status === "ready"
-                  ? undefined
-                  : (capability?.linux.reason ?? "正在检查Linux评估资料…")
+                assetId
+                  ? capability?.windows.status === "ready"
+                    ? undefined
+                    : (capability?.windows.reason ?? "正在检查Windows评估资料…")
+                  : undefined
               }
             />
-          )
-        ) : tab === 2 ? (
-          <WindowsAssessmentsPage
-            {...scoped}
-            hideScan={
-              !!assetId && isNetwork && capability?.windows.status !== "ready"
-            }
-            scanUnavailable={
-              assetId
-                ? capability?.windows.status === "ready"
-                  ? undefined
-                  : (capability?.windows.reason ?? "正在检查Windows评估资料…")
-                : undefined
-            }
-          />
-        ) : assetId ? (
-          <AssetAssessment
-            {...scoped}
-            assetId={assetId}
-            kind={tab === 1 ? "software" : "container"}
-          />
-        ) : tab === 1 ? (
-          <AssessmentsPage {...props} />
-        ) : (
-          <ContainersPage {...props} />
-        )}
+          ) : assetId ? (
+            <AssetAssessment
+              {...scoped}
+              assetId={assetId}
+              kind={tab === 1 ? "software" : "container"}
+            />
+          ) : tab === 1 ? (
+            <AssessmentsPage {...props} />
+          ) : (
+            <ContainersPage {...props} assessmentOnly />
+          )}
+        </div>
       </div>
-    </div>
+    </ScanConditionsTarget.Provider>
   );
 }

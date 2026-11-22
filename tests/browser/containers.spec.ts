@@ -100,6 +100,49 @@ test("镜像详情保留digest版本、组件和评估证据，刷新及客户�
   await page.getByText("原始 Trivy 报告", { exact: true }).click();
   await expect(page.getByText(/"SchemaVersion":2/)).toBeVisible();
   await page.screenshot({ path: "output/t06-container.png", fullPage: true });
+  await page.locator("nav button").filter({ hasText: "CVE评估" }).click();
+  await page.getByRole("tab", { name: "镜像漏洞评估", exact: true }).click();
+  const conditions = page.getByRole("region", {
+    name: "扫描条件",
+    exact: true,
+  });
+  await expect(
+    conditions.getByRole("button", { name: "建立镜像对象", exact: true }),
+  ).toHaveCount(0);
+  await conditions
+    .getByRole("combobox", { name: "镜像对象", exact: true })
+    .selectOption({ label: name });
+  const versionSelector = conditions.getByRole("combobox", {
+    name: "镜像输入版本",
+    exact: true,
+  });
+  const versionId = await versionSelector
+    .locator("option")
+    .filter({ hasText: originalVersion!.split(" · ")[1] })
+    .getAttribute("value");
+  await versionSelector.selectOption(versionId!);
+  await expect(
+    conditions.getByRole("button", { name: "评估当前镜像版本", exact: true }),
+  ).toBeEnabled();
+  await expect(
+    conditions.getByRole("heading", { name: "镜像详情与组件", exact: true }),
+  ).toHaveCount(0);
+  await expect(
+    page.getByRole("heading", { name: "镜像详情与组件", exact: true }),
+  ).toBeVisible();
+  await conditions
+    .getByRole("button", { name: "评估当前镜像版本", exact: true })
+    .click();
+  await expect(
+    page.getByText("CVE-2099-CONTAINER", { exact: true }),
+  ).toBeVisible();
+  await expect(
+    conditions.getByRole("heading", { name: "镜像评估历史", exact: true }),
+  ).toHaveCount(0);
+  await page.screenshot({
+    path: "output/verification/scan-conditions-container.png",
+    fullPage: true,
+  });
   await page.getByLabel("当前客户").selectOption("river");
   await expect(page.getByRole("button", { name, exact: true })).toHaveCount(0);
   await expect(

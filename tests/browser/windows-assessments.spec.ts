@@ -40,6 +40,7 @@ test("选择Windows固定快照与源戳规则、执行、刷新回读补丁依�
   await page
     .getByRole("tab", { name: "Windows 补丁评估", exact: true })
     .click();
+  await page.getByText("导入新的源戳规则（可选）", { exact: true }).click();
   await page.getByLabel("Windows 规则 JSON").setInputFiles({
     name: "synthetic-rules.json",
     mimeType: "application/json",
@@ -48,7 +49,18 @@ test("选择Windows固定快照与源戳规则、执行、刷新回读补丁依�
   await page.getByRole("button", { name: "导入源戳规则" }).click();
   await expect(page.getByLabel("Windows 规则版本")).not.toHaveValue("");
   await page.getByLabel("主机快照").selectOption(snapshot.snapshotId);
-  await page.getByRole("button", { name: "开始 Windows 评估" }).click();
+  const conditions = page.getByRole("region", {
+    name: "扫描条件",
+    exact: true,
+  });
+  await expect(conditions.getByLabel("主机快照")).toHaveValue(
+    snapshot.snapshotId,
+  );
+  await expect(conditions.getByLabel("Windows 规则版本")).not.toHaveValue("");
+  await conditions.getByRole("button", { name: "开始 Windows 评估" }).click();
+  await expect(
+    conditions.getByRole("heading", { name: "Windows 评估历史" }),
+  ).toHaveCount(0);
   await expect(
     page.getByRole("cell", { name: "已修复", exact: true }),
   ).toBeVisible();

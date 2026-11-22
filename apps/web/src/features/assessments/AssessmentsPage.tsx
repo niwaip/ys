@@ -1,3 +1,4 @@
+import { ScanConditions, ScanConditionsHeading } from "./ScanConditions";
 import { AssessmentHistoryTable } from "./AssessmentHistoryTable";
 import { SeverityControls, defaultSeverities } from "./SeverityControls";
 import { AssessmentLiveStatus } from "./AssessmentLiveStatus";
@@ -98,95 +99,100 @@ export function AssessmentsPage({
   }
   return (
     <section className="software-page">
-      <header className="page-header">
-        <div>
-          <p className="eyebrow">固定工具评估</p>
-          <h1>软件漏洞评估</h1>
+      <ScanConditions>
+        <header className="page-header">
+          <div>
+            <p className="eyebrow">固定工具评估</p>
+            <ScanConditionsHeading standaloneLevel={1}>
+              软件漏洞评估
+            </ScanConditionsHeading>
+            <p>
+              选择已保存的软件 SBOM
+              输入版本。任务在后端运行，刷新后可回读；公开情报不代表客户已受影响。
+            </p>
+          </div>
+        </header>
+        {error && <p role="alert">{error}</p>}
+        {message && <p role="status">{message}</p>}
+        <div className="panel">
+          <h2>发起 Trivy 评估</h2>
+          <label>
+            软件对象
+            <select
+              disabled={busy}
+              value={selected?.id ?? ""}
+              onChange={(e) => select(e.target.value)}
+            >
+              <option value="">选择软件对象</option>
+              {software.map((s) => (
+                <option key={s.id} value={s.id}>
+                  {s.name}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label>
+            SBOM 输入版本
+            <select
+              disabled={busy || !selected}
+              value={versionId}
+              onChange={(e) => {
+                setVersionId(e.target.value);
+                setKey(requestId());
+              }}
+            >
+              <option value="">选择输入版本</option>
+              {selected?.versions.map((v) => (
+                <option key={v.id} value={v.id}>
+                  {v.version ?? "版本未知"} · {v.createdAt} · {v.id.slice(0, 8)}
+                </option>
+              ))}
+            </select>
+          </label>
           <p>
-            选择已保存的软件 SBOM
-            输入版本。任务在后端运行，刷新后可回读；公开情报不代表客户已受影响。
+            重复提交同一请求回读原任务。超时或中断不会自动重试；需要重新评估时建立新请求。
           </p>
+          <button
+            className="primary"
+            disabled={busy || !selected || !versionId}
+            onClick={() =>
+              run(async () => {
+                const result = await call<Assessment>(`${base}/assessments`, {
+                  method: "POST",
+                  body: JSON.stringify({
+                    softwareId: selected!.id,
+                    versionId,
+                    idempotencyKey: key,
+                  }),
+                });
+                selectedJob.current = result.id;
+                setJob(result);
+                setMessage(
+                  result.replayed
+                    ? "重复请求：回读原任务"
+                    : "任务已提交，后台执行",
+                );
+                offset.current = 0;
+                await refresh();
+              })
+            }
+          >
+            提交评估
+          </button>
+          <button
+            disabled={busy}
+            onClick={() => {
+              setKey(requestId());
+              setMessage("已建立新的评估请求；提交后生成独立任务");
+            }}
+          >
+            新建评估请求
+          </button>
         </div>
-      </header>
+      </ScanConditions>
       {!job?.result && (
         <SeverityControls value={severities} onChange={setSeverities} />
       )}
-      {error && <p role="alert">{error}</p>}
-      {message && <p role="status">{message}</p>}
-      <div className="panel">
-        <h2>发起 Trivy 评估</h2>
-        <label>
-          软件对象
-          <select
-            disabled={busy}
-            value={selected?.id ?? ""}
-            onChange={(e) => select(e.target.value)}
-          >
-            <option value="">选择软件对象</option>
-            {software.map((s) => (
-              <option key={s.id} value={s.id}>
-                {s.name}
-              </option>
-            ))}
-          </select>
-        </label>
-        <label>
-          SBOM 输入版本
-          <select
-            disabled={busy || !selected}
-            value={versionId}
-            onChange={(e) => {
-              setVersionId(e.target.value);
-              setKey(requestId());
-            }}
-          >
-            <option value="">选择输入版本</option>
-            {selected?.versions.map((v) => (
-              <option key={v.id} value={v.id}>
-                {v.version ?? "版本未知"} · {v.createdAt} · {v.id.slice(0, 8)}
-              </option>
-            ))}
-          </select>
-        </label>
-        <p>
-          重复提交同一请求回读原任务。超时或中断不会自动重试；需要重新评估时建立新请求。
-        </p>
-        <button
-          disabled={busy || !selected || !versionId}
-          onClick={() =>
-            run(async () => {
-              const result = await call<Assessment>(`${base}/assessments`, {
-                method: "POST",
-                body: JSON.stringify({
-                  softwareId: selected!.id,
-                  versionId,
-                  idempotencyKey: key,
-                }),
-              });
-              selectedJob.current = result.id;
-              setJob(result);
-              setMessage(
-                result.replayed
-                  ? "重复请求：回读原任务"
-                  : "任务已提交，后台执行",
-              );
-              offset.current = 0;
-              await refresh();
-            })
-          }
-        >
-          提交评估
-        </button>
-        <button
-          disabled={busy}
-          onClick={() => {
-            setKey(requestId());
-            setMessage("已建立新的评估请求；提交后生成独立任务");
-          }}
-        >
-          新建评估请求
-        </button>
-      </div>
       {job && (
         <AssessmentLiveStatus
           customerId={customerId}
