@@ -74,6 +74,10 @@ const writeAsset = z
       ctx.addIssue({ code: "custom", message: "Device不支持cluster" });
   });
 const nativeAsset = z.object({
+  custom_fields: z
+    .object({ ys_lifecycle: z.json().optional() })
+    .passthrough()
+    .optional(),
   id: z.number().int().positive(),
   name: z.string().min(1),
   tenant: z.object({ id: z.number().int().positive() }).nullable(),
@@ -218,6 +222,7 @@ export class NetBoxService {
         "NetBox资产已有其他客户映射，请先解决Tenant变更",
       );
     const attributes = {
+      lifecycle: row.custom_fields?.ys_lifecycle ?? {},
       netbox: {
         objectType: type,
         id: row.id,

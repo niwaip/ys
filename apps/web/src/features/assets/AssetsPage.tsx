@@ -1,3 +1,5 @@
+import { AssetLifecycleForm } from "../lifecycle-risk/AssetLifecycleForm";
+import "../lifecycle-risk/lifecycle-risk.css";
 import { AssetBaseline } from "../collections/AssetBaseline";
 import { NetBoxPanel } from "./NetBoxPanel";
 import { useCallback, useEffect, useState, type FormEvent } from "react";
@@ -9,7 +11,11 @@ export function AssetsPage({
   token,
   onUnauthorized,
   onNavigate,
+  assetId,
 }: FeatureProps) {
+  const [lifecycleAsset, setLifecycleAsset] = useState<string | undefined>(
+    assetId,
+  );
   const [status, setStatus] = useState("active");
   const [deleting, setDeleting] = useState<{ id: string; name: string }>();
   const [detailAsset, setDetailAsset] = useState<{
@@ -177,6 +183,17 @@ export function AssetsPage({
           已删除资产
         </button>
       </div>
+      {lifecycleAsset && (
+        <AssetLifecycleForm
+          key={`${customerId}:${lifecycleAsset}`}
+          customerId={customerId}
+          token={token}
+          onUnauthorized={onUnauthorized}
+          assetId={lifecycleAsset}
+          readOnly={netboxMode !== false}
+          onClose={() => setLifecycleAsset(undefined)}
+        />
+      )}
       <section className="asset-panel">
         <div className="panel-heading">
           <h2>
@@ -296,6 +313,12 @@ export function AssetsPage({
                               }
                             >
                               EOSL评估
+                            </button>
+                            <button
+                              className="secondary"
+                              onClick={() => setLifecycleAsset(asset.id)}
+                            >
+                              生命周期资料
                             </button>
                             <button
                               className="secondary"

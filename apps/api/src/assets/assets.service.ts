@@ -1,3 +1,4 @@
+import { type LifecycleAsset } from "../../../../packages/contracts/lifecycle-risk";
 import { NetBoxService } from "../netbox/netbox.module";
 import { randomUUID } from "node:crypto";
 import { ConflictException, NotFoundException } from "@nestjs/common";
@@ -44,6 +45,33 @@ export class AssetsService {
       ],
     );
     return serialize(result.rows[0]);
+  }
+  async updateLifecycle(customer: string, id: string, input: LifecycleAsset) {
+    if (this.netbox.enabled)
+      throw new ConflictException(
+        "NetBox模式下请在NetBox维护生命周期资料后同步",
+      );
+    return this.db.transaction(async (tx) => {
+      await tx.query("SELECT id FROM customers WHERE id=$1 FOR UPDATE", [
+        customer,
+      ]);
+      const { requireActiveAsset } = await import("./asset-state");
+      await requireActiveAsset(tx, customer, id);
+      for (const binding of [input.os, input.device])
+        if (binding) {
+          const found = await tx.query(
+            "SELECT id FROM import_materials WHERE customer_id=$1 AND id=$2 AND format='lifecycle-csv-v1'",
+            [customer, binding.batchId],
+          );
+          if (!found.rows.length)
+            throw new NotFoundException("该客户下未找到生命周期批次");
+        }
+      const r = await tx.query(
+        `UPDATE assets SET attributes=jsonb_set(attributes,'{lifecycle}',$3::jsonb) WHERE customer_id=$1 AND id=$2 RETURNING ${columns}`,
+        [customer, id, JSON.stringify(input)],
+      );
+      return serialize(r.rows[0]);
+    });
   }
   async list(
     customerId: string,

@@ -1,3 +1,4 @@
+import { LifecycleRiskPage } from "./features/lifecycle-risk/LifecycleRiskPage";
 import {
   CollectionWorkspace,
   AssessmentWorkspace,
@@ -108,6 +109,7 @@ const groups: Record<string, string> = {
   "assessment-workspace": "CVE与EOSL评估",
   lifecycle: "CVE与EOSL评估",
   risk: "风险与报告",
+  "lifecycle-risk": "风险与报告",
   "software-history": "风险与报告",
   "customer-chat": "风险与报告",
   "public-intelligence": "风险与报告",
@@ -118,6 +120,12 @@ const replacements: Record<string, Partial<Feature>> = {
   lifecycle: { component: LifecycleEvaluation, label: "EOSL评估" },
 };
 const entries: Feature[] = [
+  {
+    id: "lifecycle-risk",
+    label: "生命周期风险",
+    icon: "◷",
+    component: LifecycleRiskPage,
+  },
   ...legacyFeatures.map((f) => ({
     ...f,
     ...replacements[f.id],
@@ -152,6 +160,7 @@ const order = [
   "assessment-workspace",
   "lifecycle",
   "risk",
+  "lifecycle-risk",
   "software-history",
   "customer-chat",
   "public-intelligence",

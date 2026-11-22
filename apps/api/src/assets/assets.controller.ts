@@ -1,3 +1,4 @@
+import { lifecycleAssetSchema } from "../../../../packages/contracts/lifecycle-risk";
 import {
   BadRequestException,
   Controller,
@@ -74,6 +75,15 @@ export class AssetsController {
       input.data.hardwareType,
     );
   }
+  @Patch(":assetId/lifecycle") lifecycle(req: AuthorizedRequest) {
+    const input = lifecycleAssetSchema.safeParse(req.body);
+    if (!input.success) throw new BadRequestException("生命周期资料无效");
+    return this.assets.updateLifecycle(
+      req.params.customerId,
+      this.id(req),
+      input.data,
+    );
+  }
   @Get(":assetId")
   get(req: AuthorizedRequest) {
     if (!z.uuid().safeParse(req.params.assetId).success)
@@ -88,5 +98,6 @@ for (const method of [
   "remove",
   "restore",
   "classify",
+  "lifecycle",
 ] as const)
   Req()(AssetsController.prototype, method, 0);

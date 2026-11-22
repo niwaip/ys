@@ -19,7 +19,11 @@ import type {
   LifecycleAssessmentItem,
 } from "../../../../packages/contracts/lifecycle";
 import type { AuthorizedRequest } from "../auth/auth";
-import { DATABASE, type Database } from "../persistence/database";
+import {
+  DATABASE,
+  type Database,
+  type Queryable,
+} from "../persistence/database";
 import { SoftwareModule, SoftwareService } from "../software/software.module";
 import { parseCsvRecords } from "../imports/csv";
 const upload = z
@@ -75,8 +79,12 @@ export class LifecycleService {
     private readonly db: Database,
     private readonly software: SoftwareService,
   ) {}
-  async getBatch(customer: string, id: string): Promise<LifecycleBatch> {
-    const r = await this.db.query(
+  async getBatch(
+    customer: string,
+    id: string,
+    session: Queryable = this.db,
+  ): Promise<LifecycleBatch> {
+    const r = await session.query(
       `SELECT ${batchColumns} FROM import_materials WHERE customer_id=$1 AND id=$2 AND format='lifecycle-csv-v1'`,
       [customer, id],
     );

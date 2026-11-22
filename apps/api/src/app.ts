@@ -1,3 +1,4 @@
+import { LifecycleRiskModule } from "./lifecycle-risk/lifecycle-risk.module";
 import { CveRecordResearch } from "./finding-analysis/public-cve";
 import { FindingAnalysisModule } from "./finding-analysis/finding-analysis.module";
 import {
@@ -118,6 +119,7 @@ export async function createApp(
           CollectionJobsModule.register(config, runtime.collectionExecutor),
           ImportsModule,
           LifecycleModule,
+          LifecycleRiskModule,
           SoftwareModule,
           ContainersModule,
           WindowsModule,

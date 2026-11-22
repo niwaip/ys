@@ -1,3 +1,4 @@
+import { LifecycleRiskSummary } from "../lifecycle-risk/LifecycleRiskSummary";
 import { useEffect, useRef, useState } from "react";
 import { api, ApiError } from "../../api";
 import type { FeatureProps } from "../../features";
@@ -177,6 +178,11 @@ export function DashboardPage({
           {data ? new Date(data.generatedAt).toLocaleString("zh-CN") : "加载中"}
         </span>
       </header>
+      <LifecycleRiskSummary
+        customerId={customerId}
+        token={token}
+        onUnauthorized={onUnauthorized}
+      />
       {catalog && (
         <p className="dashboard-directory">
           客户全目录：硬件 {catalog.inventory.host} · 软件{" "}

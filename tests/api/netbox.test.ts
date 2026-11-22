@@ -30,6 +30,13 @@ test("客户同步NetBox原生资产，保留稳定身份、分页与来源，�
               name: "YS",
               tenant: { id: 7 },
               serial: "SERIAL",
+              custom_fields: {
+                ys_lifecycle: {
+                  purchasedOn: "2010-01-01",
+                  warrantyUntil: "2020-01-01",
+                  sourceRef: "Contract",
+                },
+              },
               platform: { id: 2, name: "Debian" },
               primary_ip4: { address: "10.0.0.1/24" },
             },
@@ -79,6 +86,20 @@ test("客户同步NetBox原生资产，保留稳定身份、分页与来源，�
       serial: "SERIAL",
     },
   });
+  const risk = (
+    await http
+      .get("/api/customers/acme/lifecycle-risk/current")
+      .set(auth)
+      .expect(200)
+  ).body;
+  expect(
+    risk.items.find((i: { type: string }) => i.type === "warranty"),
+  ).toMatchObject({ dueDate: "2020-01-01", level: "critical" });
+  await http
+    .patch(`/api/customers/acme/assets/${first.body.items[0].id}/lifecycle`)
+    .set(auth)
+    .send({ warrantyUntil: "2099-01-01" })
+    .expect(409);
   await http
     .post("/api/customers/acme/netbox/sync")
     .set(auth)
