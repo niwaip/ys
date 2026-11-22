@@ -36,7 +36,7 @@ async function boot(
         schemaVersion: "2.2",
         status: "partial",
         query: {},
-        coverage: {},
+        coverage: { limitations: ["仅一个固定样例来源"] },
         summary: "fixture",
         scope: "single",
         results: [{ cve_id: "CVE-2024-12345", source_ids: ["vendor"] }],
@@ -203,6 +203,7 @@ test("单条解析持久绑定客户、扫描、组件与来源，幂等重开�
     "https://example.test/vendor",
   );
   expect(done.research.status).toBe("partial");
+  expect(done.research.limitations).toEqual(["仅一个固定样例来源"]);
   expect(
     (await h.post(path).set(auth).send({ idempotencyKey: "one" }).expect(202))
       .body.id,
@@ -263,6 +264,19 @@ test("AI解析拒绝空引用、虚构来源与错绑，失败不覆盖旧成功
   expect(
     (await h.get(path + "/" + normal.id).set(auth)).body.narrative,
   ).toEqual(narrative);
+  for (let i = 0; i < 20; i++) {
+    const next = (
+      await h
+        .post(path)
+        .set(auth)
+        .send({ idempotencyKey: `failure-${i}` })
+    ).body;
+    await finish(path, next.id);
+  }
+  const reopened = (await h.get(path).set(auth)).body.items;
+  expect(
+    reopened.some((j: any) => j.id === normal.id && j.status === "succeeded"),
+  ).toBe(true);
 });
 test("重复点击复用活动解析，超时有明确终态并保留记录", async () => {
   await boot({ execute: async () => new Promise(() => {}) }, 80);

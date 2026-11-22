@@ -3,7 +3,12 @@ const section = {
   type: "object",
   properties: {
     text: { type: "string", minLength: 1, maxLength: 5000 },
-    sourceIds: { type: "array", items: { type: "string" }, maxItems: 20 },
+    sourceIds: {
+      type: "array",
+      minItems: 1,
+      items: { type: "string" },
+      maxItems: 20,
+    },
   },
   required: ["text", "sourceIds"],
   additionalProperties: false,

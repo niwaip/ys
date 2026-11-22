@@ -191,7 +191,25 @@ export function FindingAnalysisPanel({
                     : "coverage-notice"
                 }
               >
+                <strong>
+                  {
+                    {
+                      available: "公开资料已取得",
+                      partial: "公开查询：部分覆盖",
+                      unavailable: "公开查询：不可用",
+                    }[result.research.status]
+                  }
+                </strong>
+                <br />
                 {result.research.message}
+                <br />
+                查询时间：
+                {new Date(result.research.queriedAt).toLocaleString("zh-CN")}
+                {result.research.limitations?.map((text, i) => (
+                  <span className="cell-subtext" key={i}>
+                    {text}
+                  </span>
+                ))}
               </p>
             )}
             {section("漏洞说明", [result.narrative.explanation])}

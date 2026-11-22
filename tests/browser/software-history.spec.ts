@@ -87,6 +87,7 @@ test("软件重扫历史明确current选择并比较两批差异、覆盖及重�
   await page
     .getByRole("button", { name: `查看批次 ${second.slice(0, 8)}` })
     .click();
+  await page.getByText("任务详情与执行证据", { exact: true }).click();
   await page.getByText("原始 Trivy 报告", { exact: true }).click();
   await expect(page.getByText(/"SchemaVersion":2/)).toBeVisible();
   await page.getByRole("button", { name: "组件与来源 1", exact: true }).click();

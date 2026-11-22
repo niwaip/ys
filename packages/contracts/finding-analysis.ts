@@ -49,6 +49,8 @@ export type FindingAnalysis = {
     status: "available" | "unavailable" | "partial";
     message: string;
     queriedAt: string;
+    limitations: string[];
+    contentHash?: string;
     summary?: string;
   };
   narrative?: FindingNarrative;

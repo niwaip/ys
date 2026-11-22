@@ -253,7 +253,10 @@ export class FindingAnalysisService {
   }
   async list(customer: string, assessmentId: string, findingId: string) {
     const rows = await this.db.query(
-      `SELECT details FROM finding_analyses WHERE customer_id=$1 AND assessment_id=$2 AND finding_id=$3 ORDER BY created_at DESC,id DESC LIMIT 20`,
+      `WITH scoped AS (SELECT id,created_at,status,details FROM finding_analyses WHERE customer_id=$1 AND assessment_id=$2 AND finding_id=$3),
+       retained AS ((SELECT id,created_at,details FROM scoped ORDER BY created_at DESC,id DESC LIMIT 20)
+       UNION (SELECT id,created_at,details FROM scoped WHERE status='succeeded' ORDER BY created_at DESC,id DESC LIMIT 1))
+       SELECT details FROM retained ORDER BY created_at DESC,id DESC`,
       [customer, assessmentId, findingId],
     );
     return { items: rows.rows.map((r) => r.details as FindingAnalysis) };
@@ -314,24 +317,39 @@ export class FindingAnalysisService {
             retrievedAt: queriedAt,
           });
       }
+      const hasSources = job.sources.some(
+        (source) => source.origin === "public_query",
+      );
+      const limitations = Array.isArray(result.coverage.limitations)
+        ? result.coverage.limitations
+            .filter((v): v is string => typeof v === "string")
+            .slice(0, 20)
+            .map((v) => v.slice(0, 1000))
+        : [];
       job.research = {
+        limitations,
+        contentHash: result.evidence.contentHash,
         status:
-          result.status === "unavailable" || !matches.length
+          result.status === "unavailable" || !matches.length || !hasSources
             ? "unavailable"
             : result.status === "partial"
               ? "partial"
               : "available",
-        message: matches.length
-          ? "公开查询资料已取得；仍需核实当前系统适用条件"
-          : "未取得该漏洞的公开资料",
+        message:
+          matches.length && hasSources
+            ? "公开查询资料已取得；仍需核实当前系统适用条件"
+            : "未取得该漏洞的公开资料",
         queriedAt,
-        summary: JSON.stringify(matches).slice(0, 16000),
+        summary: hasSources
+          ? JSON.stringify(matches).slice(0, 16000)
+          : undefined,
       };
     } catch {
       if (signal.aborted)
         throw new AgentExecutionError("timed_out", "AI解析超时或中断");
       job.research = {
         status: "unavailable",
+        limitations: ["未取得可核实的公开查询结果，仅保留现有扫描证据"],
         message: "公开情报查询不可用，本次仅基于已有扫描证据解析",
         queriedAt,
       };
