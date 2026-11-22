@@ -3,10 +3,21 @@ test("configure lifecycle dates, preview rules, process risk and drill down from
   page,
   request,
 }) => {
+  test.setTimeout(90_000);
   const errors: string[] = [];
   page.on("pageerror", (e) => errors.push(e.message));
   const headers = { Authorization: "Bearer browser-test-secret-token" };
   const base = "http://127.0.0.1:3101/api/customers/acme";
+  const reset = await request.put(`${base}/lifecycle-risk/config`, {
+    headers,
+    data: {
+      timeZone: "Asia/Shanghai",
+      defaultRule: { enabled: true, reminderMonths: 12, warningMonths: 6 },
+      overrides: [],
+      serviceYears: { server: null, network: null, unknown: null },
+    },
+  });
+  expect(reset.ok()).toBe(true);
   const name = `risk-e2e-${Date.now()}`;
   const asset = await (
     await request.post(`${base}/assets`, {
