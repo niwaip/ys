@@ -17,7 +17,7 @@
 ## 接口与证据
 
 - `GET /api/customers/:customerId/assessments/linux-inputs?assetId=UUID&offset=0`：每页20个采集快照，提供可扫描状态和阻断原因。
-- `POST .../assessments`：`{assetId,snapshotId,idempotencyKey}`。同客户同输入同键回读原任务；页面重试保留键，“建立新扫描请求”才生成新键。
+- `POST .../assessments`：`{assetId,snapshotId,idempotencyKey}`。同客户同输入同键回读原任务；页面重试保留键。“建立新扫描请求”生成新键，保留当前所选可扫描快照；未选择时选中当前批次首个可扫描快照，清空旧结果并显示准备完成提示。用户核对后点击“扫描所选Linux快照”才提交；没有可用快照时显示原因，不提交空任务。
 - `GET .../assessments?targetKind=linux&targetId=UUID&limit=20&offset=0`：分页历史摘要。
 - `GET .../assessments/:id?findingsOffset=0`：每页50条发现，返回 findingsPage 总量，不传原始整份报告。无此参数保留完整任务接口。
 - `GET .../assessments/:id/report`：客户范围的原始报告下载，gzip压缩传输JSON封装 `{content,contentHash}`，网页保存原始报告内容。避免下载时重复传输所有归一化发现；原始内容哈希保持不变。

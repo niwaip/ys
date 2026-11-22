@@ -65,7 +65,17 @@ test("Linux快照扫描分页、原始证据下载、历史回读及客户隔离
   await page.getByRole("button", { name: "进入工作台" }).click();
   await page.locator("nav button").filter({ hasText: "CVE评估" }).click();
   await page.getByLabel("扫描主机").selectOption(asset.id);
-  await page.getByLabel("Linux采集快照").selectOption(snapshot.id);
+  await expect(
+    page.getByLabel("Linux采集快照").locator(`option[value="${snapshot.id}"]`),
+  ).toBeEnabled();
+  await page
+    .getByRole("button", { name: "建立新扫描请求", exact: true })
+    .click();
+  await expect(page.getByRole("status")).toContainText("新扫描请求已准备");
+  await expect(page.getByLabel("Linux采集快照")).toHaveValue(snapshot.id);
+  await expect(
+    page.getByRole("button", { name: "扫描所选Linux快照", exact: true }),
+  ).toBeEnabled();
   await page.getByRole("button", { name: "扫描所选Linux快照" }).click();
   await expect(
     page.getByRole("heading", { name: "发现 120 条漏洞记录" }),
@@ -100,6 +110,26 @@ test("Linux快照扫描分页、原始证据下载、历史回读及客户隔离
     )
   ).json();
   const job = history.items[0];
+  await page
+    .getByRole("button", { name: "建立新扫描请求", exact: true })
+    .click();
+  await expect(page.getByRole("status")).toContainText("新扫描请求已准备");
+  await expect(
+    page.getByRole("heading", { name: "发现 120 条漏洞记录" }),
+  ).toHaveCount(0);
+  const rescanResponse = page.waitForResponse(
+    (r) => r.url().endsWith("/assessments") && r.request().method() === "POST",
+  );
+  await page
+    .getByRole("button", { name: "扫描所选Linux快照", exact: true })
+    .click();
+  const rescan = await (await rescanResponse).json();
+  expect(rescan.id).not.toBe(job.id);
+  expect(rescan.target.snapshotId).toBe(snapshot.id);
+  await expect(
+    page.getByRole("heading", { name: "发现 120 条漏洞记录" }),
+  ).toBeVisible();
+
   await page.locator("nav button").filter({ hasText: "风险事实报告" }).click();
   await page.getByLabel(new RegExp(job.id)).check();
   await page.getByRole("button", { name: "生成事实草稿" }).click();
@@ -137,8 +167,48 @@ test("Linux快照扫描分页、原始证据下载、历史回读及客户隔离
   await expect(
     preview.getByText("待复核草稿 · 不代表正式交付", { exact: true }),
   ).toBeVisible();
-  expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+  expect(
+    await page.evaluate(
+      () => document.documentElement.scrollWidth <= innerWidth,
+    ),
+  ).toBe(true);
   await page.getByLabel("当前客户").selectOption("river");
   await expect(page.getByText("CVE-LINUX-000", { exact: true })).toHaveCount(0);
   expect(errors).toEqual([]);
+});
+
+test("没有Linux快照时建立新扫描请求会说明原因，不提交空扫描", async ({
+  page,
+  request,
+}) => {
+  const headers = { Authorization: "Bearer browser-test-secret-token" };
+  const asset = await (
+    await request.post("http://127.0.0.1:3101/api/customers/acme/assets", {
+      headers,
+      data: { name: `No-snapshot-${Date.now()}`, kind: "host" },
+    })
+  ).json();
+  let submissions = 0;
+  page.on("request", (r) => {
+    if (r.method() === "POST" && r.url().endsWith("/assessments"))
+      submissions++;
+  });
+  await page.goto("/");
+  await page.getByLabel("操作员访问令牌").fill("browser-test-secret-token");
+  await page.getByRole("button", { name: "进入工作台" }).click();
+  await page.locator("nav button").filter({ hasText: "CVE评估" }).click();
+  await page.getByLabel("扫描主机").selectOption(asset.id);
+  await expect(
+    page.getByText("当前批次没有可扫描资料", { exact: false }),
+  ).toBeVisible();
+  await page
+    .getByRole("button", { name: "建立新扫描请求", exact: true })
+    .click();
+  await expect(page.getByRole("status")).toContainText(
+    "当前批次没有可扫描快照",
+  );
+  await expect(
+    page.getByRole("button", { name: "扫描所选Linux快照", exact: true }),
+  ).toBeDisabled();
+  expect(submissions).toBe(0);
 });

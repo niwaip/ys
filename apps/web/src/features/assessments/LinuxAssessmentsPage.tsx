@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { api, ApiError } from "../../api";
 import { requestId } from "../../request-id";
 import type { FeatureProps } from "../../features";
@@ -28,11 +28,13 @@ export function LinuxAssessmentsPage(props: FeatureProps) {
     [job, setJob] = useState<Assessment>(),
     [history, setHistory] = useState<AssessmentPage>(),
     [error, setError] = useState(""),
+    [notice, setNotice] = useState(""),
     [busy, setBusy] = useState(false),
     [offset, setOffset] = useState(0),
     [assetOffset, setAssetOffset] = useState(0),
     [historyOffset, setHistoryOffset] = useState(0),
     [idempotencyKey, setIdempotencyKey] = useState(requestId);
+  const snapshotSelect = useRef<HTMLSelectElement>(null);
   const base = `/customers/${props.customerId}`;
   function fail(e: unknown) {
     if (e instanceof ApiError && e.status === 401) props.onUnauthorized();
@@ -60,6 +62,7 @@ export function LinuxAssessmentsPage(props: FeatureProps) {
     setHistoryOffset(0);
   }, [asset]);
   useEffect(() => {
+    setNotice("");
     setInputs(undefined);
     setHistory(undefined);
     setSnapshot("");
@@ -152,9 +155,36 @@ export function LinuxAssessmentsPage(props: FeatureProps) {
       fail(e);
     }
   }
+  function prepareNewRequest() {
+    setError("");
+    const selected =
+      inputs?.items.find((s) => s.id === snapshot && s.supported) ??
+      inputs?.items.find((s) => s.supported);
+    if (!selected) {
+      setNotice(
+        inputs
+          ? "当前批次没有可扫描快照。请查看其他批次，或到资产采集取得完整Linux资料。"
+          : "正在加载采集快照，请稍后再建立新扫描请求。",
+      );
+      snapshotSelect.current?.focus();
+      return;
+    }
+    setSnapshot(selected.id);
+    setIdempotencyKey(requestId());
+    setJob(undefined);
+    setNotice(
+      `新扫描请求已准备：${selected.os?.id ?? "Linux"} ${selected.os?.version ?? ""} · ${selected.packages ?? "未知"}包 · ${selected.importedAt}。请核对快照后点击“扫描所选Linux快照”开始扫描。`,
+    );
+    snapshotSelect.current?.focus();
+    snapshotSelect.current?.scrollIntoView({
+      block: "center",
+      behavior: "smooth",
+    });
+  }
   async function submit() {
     setBusy(true);
     setError("");
+    setNotice("");
     try {
       setJob(
         await api<Assessment>(`${base}/assessments`, props.token, {
@@ -219,8 +249,12 @@ export function LinuxAssessmentsPage(props: FeatureProps) {
           <label>
             Linux采集快照
             <select
+              ref={snapshotSelect}
               value={snapshot}
-              onChange={(e) => setSnapshot(e.target.value)}
+              onChange={(e) => {
+                setSnapshot(e.target.value);
+                setNotice("");
+              }}
             >
               <option value="">选择固定采集版本</option>
               {inputs?.items.map((s) => (
@@ -233,9 +267,10 @@ export function LinuxAssessmentsPage(props: FeatureProps) {
               ))}
             </select>
           </label>
-          {!inputs?.items.some((s) => s.supported) && (
+          {!inputs && !error && <p>正在加载采集快照…</p>}
+          {inputs && !inputs.items.some((s) => s.supported) && (
             <p>
-              尚无可扫描资料；请在资产采集重新执行基础采集，取得完整dpkg数据库。
+              当前批次没有可扫描资料；请查看其他批次，或在资产采集重新执行基础采集，取得完整dpkg数据库。
             </p>
           )}
           <div className="pagination">
@@ -259,15 +294,10 @@ export function LinuxAssessmentsPage(props: FeatureProps) {
           >
             扫描所选Linux快照
           </button>
-          <button
-            disabled={busy}
-            onClick={() => {
-              setIdempotencyKey(requestId());
-              setJob(undefined);
-            }}
-          >
+          <button disabled={busy} onClick={prepareNewRequest}>
             建立新扫描请求
           </button>
+          {notice && <p role="status">{notice}</p>}
           <p>
             扫描只读取资料，不确认基线或写回NetBox。过期库与不足的覆盖会在结果中披露。
           </p>
