@@ -29,14 +29,28 @@ export default function (pi) {
         JSON.stringify({ factHash: r.input.factHash }),
         { mode: 0o600 },
       );
-      return { content: [{ type: "text", text: JSON.stringify(r.input) }] };
+      return {
+        content: [
+          {
+            type: "text",
+            text: JSON.stringify({
+              ...r.input,
+              factReference: {
+                id: "finding",
+                description:
+                  "本条扫描事实：当前组件、安装版本、库时间、覆盖范围及证据指针。系统影响分析 impact.sourceIds 必须包含 finding；scanner 和 public-* 仅代表公开漏洞资料，不能替代当前资产事实。",
+              },
+            }),
+          },
+        ],
+      };
     },
   });
   pi.registerTool({
     name: "ys_finding_analysis",
     label: "保存漏洞解析",
     description:
-      "保存结构化中文分析。说明与推断必须区分，来源编号只能来自已读资料；不执行修复或修改扫描结论。",
+      "保存结构化中文分析。每段引用已读来源，impact.sourceIds 必须包含 finding 以绑定当前系统事实；scanner/public-* 仅代表漏洞情报。说明与推断分开，不执行修复。",
     parameters: {
       type: "object",
       properties: {

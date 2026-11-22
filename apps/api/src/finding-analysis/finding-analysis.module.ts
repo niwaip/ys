@@ -423,7 +423,7 @@ export class FindingAnalysisService {
           throw new AgentExecutionError("timed_out", "AI解析已中止");
         const parsed = proposal.safeParse(raw);
         if (!parsed.success || parsed.data.factHash !== job.factHash)
-          throw Error("AI解析格式或绑定事实不符");
+          throw new AgentExecutionError("failed", "AI解析格式或绑定事实不符");
         const all = [
             parsed.data.narrative.explanation,
             parsed.data.narrative.impact,
@@ -435,7 +435,10 @@ export class FindingAnalysisService {
           all.some((s) => s.sourceIds.some((id) => !allowed.has(id))) ||
           !all.some((s) => s.sourceIds.includes("finding"))
         )
-          throw Error("AI解析引用了未绑定来源或未引用扫描事实");
+          throw new AgentExecutionError(
+            "failed",
+            "AI解析引用了未绑定来源或未引用当前扫描事实，请重新解析",
+          );
         job.narrative = parsed.data.narrative;
         job.status = "succeeded";
       } catch (e) {

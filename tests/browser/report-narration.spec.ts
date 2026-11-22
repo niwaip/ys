@@ -8,13 +8,16 @@ test("AI task progress and unavailable fallback preserve report draft and reload
     headers = { Authorization: "Bearer browser-test-secret-token" },
     unique = Date.now();
   await expect
-    .poll(async () => {
-      try {
-        return (await request.get(`${base}/assets`, { headers })).status();
-      } catch {
-        return 0;
-      }
-    })
+    .poll(
+      async () => {
+        try {
+          return (await request.get(`${base}/assets`, { headers })).status();
+        } catch {
+          return 0;
+        }
+      },
+      { timeout: 20000 },
+    )
     .toBe(200);
   const asset = await (
       await request.post(`${base}/assets`, {
