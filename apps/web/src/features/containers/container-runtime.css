@@ -94,3 +94,7 @@
 .container-acquisition .panel > code {
   white-space: normal;
 }
+
+.container-acquisition .table-scroll table {
+  min-width: 640px;
+}

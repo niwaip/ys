@@ -277,7 +277,9 @@ export class ContainerGenerationService {
         job.error =
           error instanceof ConflictException
             ? error.message
-            : "镜像生成失败：请核对连接、Docker访问、目标Trivy及选定镜像是否仍存在；已生成资料会保留，可显式重试";
+            : job.status === "unavailable"
+              ? "目标缺少 Docker 或 Trivy，请准备工具后重试，或使用离线脚本"
+              : "镜像生成失败，请检查连接、Docker 权限及镜像是否仍存在；已生成资料保留，可重试";
       } finally {
         clearTimeout(timer);
         await cleanup().catch(() => {
@@ -297,7 +299,16 @@ export class ContainerGenerationService {
           [job.customerId, job.assessmentId],
         )
       ).rows[0];
-      if (row && runtimeTerminal(String(row.status))) {
+      if (
+        row &&
+        [
+          "succeeded",
+          "failed",
+          "unavailable",
+          "timed_out",
+          "interrupted",
+        ].includes(String(row.status))
+      ) {
         job.status = row.status as ContainerJob["status"];
         job.error = row.error ? String(row.error) : null;
         job.events.push({
@@ -423,7 +434,7 @@ class GenerationController {
     );
     return {
       fileName: "ys-image-sbom.mjs",
-      content: `import {execFileSync} from 'node:child_process';\nconst id=process.argv[2];if(!/^sha256:[0-9a-f]{64}$/.test(id??''))throw new Error('Usage: node ys-image-sbom.mjs sha256:FULL_IMAGE_ID > image.json');\nconst raw=execFileSync('/bin/sh',['-s','--',id],{input:Buffer.from('${Buffer.from(shell).toString("base64")}','base64'),timeout:240000,maxBuffer:30000000,encoding:'utf8'});\nconst v={};for(const line of raw.trim().split('\\n')){const [k,b]=line.split('|');v[k]=Buffer.from(b,'base64').toString('utf8').trim();}\nconsole.log(JSON.stringify({schemaVersion:'ys-image/1',host:{hostname:v.YS_HOST,machineId:v.YS_MACHINE||null,serial:v.YS_SERIAL||null},image:JSON.parse(v.YS_IMAGE),toolVersion:v.YS_TOOL,generatedAt:v.YS_TIME,sbom:JSON.parse(v.YS_SBOM)}));\n`,
+      content: `import {execFileSync} from 'node:child_process';\nconst id=process.argv[2];if(!/^sha256:[0-9a-f]{64}$/.test(id??''))throw new Error('Usage: node ys-image-sbom.mjs sha256:FULL_IMAGE_ID > image.json');\nconst raw=execFileSync('/bin/sh',['-s','--',id],{input:Buffer.from('${Buffer.from(shell).toString("base64")}','base64'),timeout:240000,maxBuffer:30000000,encoding:'utf8'});\nconst v={};for(const line of raw.trim().split('\\n')){const [k,b]=line.split('|');v[k]=Buffer.from(b,'base64').toString('utf8').trim();}\nconst image=JSON.parse(v.YS_IMAGE);image.repoTags??=[];image.repoDigests??=[];\nconsole.log(JSON.stringify({schemaVersion:'ys-image/1',host:{hostname:v.YS_HOST,machineId:v.YS_MACHINE||null,serial:v.YS_SERIAL||null},image,toolVersion:v.YS_TOOL,generatedAt:v.YS_TIME,sbom:JSON.parse(v.YS_SBOM)}));\n`,
     };
   }
 }

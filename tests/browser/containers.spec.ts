@@ -9,7 +9,7 @@ test("镜像详情保留digest版本、组件和评估证据，刷新及客户�
   await page.getByRole("button", { name: "容器镜像" }).click();
   await page.getByRole("tab", { name: "手动镜像资料" }).click();
   const name = `Image-${Date.now()}`;
-  await page.getByLabel("镜像名称").fill(name);
+  await page.getByLabel("镜像名称", { exact: true }).fill(name);
   await page.getByLabel("镜像资料来源").fill("release-pipeline");
   await page.getByRole("button", { name: "建立镜像对象" }).click();
   await expect(page.getByRole("heading", { name, exact: true })).toBeVisible();

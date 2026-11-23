@@ -5,6 +5,8 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createApp } from "../../apps/api/src/app";
 let fixtureAsset: string;
+let releaseAssessment: (() => void) | undefined;
+let holdAssessment = false;
 const imageId = "sha256:" + "a".repeat(64);
 let app: Awaited<ReturnType<typeof createApp>>, directory: string;
 const auth = { Authorization: "Bearer container-runtime-secret" };
@@ -126,30 +128,36 @@ beforeAll(async () => {
         }),
       },
       trivyExecutor: {
-        execute: async () => ({
-          status: "succeeded",
-          toolVersion: "fixture-trivy",
-          argv: ["sbom"],
-          startedAt: "2026-11-23T00:00:00Z",
-          finishedAt: "2026-11-23T00:00:01Z",
-          exitCode: 0,
-          signal: null,
-          stderr: "",
-          databaseBefore: null,
-          databaseAfter: null,
-          rawReport: JSON.stringify({
-            SchemaVersion: 2,
-            Results: [
-              {
-                Target: "fixture/image",
-                Class: "os-pkgs",
-                Type: "alpine",
-                Packages: [{ Name: "lib-0", Version: "1" }],
-                Vulnerabilities: [],
-              },
-            ],
-          }),
-        }),
+        execute: async () => {
+          if (holdAssessment)
+            await new Promise<void>((resolve) => {
+              releaseAssessment = resolve;
+            });
+          return {
+            status: "succeeded",
+            toolVersion: "fixture-trivy",
+            argv: ["sbom"],
+            startedAt: "2026-11-23T00:00:00Z",
+            finishedAt: "2026-11-23T00:00:01Z",
+            exitCode: 0,
+            signal: null,
+            stderr: "",
+            databaseBefore: null,
+            databaseAfter: null,
+            rawReport: JSON.stringify({
+              SchemaVersion: 2,
+              Results: [
+                {
+                  Target: "fixture/image",
+                  Class: "os-pkgs",
+                  Type: "alpine",
+                  Packages: [{ Name: "lib-0", Version: "1" }],
+                  Vulnerabilities: [],
+                },
+              ],
+            }),
+          };
+        },
       },
     },
   );
@@ -315,6 +323,7 @@ test("discover then generate selected image and assess with immutable host prove
     imageIds: [imageId, imageId],
     idempotencyKey: "generate",
   };
+  holdAssessment = true;
   const batch = (
     await http().post(`${base}/jobs`).set(auth).send(input).expect(202)
   ).body;
@@ -323,6 +332,14 @@ test("discover then generate selected image and assess with immutable host prove
     await http().post(`${base}/jobs`).set(auth).send(input).expect(202)
   ).body;
   expect(replay.items[0].id).toBe(batch.items[0].id);
+  await expect.poll(() => !!releaseAssessment).toBe(true);
+  const active = (
+    await http().get(`${base}/jobs/${batch.items[0].id}`).set(auth)
+  ).body;
+  holdAssessment = false;
+  releaseAssessment!();
+  releaseAssessment = undefined;
+  expect(active.status).toBe("assessing");
   let job: any;
   await expect
     .poll(async () => {
@@ -463,4 +480,47 @@ test("fixed container sources and completed jobs survive application restart", a
     status: "succeeded",
     assessmentId: jobs[0].assessmentId,
   });
+});
+
+test("offline download normalizes untagged local image fields into an importable envelope", async () => {
+  const { runInNewContext } = await import("node:vm");
+  const script = (await http().get(`${base}/script`).set(auth).expect(200)).body
+    .content;
+  const fields = {
+    YS_HOST: "offline-host",
+    YS_MACHINE: "",
+    YS_SERIAL: "",
+    YS_IMAGE: JSON.stringify({
+      imageId,
+      architecture: "amd64",
+      os: "linux",
+      repoTags: null,
+      repoDigests: null,
+    }),
+    YS_TOOL: "fixture-trivy",
+    YS_TIME: "2026-11-23T00:00:00Z",
+    YS_SBOM: sbom("offline-local"),
+  };
+  const protocol = Object.entries(fields)
+    .map(([k, v]) => `${k}|${Buffer.from(v).toString("base64")}`)
+    .join("\n");
+  let content = "";
+  runInNewContext(
+    script.replace("import {execFileSync} from 'node:child_process';", ""),
+    {
+      Buffer,
+      process: { argv: ["node", "script", imageId] },
+      execFileSync: () => protocol,
+      console: {
+        log: (value: string) => {
+          content = value;
+        },
+      },
+    },
+  );
+  await http()
+    .post(`${base}/imports`)
+    .set(auth)
+    .send({ name: "offline-local", fileName: "image.json", content })
+    .expect(201);
 });
