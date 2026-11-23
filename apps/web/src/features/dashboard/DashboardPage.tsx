@@ -105,6 +105,9 @@ export function DashboardPage(props: FeatureProps) {
       new URLSearchParams({
         view: life.id,
         level,
+        ...(["critical", "warning", "reminder"].includes(level)
+          ? { assetLevel: level }
+          : {}),
         ...(handling ? { handling } : {}),
       }).toString();
   };
@@ -256,7 +259,7 @@ export function DashboardPage(props: FeatureProps) {
             <h3>
               评估覆盖与待处理<span>单位：对象</span>
             </h3>
-            <div className="overview-grid">
+            <div className="overview-grid overview-coverage">
               <Metric
                 label="已完成评估"
                 value={m.coverage.succeeded}
@@ -282,6 +285,18 @@ export function DashboardPage(props: FeatureProps) {
                 icon="◷"
                 tone="warning"
                 open={() => risk({ state: "stale" })}
+              />
+              <Metric
+                label="覆盖未知"
+                value={m.coverage.unknown}
+                icon="?"
+                open={() => risk({ state: "coverage_unknown" })}
+              />
+              <Metric
+                label="库时间未知"
+                value={m.freshness.unknown}
+                icon="?"
+                open={() => risk({ state: "freshness_unknown" })}
               />
             </div>
           </section>

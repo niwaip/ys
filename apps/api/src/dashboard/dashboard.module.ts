@@ -590,7 +590,14 @@ class DashboardController {
           .enum(["critical", "high", "medium", "low", "unknown"])
           .optional(),
         state: z
-          .enum(["unselected", "succeeded", "failed", "stale"])
+          .enum([
+            "unselected",
+            "succeeded",
+            "failed",
+            "stale",
+            "coverage_unknown",
+            "freshness_unknown",
+          ])
           .optional(),
         limit: z.number().int().min(1).max(100).default(20),
         offset: z.number().int().min(0).max(1000000).default(0),

@@ -61,8 +61,8 @@ T12 是客户范围只读聚合，不创建扫描、评估或风险分数。按�
 
 - POST `/dashboard/overview` 接受空对象，返回 `{id,generatedAt,metrics}`。内部按 current 解析后将完整展示读模型 gzip/base64 保存到 `dashboard_scopes`，带 SHA256 校验及客户归属。
 - GET `/dashboard/scopes/:id` 回读固定概览。刷新、新增对象及 current 改变不影响该链接；跨客户返回404。固定概览保存名称、归一化观测与趋势，不包含 rawReport。当前不自动清理，避免已发出的链接失效；需监控读模型存储增长，后续单独设计保留策略。
-- POST `/dashboard/findings` 新增 `scopeId`、`severity`（小写五级）及 `state`（unselected/succeeded/failed/stale）筛选；可进一步按 hardwareType 限定。scopeId 与重新解析范围的参数混用返回400。分页统计及对象表共用筛选规则。
+- POST `/dashboard/findings` 新增 `scopeId`、`severity`（小写五级）及 `state`（unselected/succeeded/failed/stale/coverage_unknown/freshness_unknown）筛选；可进一步按 hardwareType 限定。scopeId 与重新解析范围的参数混用返回400。分页统计及对象表共用筛选规则。
 - 首页致命/高危数为匹配记录条数，不是确认影响资产；唯一CVE为去重标识数。点击后进入 `#risk?scope=…&severity=high` 等固定范围。资产入口进入对应台账，网络卡片进入同范围网络对象。
-- GET `/lifecycle-risk/summary` 仅返回固定视图ID、时间、summary及 active风险中处理状态pending的项数。生命周期等级卡单位为资产，按资产最高等级归类；待处理卡单位为风险项。点击进入固定 `view`、`level` 和 `handling` 筛选，接受风险不会消除等级。
+- GET `/lifecycle-risk/summary` 仅返回固定视图ID、时间、summary及 active风险中处理状态pending的项数。生命周期等级卡单位为资产，按资产最高等级归类；待处理卡单位为风险项。点击进入固定 `view`、`level`、`assetLevel`（最高资产风险等级）和 `handling` 筛选，接受风险不会消除等级。
 
 两类摘要独立读取，分别携带自己的固定ID与生成时间。网络或计算失败显示错误/未知，不将不可用数据转换为0。风险结果页 current 默认与旧文档中显式选择的说明不同：高级配置仍可改为显式批次模式。

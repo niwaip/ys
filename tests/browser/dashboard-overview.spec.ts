@@ -31,6 +31,7 @@ test("风险结果页独立回读固定概览范围，刷新后不带入后来�
   await expect(
     page.getByRole("button", { name: `下钻 ${name}-later`, exact: true }),
   ).toHaveCount(0);
+  await expect(page.getByRole("button", { name: /^服务器 / })).toHaveCount(0);
   await page.reload();
   await expect(
     page.getByRole("button", { name: `下钻 ${name}`, exact: true }),
@@ -63,6 +64,10 @@ test("客户概览首屏仅数字图标，资产与未评估卡片跳转到独�
       () => document.documentElement.scrollHeight <= innerHeight + 1,
     ),
   ).toBe(true);
+  await expect(page.getByRole("button", { name: /^覆盖未知 / })).toBeVisible();
+  await expect(
+    page.getByRole("button", { name: /^库时间未知 / }),
+  ).toBeVisible();
   await page.getByRole("button", { name: /^主机资产 / }).click();
   await expect(page).toHaveURL(/#assets$/);
   await page.locator("nav button").filter({ hasText: "客户风险概览" }).click();
@@ -221,4 +226,63 @@ test("生命周期概要数字链接固定视图和处理筛选，全部概要�
       () => document.documentElement.scrollWidth <= innerWidth,
     ),
   ).toBe(true);
+});
+
+test("生命周期等级卡只下钻最高等级符合的资产", async ({ page, request }) => {
+  const headers = { Authorization: "Bearer browser-test-secret-token" };
+  const base = "/api/customers/acme";
+  const config = await (
+    await request.get(`${base}/lifecycle-risk/config`, { headers })
+  ).json();
+  await request.put(`${base}/lifecycle-risk/config`, {
+    headers,
+    data: {
+      ...config,
+      serviceYears: { server: 5, network: null, unknown: null },
+    },
+  });
+  const name = `mixed-grade-${Date.now()}`;
+  const asset = await (
+    await request.post(`${base}/assets`, {
+      headers,
+      data: { name, kind: "host" },
+    })
+  ).json();
+  await request.patch(`${base}/assets/${asset.id}/classification`, {
+    headers,
+    data: { hardwareType: "server" },
+  });
+  const due = new Date();
+  due.setMonth(due.getMonth() + 3);
+  const purchase = new Date(due);
+  purchase.setFullYear(purchase.getFullYear() - 5);
+  await request.patch(`${base}/assets/${asset.id}/lifecycle`, {
+    headers,
+    data: {
+      purchasedOn: purchase.toISOString().slice(0, 10),
+      warrantyUntil: "2020-01-01",
+      sourceRef: "fixture",
+    },
+  });
+  const summary = await (
+    await request.get(`${base}/lifecycle-risk/summary`, { headers })
+  ).json();
+  const view = await (
+    await request.get(`${base}/lifecycle-risk/views/${summary.id}`, { headers })
+  ).json();
+  expect(
+    view.items
+      .filter((i: any) => i.assetId === asset.id)
+      .map((i: any) => i.level),
+  ).toContain("warning");
+  await page.goto(
+    `/#lifecycle-risk?view=${summary.id}&level=warning&assetLevel=warning`,
+  );
+  await page.getByLabel("操作员访问令牌").fill("browser-test-secret-token");
+  await page.getByRole("button", { name: "进入工作台" }).click();
+  await expect(page.getByText("仅显示最高风险等级为警告的资产")).toBeVisible();
+  await expect(page.getByRole("row").filter({ hasText: name })).toHaveCount(0);
+  await page.reload();
+  await expect(page.getByText("仅显示最高风险等级为警告的资产")).toBeVisible();
+  await expect(page.getByRole("row").filter({ hasText: name })).toHaveCount(0);
 });

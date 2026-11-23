@@ -3,13 +3,11 @@ export type DashboardFilters = {
   severity?: string | null;
   state?: string | null;
   hardwareType?: string | null;
-  kind?: string | null;
 };
 export function matchesDashboardObject(
   object: DashboardObject,
   filter: DashboardFilters,
 ) {
-  if (filter.kind && object.kind !== filter.kind) return false;
   if (filter.hardwareType && object.hardwareType !== filter.hardwareType)
     return false;
   if (
@@ -26,6 +24,10 @@ export function matchesDashboardObject(
       return ["failed", "unavailable", "timed_out", "interrupted"].includes(
         object.status,
       );
+    case "coverage_unknown":
+      return !object.coverage || object.coverage.status === "unknown";
+    case "freshness_unknown":
+      return !object.database || object.database.freshness === "unknown";
     case "stale":
       return object.database?.freshness === "stale";
     case undefined:

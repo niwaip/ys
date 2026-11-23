@@ -176,3 +176,15 @@
     gap: 10px;
   }
 }
+
+@media (min-width: 701px) {
+  .overview-coverage {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+  .overview-coverage .overview-icon {
+    display: none;
+  }
+  .overview-coverage .overview-arrow {
+    display: none;
+  }
+}

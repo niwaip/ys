@@ -173,4 +173,9 @@ export type DashboardOverview = {
   metrics: DashboardView["metrics"];
 };
 export type DashboardStatusFilter =
-  "unselected" | "succeeded" | "failed" | "stale";
+  | "unselected"
+  | "succeeded"
+  | "failed"
+  | "stale"
+  | "coverage_unknown"
+  | "freshness_unknown";

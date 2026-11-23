@@ -16,10 +16,6 @@ export const DATABASE = Symbol("DATABASE");
 // Numbered migrations are applied atomically; new features append migrations here.
 const migrations = [
   {
-    version: 28,
-    sql: `CREATE TABLE dashboard_scopes(id uuid PRIMARY KEY,customer_id text NOT NULL REFERENCES customers(id),content_gzip text NOT NULL,content_hash text NOT NULL,created_at timestamptz NOT NULL DEFAULT now()); CREATE INDEX dashboard_scopes_customer ON dashboard_scopes(customer_id,created_at DESC);`,
-  },
-  {
     version: 25,
     sql: `CREATE TABLE finding_analyses(id uuid PRIMARY KEY,customer_id text NOT NULL,assessment_id uuid NOT NULL,finding_id uuid NOT NULL,idempotency_key text NOT NULL,actor_key text NOT NULL,status text NOT NULL,details jsonb NOT NULL,created_at timestamptz NOT NULL DEFAULT now(),UNIQUE(customer_id,assessment_id,idempotency_key),FOREIGN KEY(customer_id,assessment_id) REFERENCES vulnerability_jobs(customer_id,id)); CREATE INDEX finding_analyses_scope ON finding_analyses(customer_id,assessment_id,finding_id,created_at DESC,id);`,
   },
@@ -150,6 +146,10 @@ CREATE TABLE windows_snapshots(id uuid PRIMARY KEY,customer_id text NOT NULL,ass
   {
     version: 27,
     sql: `CREATE TABLE container_sources(id uuid PRIMARY KEY,customer_id text NOT NULL REFERENCES customers(id),asset_id uuid,container_id uuid NOT NULL,version_id uuid NOT NULL,input_hash text NOT NULL,details jsonb NOT NULL,created_at timestamptz NOT NULL DEFAULT now(),UNIQUE(customer_id,id),UNIQUE(customer_id,input_hash),FOREIGN KEY(customer_id,asset_id) REFERENCES assets(customer_id,id),FOREIGN KEY(customer_id,container_id) REFERENCES container_images(customer_id,id),FOREIGN KEY(customer_id,version_id) REFERENCES container_versions(customer_id,id)); CREATE INDEX container_sources_asset ON container_sources(customer_id,asset_id,created_at DESC); CREATE TABLE container_source_artifacts(customer_id text NOT NULL,source_id uuid NOT NULL,content text NOT NULL,content_hash text NOT NULL,PRIMARY KEY(customer_id,source_id),FOREIGN KEY(customer_id,source_id) REFERENCES container_sources(customer_id,id)); CREATE TABLE container_generation_jobs(id uuid PRIMARY KEY,customer_id text NOT NULL,asset_id uuid NOT NULL,idempotency_key text NOT NULL,input_hash text NOT NULL,status text NOT NULL,details jsonb NOT NULL,created_at timestamptz NOT NULL DEFAULT now(),UNIQUE(customer_id,idempotency_key),FOREIGN KEY(customer_id,asset_id) REFERENCES assets(customer_id,id));`,
+  },
+  {
+    version: 28,
+    sql: `CREATE TABLE dashboard_scopes(id uuid PRIMARY KEY,customer_id text NOT NULL REFERENCES customers(id),content_gzip text NOT NULL,content_hash text NOT NULL,created_at timestamptz NOT NULL DEFAULT now()); CREATE INDEX dashboard_scopes_customer ON dashboard_scopes(customer_id,created_at DESC);`,
   },
 ];
 export async function openDatabase(url: string): Promise<Database> {

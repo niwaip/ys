@@ -45,6 +45,7 @@ function RiskPage(props: FeatureProps) {
     [handling, setHandling] = useState(params.get("handling") ?? ""),
     [owner, setOwner] = useState(""),
     [page, setPage] = useState(0);
+  const [assetLevel, setAssetLevel] = useState(params.get("assetLevel"));
   const [snapshot, setSnapshot] = useState(params.get("view"));
   const base = `/customers/${props.customerId}/lifecycle-risk`;
   const call = <T,>(
@@ -140,10 +141,22 @@ function RiskPage(props: FeatureProps) {
       setNotice("处理记录已保存");
     });
   }
+  const highestByAsset = new Map<string, string>();
+  const gradeOrder = ["critical", "warning", "reminder"];
+  for (const item of view?.items ?? []) {
+    if (!activeRisk(item)) continue;
+    const previous = highestByAsset.get(item.assetId);
+    if (
+      !previous ||
+      gradeOrder.indexOf(item.level) < gradeOrder.indexOf(previous)
+    )
+      highestByAsset.set(item.assetId, item.level);
+  }
   const filtered =
     view?.items.filter(
       (i) =>
         (!props.assetId || i.assetId === props.assetId) &&
+        (!assetLevel || highestByAsset.get(i.assetId) === assetLevel) &&
         (!search ||
           `${i.assetName} ${i.assetId}`
             .toLowerCase()
@@ -171,6 +184,7 @@ function RiskPage(props: FeatureProps) {
           onClick={() =>
             void run(async () => {
               setSnapshot(null);
+              setAssetLevel(null);
               const next = await call<RiskView>("/current");
               setView(next);
               setDetail(undefined);
@@ -258,6 +272,15 @@ function RiskPage(props: FeatureProps) {
           ) : (
             <p>正在读取生命周期风险…</p>
           )}
+          {assetLevel && (
+            <p className="notice">
+              仅显示最高风险等级为
+              {levelLabels[assetLevel as keyof typeof levelLabels] ??
+                assetLevel}
+              的资产{" "}
+              <button onClick={() => setAssetLevel(null)}>查看全部资产</button>
+            </p>
+          )}
           <section className="asset-panel">
             <div className="risk-filters">
               <label>
@@ -299,7 +322,10 @@ function RiskPage(props: FeatureProps) {
                 风险等级
                 <select
                   value={level}
-                  onChange={(e) => setLevel(e.target.value)}
+                  onChange={(e) => {
+                    setLevel(e.target.value);
+                    setAssetLevel(null);
+                  }}
                 >
                   <option value="attention">风险与资料异常</option>
                   <option value="active">有期限风险</option>
@@ -427,6 +453,7 @@ function RiskPage(props: FeatureProps) {
               setView(v);
               setPreview(undefined);
               setSnapshot(null);
+              setAssetLevel(null);
               setNotice("规则已保存，当前风险已重算");
             })
           }

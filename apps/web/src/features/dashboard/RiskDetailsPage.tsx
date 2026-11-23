@@ -54,8 +54,7 @@ export function RiskDetailsPage({
   const scopeId = params.get("scope"),
     severity = params.get("severity"),
     state = params.get("state"),
-    hardware = params.get("hardware"),
-    kind = params.get("kind");
+    hardware = params.get("hardware");
   const [autoCurrent, setAutoCurrent] = useState(true);
   const [hardwareType, setHardwareType] = useState<
     "" | "server" | "network" | "unknown"
@@ -123,7 +122,7 @@ export function RiskDetailsPage({
       }),
     ]).catch(fail);
     return () => activeController.abort();
-  }, [customerId, token, scopeId, severity, state, hardware, kind]);
+  }, [customerId, token, scopeId, severity, state, hardware]);
   async function apply(hardwareOverride?: "server" | "network" | "unknown") {
     setBusy(true);
     setError("");
@@ -444,31 +443,33 @@ export function RiskDetailsPage({
                 {data.metrics.inventory.software} · 镜像{" "}
                 {data.metrics.inventory.container}
               </small>
-              <div className="workspace-tabs">
-                {(
-                  [
-                    ["server", "服务器"],
-                    ["network", "网络设备"],
-                    ["unknown", "未分类硬件"],
-                  ] as const
-                ).map(([type, label]) => (
-                  <button
-                    key={type}
-                    onClick={() => {
-                      setHardwareType(type);
-                      setObject("");
-                      setSelectedObject(undefined);
-                      setRefs([]);
-                      void apply(type);
-                    }}
-                  >
-                    {label}{" "}
-                    {type === "unknown"
-                      ? data.metrics.inventory.unclassified
-                      : data.metrics.inventory[type]}
-                  </button>
-                ))}
-              </div>
+              {!scopeId && (
+                <div className="workspace-tabs">
+                  {(
+                    [
+                      ["server", "服务器"],
+                      ["network", "网络设备"],
+                      ["unknown", "未分类硬件"],
+                    ] as const
+                  ).map(([type, label]) => (
+                    <button
+                      key={type}
+                      onClick={() => {
+                        setHardwareType(type);
+                        setObject("");
+                        setSelectedObject(undefined);
+                        setRefs([]);
+                        void apply(type);
+                      }}
+                    >
+                      {label}{" "}
+                      {type === "unknown"
+                        ? data.metrics.inventory.unclassified
+                        : data.metrics.inventory[type]}
+                    </button>
+                  ))}
+                </div>
+              )}
             </article>
             <article>
               <span>已知 SBOM 组件</span>
@@ -611,7 +612,6 @@ export function RiskDetailsPage({
                       severity,
                       state,
                       hardwareType: hardware,
-                      kind,
                     }),
                   )
                   .map((row) => (
