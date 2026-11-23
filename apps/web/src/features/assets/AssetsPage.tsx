@@ -1,10 +1,14 @@
+import "./assets.css";
 import { ContainerRuntimeSummary } from "../containers/ContainerRuntimeSummary";
 import { AssetLifecycleForm } from "../lifecycle-risk/AssetLifecycleForm";
 import "../lifecycle-risk/lifecycle-risk.css";
 import { AssetBaseline } from "../collections/AssetBaseline";
 import { NetBoxPanel } from "./NetBoxPanel";
 import { useCallback, useEffect, useState, type FormEvent } from "react";
-import type { AssetPage } from "../../../../../packages/contracts";
+import type {
+  AssetPage,
+  AssetSummary,
+} from "../../../../../packages/contracts";
 import { api, ApiError } from "../../api";
 import type { FeatureProps } from "../../features";
 export function AssetsPage({
@@ -26,6 +30,8 @@ export function AssetsPage({
   const [netboxMode, setNetboxMode] = useState<boolean | undefined>();
   const refresh = useCallback(() => setRevision((x) => x + 1), []);
   const [data, setData] = useState<AssetPage>();
+  const [summary, setSummary] = useState<AssetSummary>();
+  const [summaryError, setSummaryError] = useState("");
   const [error, setError] = useState("");
   const [creating, setCreating] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -42,7 +48,9 @@ export function AssetsPage({
       {},
       controller.signal,
     )
-      .then(setData)
+      .then((value) => {
+        if (!controller.signal.aborted) setData(value);
+      })
       .catch((e) => {
         if (controller.signal.aborted) return;
         if (e instanceof ApiError && e.status === 401) onUnauthorized();
@@ -50,6 +58,26 @@ export function AssetsPage({
       });
     return () => controller.abort();
   }, [customerId, token, offset, status, revision, onUnauthorized]);
+  useEffect(() => {
+    const c = new AbortController();
+    setSummary(undefined);
+    setSummaryError("");
+    api<AssetSummary>(
+      `/customers/${customerId}/assets/summary`,
+      token,
+      {},
+      c.signal,
+    )
+      .then((value) => {
+        if (!c.signal.aborted) setSummary(value);
+      })
+      .catch((e) => {
+        if (c.signal.aborted) return;
+        if (e instanceof ApiError && e.status === 401) onUnauthorized();
+        else setSummaryError(e.message);
+      });
+    return () => c.abort();
+  }, [customerId, token, revision, onUnauthorized]);
   async function change(path: string, method: string, body?: object) {
     setSaving(true);
     setError("");
@@ -102,52 +130,96 @@ export function AssetsPage({
     }
   }
   return (
-    <>
-      <div className="page-heading">
+    <div className="asset-inventory">
+      <div className="page-heading inventory-heading">
         <div>
           <div className="eyebrow">ASSET INVENTORY</div>
           <h1>资产台账</h1>
-          <p>统一记录每一项资产，让风险分析有据可依。</p>
+          <p>掌握资产分布，集中查看主机资料与评估入口。</p>
         </div>
-        <button
-          className="primary"
-          disabled={netboxMode !== false}
-          onClick={() => {
-            setCreating(true);
-            setError("");
-          }}
-        >
-          ＋ 新建资产
-        </button>
-      </div>
-      <NetBoxPanel
-        key={customerId}
-        customerId={customerId}
-        token={token}
-        onUnauthorized={onUnauthorized}
-        onMode={setNetboxMode}
-        onChange={refresh}
-      />
-      <div className="stats">
-        <div className="stat">
-          <span>{status === "active" ? "纳管资产" : "已删除资产"}</span>
-          <strong>
-            {data?.total ?? "—"}
-            <small> 项</small>
-          </strong>
-          <p>当前客户的独立资产记录</p>
-        </div>
-        <div className="stat">
-          <span>资产类型</span>
-          <strong className="stat-word">硬件</strong>
-          <p>服务器 · 网络设备 · 未分类</p>
-        </div>
-        <div className="stat">
-          <span>评估覆盖</span>
-          <strong className="stat-word muted">尚未评估</strong>
-          <p>建立台账后接入评估依据</p>
+        <div className="inventory-heading-actions">
+          <button className="secondary" aria-label="刷新资产" onClick={refresh}>
+            ↻ 刷新
+          </button>
+          {netboxMode !== true && (
+            <button
+              className="primary"
+              disabled={netboxMode !== false}
+              onClick={() => {
+                setCreating(true);
+                setError("");
+              }}
+            >
+              ＋ 新建资产
+            </button>
+          )}
         </div>
       </div>
+      <section className="inventory-overview" aria-label="资产概览">
+        <div className="inventory-section-title">
+          <h2>资产概览</h2>
+          <span>当前客户 · 全部在管资产</span>
+        </div>
+        {summaryError && (
+          <p role="alert" className="error">
+            {summaryError}
+          </p>
+        )}
+        <div className="inventory-metrics">
+          {(
+            [
+              ["纳管资产", summary?.active, "▦", "全部在管主机"],
+              ["服务器", summary?.server, "▤", "服务器类硬件"],
+              ["网络设备", summary?.network, "⌘", "交换机、路由器等"],
+              ["未分类硬件", summary?.unclassified, "◇", "待完善硬件类型"],
+            ] as const
+          ).map(([label, value, icon, description]) => (
+            <article
+              className="inventory-metric"
+              key={label}
+              aria-label={`${label} ${value ?? "未知"}`}
+            >
+              <div className="inventory-metric-top">
+                <span>{label}</span>
+                <span className="inventory-metric-icon" aria-hidden="true">
+                  {icon}
+                </span>
+              </div>
+              <strong>
+                {value ?? "—"}
+                <small>台</small>
+              </strong>
+              <p>{description}</p>
+            </article>
+          ))}
+        </div>
+      </section>
+      <details className="inventory-source">
+        <summary>
+          <span className="inventory-source-mark" aria-hidden="true">
+            ⇄
+          </span>
+          <strong>资产来源与同步</strong>
+          <small>
+            {netboxMode === true
+              ? "NetBox 主数据 · 同步缓存"
+              : netboxMode === false
+                ? "本地资产模式"
+                : "正在检查来源…"}
+          </small>
+          <span className="inventory-source-toggle">管理与同步</span>
+        </summary>
+        <div className="inventory-source-body">
+          <NetBoxPanel
+            key={customerId}
+            customerId={customerId}
+            token={token}
+            onUnauthorized={onUnauthorized}
+            onMode={setNetboxMode}
+            onChange={refresh}
+          />
+        </div>
+      </details>
       {error && (
         <div role="alert" className="error">
           {error}{" "}
@@ -164,26 +236,6 @@ export function AssetsPage({
           ✓ {notice}
         </div>
       )}
-      <div className="form-actions">
-        <button
-          className={status === "active" ? "primary" : "secondary"}
-          onClick={() => {
-            setStatus("active");
-            setOffset(0);
-          }}
-        >
-          在管资产
-        </button>
-        <button
-          className={status === "deleted" ? "primary" : "secondary"}
-          onClick={() => {
-            setStatus("deleted");
-            setOffset(0);
-          }}
-        >
-          已删除资产
-        </button>
-      </div>
       {lifecycleAsset && (
         <AssetLifecycleForm
           key={`${customerId}:${lifecycleAsset}`}
@@ -195,13 +247,36 @@ export function AssetsPage({
           onClose={() => setLifecycleAsset(undefined)}
         />
       )}
-      <section className="asset-panel">
-        <div className="panel-heading">
-          <h2>
-            {status === "active" ? "全部资产" : "已删除资产"}{" "}
-            <span>{data?.total ?? "—"}</span>
-          </h2>
-          <span className="subtle">按建档时间排序</span>
+      <section className="asset-panel inventory-detail" aria-label="资产明细">
+        <div className="inventory-detail-heading">
+          <div>
+            <h2>
+              资产明细 <span>{data?.total ?? "—"}</span>
+            </h2>
+            <p>查看资产信息、配置分类并进入评估</p>
+          </div>{" "}
+          <div className="inventory-tabs">
+            <button
+              className={status === "active" ? "is-active" : ""}
+              aria-pressed={status === "active"}
+              onClick={() => {
+                setStatus("active");
+                setOffset(0);
+              }}
+            >
+              在管资产
+            </button>
+            <button
+              className={status === "deleted" ? "is-active" : ""}
+              aria-pressed={status === "deleted"}
+              onClick={() => {
+                setStatus("deleted");
+                setOffset(0);
+              }}
+            >
+              已删除资产
+            </button>
+          </div>
         </div>
         {!data ? (
           <div className="empty">
@@ -229,7 +304,7 @@ export function AssetsPage({
         ) : (
           <>
             <div className="table-scroll">
-              <table>
+              <table className="inventory-table">
                 <thead>
                   <tr>
                     <th>资产名称 / 内部编号</th>
@@ -243,9 +318,9 @@ export function AssetsPage({
                 <tbody>
                   {data.items.map((asset) => (
                     <tr key={asset.id}>
-                      <td>
+                      <td data-label="资产名称 / 内部编号">
                         <button
-                          className="text-button"
+                          className="text-button inventory-name"
                           onClick={() =>
                             setDetailAsset({ id: asset.id, name: asset.name })
                           }
@@ -254,7 +329,7 @@ export function AssetsPage({
                         </button>
                         <code title={asset.id}>{asset.id}</code>
                       </td>
-                      <td>
+                      <td data-label="类型">
                         <select
                           aria-label="硬件类型"
                           value={asset.hardwareType ?? "unknown"}
@@ -270,7 +345,7 @@ export function AssetsPage({
                           <option value="network">网络设备</option>
                         </select>
                       </td>
-                      <td>
+                      <td data-label="来源标识">
                         {asset.sourceRef || (
                           <span className="subtle">未提供</span>
                         )}
@@ -285,7 +360,7 @@ export function AssetsPage({
                           </small>
                         )}
                       </td>
-                      <td>
+                      <td data-label="扩展属性">
                         <details>
                           <summary>
                             {Object.keys(asset.attributes).length} 项属性
@@ -293,12 +368,12 @@ export function AssetsPage({
                           <pre>{JSON.stringify(asset.attributes, null, 2)}</pre>
                         </details>
                       </td>
-                      <td className="date">
+                      <td className="date" data-label="建档时间">
                         {new Date(asset.createdAt).toLocaleString("zh-CN")}
                       </td>
-                      <td>
+                      <td data-label="操作">
                         {status === "active" ? (
-                          <div className="form-actions">
+                          <div className="inventory-row-actions">
                             <button
                               className="secondary"
                               onClick={() =>
@@ -542,6 +617,6 @@ export function AssetsPage({
           </section>
         </div>
       )}
-    </>
+    </div>
   );
 }

@@ -268,3 +268,64 @@ test("删除移出纳管但保留快照，重启后可恢复且隔离客户", as
     .send(body)
     .expect(201);
 });
+
+test("资产概览统计全部在管分类，不随明细分页变化，删除和客户隔离正确", async () => {
+  directory = await mkdtemp(join(tmpdir(), "ys-inventory-summary-"));
+  app = await createApp({
+    databaseUrl: `pglite://${directory}`,
+    operators,
+    customers,
+  });
+  const http = request(app.getHttpServer()),
+    auth = { Authorization: `Bearer ${operators[0].token}` };
+  const create = async (customer: string, name: string) =>
+    (
+      await http
+        .post(`/api/customers/${customer}/assets`)
+        .set(auth)
+        .send({ name, kind: "host" })
+        .expect(201)
+    ).body;
+  const server = await create("acme", "server"),
+    network = await create("acme", "network");
+  await create("acme", "unclassified");
+  await create("river", "foreign");
+  await http
+    .patch(`/api/customers/acme/assets/${server.id}/classification`)
+    .set(auth)
+    .send({ hardwareType: "server" })
+    .expect(200);
+  await http
+    .patch(`/api/customers/acme/assets/${network.id}/classification`)
+    .set(auth)
+    .send({ hardwareType: "network" })
+    .expect(200);
+  expect(
+    (await http.get("/api/customers/acme/assets/summary").set(auth).expect(200))
+      .body,
+  ).toEqual({ active: 3, server: 1, network: 1, unclassified: 1, deleted: 0 });
+  expect(
+    (
+      await http
+        .get("/api/customers/acme/assets?limit=1&offset=1")
+        .set(auth)
+        .expect(200)
+    ).body.items,
+  ).toHaveLength(1);
+  await http
+    .delete(`/api/customers/acme/assets/${server.id}`)
+    .set(auth)
+    .expect(200);
+  expect(
+    (await http.get("/api/customers/acme/assets/summary").set(auth).expect(200))
+      .body,
+  ).toEqual({ active: 2, server: 0, network: 1, unclassified: 1, deleted: 1 });
+  expect(
+    (
+      await http
+        .get("/api/customers/river/assets/summary")
+        .set(auth)
+        .expect(200)
+    ).body,
+  ).toEqual({ active: 1, server: 0, network: 0, unclassified: 1, deleted: 0 });
+});

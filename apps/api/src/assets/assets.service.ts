@@ -5,6 +5,7 @@ import { ConflictException, NotFoundException } from "@nestjs/common";
 import type {
   Asset,
   AssetPage,
+  AssetSummary,
   CreateAsset,
 } from "../../../../packages/contracts";
 import type { Database } from "../persistence/database";
@@ -72,6 +73,13 @@ export class AssetsService {
       );
       return serialize(r.rows[0]);
     });
+  }
+  async summary(customerId: string): Promise<AssetSummary> {
+    const result = await this.db.query(
+      `SELECT count(*) FILTER (WHERE deleted_at IS NULL)::int AS active, count(*) FILTER (WHERE deleted_at IS NULL AND hardware_type='server')::int AS server, count(*) FILTER (WHERE deleted_at IS NULL AND hardware_type='network')::int AS network, count(*) FILTER (WHERE deleted_at IS NULL AND hardware_type='unknown')::int AS unclassified, count(*) FILTER (WHERE deleted_at IS NOT NULL)::int AS deleted FROM assets WHERE customer_id=$1`,
+      [customerId],
+    );
+    return result.rows[0] as AssetSummary;
   }
   async list(
     customerId: string,

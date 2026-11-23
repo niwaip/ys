@@ -20,6 +20,13 @@ export type Asset = CreateAsset & {
   hardwareType?: "unknown" | "server" | "network";
 };
 export type Customer = { id: string; name: string };
+export type AssetSummary = {
+  active: number;
+  server: number;
+  network: number;
+  unclassified: number;
+  deleted: number;
+};
 export type AssetPage = {
   items: Asset[];
   total: number;

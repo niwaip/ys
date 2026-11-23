@@ -42,6 +42,10 @@ export class AssetsController {
       page.data.status,
     );
   }
+  @Get("summary")
+  summary(req: AuthorizedRequest) {
+    return this.assets.summary(req.params.customerId);
+  }
   private id(req: AuthorizedRequest) {
     if (!z.uuid().safeParse(req.params.assetId).success)
       throw new BadRequestException("资产编号无效");
@@ -94,6 +98,7 @@ export class AssetsController {
 for (const method of [
   "create",
   "list",
+  "summary",
   "get",
   "remove",
   "restore",
