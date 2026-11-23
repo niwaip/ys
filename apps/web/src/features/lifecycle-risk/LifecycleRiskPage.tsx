@@ -42,7 +42,7 @@ function RiskPage(props: FeatureProps) {
     [level, setLevel] = useState(params.get("level") ?? "attention"),
     [type, setType] = useState(""),
     [category, setCategory] = useState(""),
-    [handling, setHandling] = useState(""),
+    [handling, setHandling] = useState(params.get("handling") ?? ""),
     [owner, setOwner] = useState(""),
     [page, setPage] = useState(0);
   const [snapshot, setSnapshot] = useState(params.get("view"));
@@ -154,6 +154,7 @@ function RiskPage(props: FeatureProps) {
         (!handling || i.treatment.status === handling) &&
         (level === "all" ||
           (level === "attention" && i.level !== "normal") ||
+          (level === "active" && activeRisk(i)) ||
           (level === "anomaly" && ["missing", "conflict"].includes(i.level)) ||
           i.level === level),
     ) ?? [];
@@ -301,6 +302,7 @@ function RiskPage(props: FeatureProps) {
                   onChange={(e) => setLevel(e.target.value)}
                 >
                   <option value="attention">风险与资料异常</option>
+                  <option value="active">有期限风险</option>
                   <option value="all">全部含正常</option>
                   <option value="anomaly">资料异常</option>
                   {Object.entries(levelLabels).map(([k, v]) => (

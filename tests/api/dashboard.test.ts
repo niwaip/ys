@@ -241,6 +241,61 @@ test("按固定软件输入去重CVE并保留实例，明确范围与趋势覆�
       },
     ],
   });
+  const frozen = (
+    await h
+      .post("/api/customers/acme/dashboard/overview")
+      .set(auth)
+      .send({})
+      .expect(201)
+  ).body;
+  await h
+    .put(`/api/customers/acme/software/${s.id}/history/current`)
+    .set(auth)
+    .send({ versionId: v2.id, assessmentId: second.id })
+    .expect(200);
+  const frozenHigh = (
+    await h
+      .post("/api/customers/acme/dashboard/findings")
+      .set(auth)
+      .send({ scopeId: frozen.id, severity: "high", offset: 1, limit: 2 })
+      .expect(200)
+  ).body;
+  expect(frozenHigh).toMatchObject({
+    total: 3,
+    offset: 1,
+    limit: 2,
+    assessmentRefs: [first.id],
+  });
+  expect(frozenHigh.items).toHaveLength(2);
+  expect(
+    frozenHigh.items.every(
+      (f: { assessmentId: string }) => f.assessmentId === first.id,
+    ),
+  ).toBe(true);
+  expect(
+    (
+      await h
+        .post("/api/customers/acme/dashboard/findings")
+        .set(auth)
+        .send({ scopeId: frozen.id, severity: "critical" })
+        .expect(200)
+    ).body.total,
+  ).toBe(0);
+  await h
+    .post("/api/customers/acme/dashboard/findings")
+    .set(auth)
+    .send({ scopeId: frozen.id, severity: "invalid" })
+    .expect(400);
+  await h
+    .post("/api/customers/acme/dashboard/findings")
+    .set(auth)
+    .send({ scopeId: frozen.id, assessmentRefs: [first.id] })
+    .expect(400);
+  await h
+    .put(`/api/customers/acme/software/${s.id}/history/current`)
+    .set(auth)
+    .send({ versionId: v1.id, assessmentId: first.id })
+    .expect(200);
   const selected = await view({
     assessmentRefs: [second.id],
     object: { kind: "software", id: s.id },
@@ -635,4 +690,116 @@ test("当前概览默认解析每对象单批次，删除主机排除当前统�
     .get(base + `/assets/${host.id}`)
     .set(auth)
     .expect(200);
+});
+
+test("概览固定范围跨刷新和重启保持不变，客户隔离且响应不包含明细", async () => {
+  const h = await start();
+  await h
+    .post("/api/customers/acme/assets")
+    .set(auth)
+    .send({ name: "first", kind: "host" })
+    .expect(201);
+  const summary = (
+    await h
+      .post("/api/customers/acme/dashboard/overview")
+      .set(auth)
+      .send({})
+      .expect(201)
+  ).body;
+  expect(summary.metrics.inventory.host).toBe(1);
+  expect(summary.objects).toBeUndefined();
+  await h
+    .post("/api/customers/acme/assets")
+    .set(auth)
+    .send({ name: "later", kind: "host" })
+    .expect(201);
+  const fixed = (
+    await h
+      .get(`/api/customers/acme/dashboard/scopes/${summary.id}`)
+      .set(auth)
+      .expect(200)
+  ).body;
+  expect(fixed.metrics.inventory.host).toBe(1);
+  expect(fixed.objects.map((o: { name: string }) => o.name)).toEqual(["first"]);
+  await h
+    .get(`/api/customers/river/dashboard/scopes/${summary.id}`)
+    .set(auth)
+    .expect(404);
+  await h
+    .post("/api/customers/river/dashboard/findings")
+    .set(auth)
+    .send({ scopeId: summary.id })
+    .expect(404);
+  await h
+    .get(`/api/customers/acme/dashboard/scopes/not-a-uuid`)
+    .set(auth)
+    .expect(400);
+  await app.close();
+  app = await createApp({ ...cfg, databaseUrl: `pglite://${dir}` });
+  expect(
+    (
+      await request(app.getHttpServer())
+        .get(`/api/customers/acme/dashboard/scopes/${summary.id}`)
+        .set(auth)
+        .expect(200)
+    ).body.metrics.inventory.host,
+  ).toBe(1);
+});
+
+test("生命周期概要只返回数字及固定视图，接受风险不会消除等级", async () => {
+  const h = await start();
+  const asset = (
+    await h
+      .post("/api/customers/acme/assets")
+      .set(auth)
+      .send({ name: "summary-lifetime", kind: "host" })
+      .expect(201)
+  ).body;
+  await h
+    .patch(`/api/customers/acme/assets/${asset.id}/lifecycle`)
+    .set(auth)
+    .send({ warrantyUntil: "2020-01-01", sourceRef: "fixture contract" })
+    .expect(200);
+  const summary = (
+    await h
+      .get("/api/customers/acme/lifecycle-risk/summary")
+      .set(auth)
+      .expect(200)
+  ).body;
+  expect(summary.items).toBeUndefined();
+  expect(summary.pendingItems).toBe(1);
+  expect(summary.summary.byLevel.critical.assets).toBe(1);
+  const fixed = (
+    await h
+      .get(`/api/customers/acme/lifecycle-risk/views/${summary.id}`)
+      .set(auth)
+      .expect(200)
+  ).body;
+  expect(
+    fixed.items.find((i: { type: string }) => i.type === "warranty").treatment
+      .status,
+  ).toBe("pending");
+  await h
+    .put(`/api/customers/acme/lifecycle-risk/treatments/${asset.id}/warranty`)
+    .set(auth)
+    .send({
+      status: "accepted",
+      owner: "T",
+      note: "fixture acceptance",
+      acceptedUntil: "2099-01-01",
+    })
+    .expect(200);
+  const after = (
+    await h
+      .get("/api/customers/acme/lifecycle-risk/summary")
+      .set(auth)
+      .expect(200)
+  ).body;
+  expect(after.pendingItems).toBe(0);
+  expect(after.summary.byLevel.critical.assets).toBe(1);
+  expect(after.summary.acceptedItems).toBe(1);
+  await h
+    .get(`/api/customers/river/lifecycle-risk/views/${summary.id}`)
+    .set(auth)
+    .expect(404);
 });

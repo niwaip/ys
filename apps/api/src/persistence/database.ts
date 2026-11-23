@@ -16,6 +16,10 @@ export const DATABASE = Symbol("DATABASE");
 // Numbered migrations are applied atomically; new features append migrations here.
 const migrations = [
   {
+    version: 28,
+    sql: `CREATE TABLE dashboard_scopes(id uuid PRIMARY KEY,customer_id text NOT NULL REFERENCES customers(id),content_gzip text NOT NULL,content_hash text NOT NULL,created_at timestamptz NOT NULL DEFAULT now()); CREATE INDEX dashboard_scopes_customer ON dashboard_scopes(customer_id,created_at DESC);`,
+  },
+  {
     version: 25,
     sql: `CREATE TABLE finding_analyses(id uuid PRIMARY KEY,customer_id text NOT NULL,assessment_id uuid NOT NULL,finding_id uuid NOT NULL,idempotency_key text NOT NULL,actor_key text NOT NULL,status text NOT NULL,details jsonb NOT NULL,created_at timestamptz NOT NULL DEFAULT now(),UNIQUE(customer_id,assessment_id,idempotency_key),FOREIGN KEY(customer_id,assessment_id) REFERENCES vulnerability_jobs(customer_id,id)); CREATE INDEX finding_analyses_scope ON finding_analyses(customer_id,assessment_id,finding_id,created_at DESC,id);`,
   },

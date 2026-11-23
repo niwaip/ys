@@ -174,3 +174,8 @@ export type RiskView = {
   items: RiskItem[];
   summary: RiskSummary;
 };
+
+export type LifecycleRiskOverview = Pick<
+  RiskView,
+  "id" | "calculatedAt" | "summary"
+> & { pendingItems: number };

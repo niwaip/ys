@@ -71,11 +71,7 @@ test("host image discovery, batch generation and scan, source evidence, manual/o
     page.getByRole("heading", { name: "手工镜像", exact: true }),
   ).toBeVisible();
   await page.locator("nav button").filter({ hasText: "客户风险概览" }).click();
-  const summary = page.getByRole("region", { name: "容器镜像扫描概要" });
-  await expect(summary).toContainText("生成并扫描完成");
-  await summary
-    .getByRole("button", { name: "选择主机生成 / 查看镜像" })
-    .click();
+  await page.getByRole("button", { name: /^镜像对象 / }).click();
   await expect(
     page.getByRole("heading", { name: "容器镜像", exact: true }),
   ).toBeVisible();

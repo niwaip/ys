@@ -166,3 +166,11 @@ export type DashboardCatalog = {
   }[];
   truncated: boolean;
 };
+
+export type DashboardOverview = {
+  id: string;
+  generatedAt: string;
+  metrics: DashboardView["metrics"];
+};
+export type DashboardStatusFilter =
+  "unselected" | "succeeded" | "failed" | "stale";

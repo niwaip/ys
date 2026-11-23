@@ -1,3 +1,4 @@
+import { matchesDashboardObject } from "../../../../packages/contracts/dashboard-filter";
 import {
   BadRequestException,
   Controller,
@@ -10,7 +11,11 @@ import {
   Post,
   Req,
 } from "@nestjs/common";
-import { createHash } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
+import { gzip, gunzip } from "node:zlib";
+import { promisify } from "node:util";
+const compress = promisify(gzip),
+  decompress = promisify(gunzip);
 import { z } from "zod";
 import { DATABASE, type Database } from "../persistence/database";
 import type { AuthorizedRequest } from "../auth/auth";
@@ -138,13 +143,75 @@ export class DashboardService {
       truncated: a.rows.length > 1000,
     };
   }
+  async overview(customer: string) {
+    const view = await this.view(customer, {
+      selectionMode: "current",
+      assessmentRefs: [],
+    });
+    const id = randomUUID(),
+      content = JSON.stringify(view);
+    await this.db.query(
+      "INSERT INTO dashboard_scopes(id,customer_id,content_gzip,content_hash) VALUES($1,$2,$3,$4)",
+      [
+        id,
+        customer,
+        (await compress(content)).toString("base64"),
+        createHash("sha256").update(content).digest("hex"),
+      ],
+    );
+    return { id, generatedAt: view.generatedAt, metrics: view.metrics };
+  }
+  async fixedView(customer: string, id: string): Promise<DashboardView> {
+    if (!z.uuid().safeParse(id).success)
+      throw new BadRequestException("概览范围编号无效");
+    const r = await this.db.query(
+      "SELECT content_gzip,content_hash FROM dashboard_scopes WHERE customer_id=$1 AND id=$2",
+      [customer, id],
+    );
+    if (!r.rows.length) throw new NotFoundException("概览范围不存在或无权访问");
+    const content = (
+      await decompress(Buffer.from(String(r.rows[0].content_gzip), "base64"))
+    ).toString("utf8");
+    if (
+      createHash("sha256").update(content).digest("hex") !==
+      r.rows[0].content_hash
+    )
+      throw new Error("概览范围完整性校验失败");
+    return JSON.parse(content);
+  }
   async findings(
     customer: string,
-    input: DashboardRequest & { limit: number; offset: number },
+    input: DashboardRequest & {
+      limit: number;
+      offset: number;
+      scopeId?: string;
+      severity?: string;
+      state?: string;
+    },
   ) {
     // Use the same object ownership, current-input and time-range resolution as the overview.
-    const view = await this.view(customer, input);
-    const rows = view.objects.flatMap((object) => object.findings);
+    if (
+      input.scopeId &&
+      (input.object ||
+        input.from ||
+        input.to ||
+        input.assessmentRefs?.length ||
+        input.lifecycleAssessmentId ||
+        input.selectionMode === "current" ||
+        input.trendMode === "object_history")
+    )
+      throw new BadRequestException("固定概览范围不能与其他统计范围混用");
+    const view = input.scopeId
+      ? await this.fixedView(customer, input.scopeId)
+      : await this.view(customer, input);
+    const objects = view.objects.filter((o) =>
+      matchesDashboardObject(o, input),
+    );
+    const rows = objects
+      .flatMap((object) => object.findings)
+      .filter(
+        (f) => !input.severity || f.severity.toLowerCase() === input.severity,
+      );
     return {
       items: rows.slice(input.offset, input.offset + input.limit),
       total: rows.length,
@@ -507,9 +574,24 @@ class DashboardController {
       page.data.offset,
     );
   }
+  @Post("overview") overview(req: AuthorizedRequest) {
+    if (!z.object({}).strict().safeParse(req.body).success)
+      throw new BadRequestException("概览参数无效");
+    return this.service.overview(req.params.customerId);
+  }
+  @Get("scopes/:scopeId") scope(req: AuthorizedRequest) {
+    return this.service.fixedView(req.params.customerId, req.params.scopeId);
+  }
   @Post("findings") @HttpCode(200) findings(req: AuthorizedRequest) {
     const r = inputSchema
       .extend({
+        scopeId: z.uuid().optional(),
+        severity: z
+          .enum(["critical", "high", "medium", "low", "unknown"])
+          .optional(),
+        state: z
+          .enum(["unselected", "succeeded", "failed", "stale"])
+          .optional(),
         limit: z.number().int().min(1).max(100).default(20),
         offset: z.number().int().min(0).max(1000000).default(0),
       })
@@ -523,7 +605,13 @@ class DashboardController {
     return this.service.view(req.params.customerId, r.data);
   }
 }
-for (const method of ["catalog", "view", "findings"] as const)
+for (const method of [
+  "catalog",
+  "view",
+  "findings",
+  "overview",
+  "scope",
+] as const)
   Req()(DashboardController.prototype, method, 0);
 Inject(DashboardService)(DashboardController, undefined, 0);
 @Module({})

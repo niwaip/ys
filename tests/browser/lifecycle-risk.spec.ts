@@ -84,7 +84,7 @@ test("configure lifecycle dates, preview rules, process risk and drill down from
   await page.getByRole("button", { name: "关闭详情" }).click();
   await page.locator("nav button").filter({ hasText: "客户风险概览" }).click();
   await expect(
-    page.getByRole("heading", { name: "当前生命周期风险" }),
+    page.getByRole("region", { name: "生命周期风险概要" }),
   ).toBeVisible();
   await page.getByRole("button", { name: /致命生命周期风险/ }).click();
   await expect(

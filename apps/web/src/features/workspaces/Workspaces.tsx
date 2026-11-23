@@ -23,7 +23,7 @@ import { AssessmentsPage } from "../assessments/AssessmentsPage";
 import { WindowsAssessmentsPage } from "../windows-assessments/WindowsAssessmentsPage";
 import { ContainersPage } from "../containers/ContainersPage";
 import { LifecyclePage } from "../lifecycle/LifecyclePage";
-import { DashboardPage } from "../dashboard/DashboardPage";
+import { RiskDetailsPage } from "../dashboard/RiskDetailsPage";
 
 function Tabs({
   labels,
@@ -76,7 +76,7 @@ export function LifecycleEvaluation(props: FeatureProps) {
   return <LifecyclePage {...props} mode="assessment" />;
 }
 export function RiskWorkspace(props: FeatureProps) {
-  return <DashboardPage {...props} title="风险结果" />;
+  return <RiskDetailsPage {...props} />;
 }
 
 function AssetAssessment({

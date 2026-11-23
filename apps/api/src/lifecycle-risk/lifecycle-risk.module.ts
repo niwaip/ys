@@ -439,6 +439,19 @@ class RiskController {
   @Get("latest") latest(req: AuthorizedRequest) {
     return this.service.latest(req.params.customerId);
   }
+  @Get("summary") async summary(req: AuthorizedRequest) {
+    const view = await this.service.current(req.params.customerId);
+    return {
+      id: view.id,
+      calculatedAt: view.calculatedAt,
+      summary: view.summary,
+      pendingItems: view.items.filter(
+        (i) =>
+          ["critical", "warning", "reminder"].includes(i.level) &&
+          i.treatment.status === "pending",
+      ).length,
+    };
+  }
   @Get("current") current(req: AuthorizedRequest) {
     return this.service.current(req.params.customerId);
   }
@@ -451,6 +464,7 @@ class RiskController {
 for (const method of [
   "config",
   "current",
+  "summary",
   "view",
   "preview",
   "save",

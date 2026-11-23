@@ -85,7 +85,7 @@ test("客户概览选择固定版本、同scope下钻和趋势覆盖，刷新及
   await page.getByLabel("操作员访问令牌").fill("browser-test-secret-token");
   await page.getByRole("button", { name: "进入工作台" }).click();
   await page.locator("nav button").filter({ hasText: "资产台账" }).click();
-  await page.getByRole("button", { name: "客户风险概览" }).click();
+  await page.locator("nav button").filter({ hasText: "风险结果" }).click();
   await page.getByText("筛选范围与历史批次", { exact: true }).click();
   const catalogSelect = page.getByLabel("概览对象");
   await expect
@@ -157,14 +157,14 @@ test("客户概览选择固定版本、同scope下钻和趋势覆盖，刷新及
   ).toBeVisible();
   await page.screenshot({ path: "output/t12-dashboard.png", fullPage: true });
   await page.reload();
-  await page.getByRole("button", { name: "客户风险概览" }).click();
+  await page.locator("nav button").filter({ hasText: "风险结果" }).click();
   await expect(
     page.getByRole("button", { name: `下钻 ${name}` }),
   ).toBeVisible();
   await page.locator("nav button").filter({ hasText: "生命周期资料" }).click();
-  await page.getByRole("button", { name: "客户风险概览" }).click();
+  await page.locator("nav button").filter({ hasText: "风险结果" }).click();
   await expect(
-    page.getByRole("heading", { name: "客户风险概览", exact: true }),
+    page.getByRole("heading", { name: "风险结果", exact: true }),
   ).toBeVisible();
   await page.getByLabel("当前客户").selectOption("river");
   await expect(page.getByRole("button", { name: `下钻 ${name}` })).toHaveCount(
