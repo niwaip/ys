@@ -36,6 +36,7 @@ const upload = z
     assetId: z.uuid(),
     fileName: z.string().trim().min(1).max(200),
     content: z.string().min(1).max(5000000),
+    scope: z.enum(["basic", "container-inventory"]).optional(),
   })
   .strict();
 const manual = z
@@ -46,7 +47,20 @@ const manual = z
   })
   .strict();
 function summary(row: Record<string, unknown>): CollectionSnapshot {
-  if (row.summary) return row.summary as CollectionSnapshot;
+  if (row.summary) {
+    const old = row.summary as CollectionSnapshot;
+    const execution = old.extensions.execution as
+      { scope?: string } | undefined;
+    return {
+      ...old,
+      scope:
+        execution?.scope === "container-inventory" ||
+        (!execution?.scope &&
+          ["acquired", "partial"].includes(old.sections.images.status))
+          ? "container-inventory"
+          : "basic",
+    };
+  }
   const data = row.normalized as HostCollection;
   return {
     id: String(row.id),
@@ -62,6 +76,12 @@ function summary(row: Record<string, unknown>): CollectionSnapshot {
     extensions: Object.fromEntries(
       Object.entries(data.extensions).filter(([key]) => key !== "rawSections"),
     ),
+    scope:
+      (data.extensions.execution as { scope?: string } | undefined)?.scope ===
+        "container-inventory" ||
+      ["acquired", "partial"].includes(data.sections.images?.status ?? "")
+        ? "container-inventory"
+        : "basic",
     assessmentStatus: "not_assessed",
     target: row.target as Record<string, unknown>,
     sections: Object.fromEntries(
@@ -225,16 +245,22 @@ export class CollectionsService {
   }
   async list(
     customerId: string,
-    query: { limit: number; offset: number; assetId?: string },
+    query: { limit: number; offset: number; assetId?: string; scope?: string },
   ) {
     const rows = await this.db.query(
-      "SELECT id,customer_id,asset_id,entry,file_name,content_hash,note,created_at,target,summary,CASE WHEN summary IS NULL THEN normalized ELSE NULL END AS normalized FROM collection_snapshots WHERE customer_id=$1 AND ($2::uuid IS NULL OR asset_id=$2) ORDER BY created_at DESC,id LIMIT $3 OFFSET $4",
-      [customerId, query.assetId ?? null, query.limit, query.offset],
+      "SELECT id,customer_id,asset_id,entry,file_name,content_hash,note,created_at,target,summary,CASE WHEN summary IS NULL THEN normalized ELSE NULL END AS normalized FROM collection_snapshots WHERE customer_id=$1 AND ($2::uuid IS NULL OR asset_id=$2)  AND ($5::text IS NULL OR COALESCE(normalized->'extensions'->'execution'->>'scope',CASE WHEN normalized->'sections'->'images'->>'status' IN ('acquired','partial') THEN 'container-inventory' ELSE 'basic' END)=$5) ORDER BY created_at DESC,id LIMIT $3 OFFSET $4",
+      [
+        customerId,
+        query.assetId ?? null,
+        query.limit,
+        query.offset,
+        query.scope ?? null,
+      ],
     );
     const total = (
       await this.db.query(
-        "SELECT count(*)::int AS total FROM collection_snapshots WHERE customer_id=$1 AND ($2::uuid IS NULL OR asset_id=$2)",
-        [customerId, query.assetId ?? null],
+        "SELECT count(*)::int AS total FROM collection_snapshots WHERE customer_id=$1 AND ($2::uuid IS NULL OR asset_id=$2) AND ($3::text IS NULL OR COALESCE(normalized->'extensions'->'execution'->>'scope',CASE WHEN normalized->'sections'->'images'->>'status' IN ('acquired','partial') THEN 'container-inventory' ELSE 'basic' END)=$3)",
+        [customerId, query.assetId ?? null, query.scope ?? null],
       )
     ).rows[0].total;
     return {
@@ -284,6 +310,30 @@ class CollectionsController {
     const input = upload.safeParse(req.body);
     if (!input.success)
       throw new BadRequestException("需assetId、fileName和content");
+    if (input.data.scope) {
+      let raw;
+      try {
+        raw = hostCollectionSchema.parse(JSON.parse(input.data.content));
+      } catch {
+        throw new BadRequestException("采集格式无效");
+      }
+      const declared = (
+        raw.extensions.execution as { scope?: string } | undefined
+      )?.scope;
+      const docker =
+        ["acquired", "partial"].includes(raw.sections.images?.status ?? "") ||
+        ["acquired", "partial"].includes(raw.sections.containers?.status ?? "");
+      if (
+        (declared && declared !== input.data.scope) ||
+        (input.data.scope === "basic" && docker) ||
+        (input.data.scope === "container-inventory" &&
+          (!raw.sections.images ||
+            !raw.sections.containers ||
+            raw.sections.os ||
+            raw.sections.packages))
+      )
+        throw new BadRequestException("资料范围与选定采集任务不符");
+    }
     return this.service.save(
       req.params.customerId,
       input.data.assetId,
@@ -296,6 +346,19 @@ class CollectionsController {
     const input = manual.safeParse(req.body);
     if (!input.success)
       throw new BadRequestException("手工资料需目标、来源说明及ys-host/1数据");
+    if (
+      [
+        input.data.data.sections.images,
+        input.data.data.sections.containers,
+        input.data.data.sections.dockerDaemon,
+      ].some(
+        (section) =>
+          section && ["acquired", "partial"].includes(section.status),
+      )
+    )
+      throw new BadRequestException(
+        "容器运行资料须来自采集结果，不能人工声明为发现",
+      );
     return this.service.save(
       req.params.customerId,
       input.data.assetId,
@@ -307,7 +370,10 @@ class CollectionsController {
   }
   @Get("snapshots") list(req: AuthorizedRequest) {
     const query = pagination
-      .extend({ assetId: z.uuid().optional() })
+      .extend({
+        assetId: z.uuid().optional(),
+        scope: z.enum(["basic", "container-inventory"]).optional(),
+      })
       .safeParse(req.query);
     if (!query.success) throw new BadRequestException("分页或目标编号无效");
     return this.service.list(req.params.customerId, query.data);

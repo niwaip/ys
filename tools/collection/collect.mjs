@@ -1,9 +1,11 @@
 import { spawn } from "node:child_process";
 const prelude = String.raw`export LC_ALL=C
-PATH=/usr/sbin:/usr/bin:/sbin:/bin
+PATH=/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 export PATH
 unset DOCKER_HOST DOCKER_CONTEXT DOCKER_TLS_VERIFY DOCKER_CERT_PATH
-DOCKER_CONFIG=/dev/null
+YS_DOCKER_CONFIG=$(mktemp -d) || exit 1
+trap 'rm -rf "$YS_DOCKER_CONFIG"' EXIT HUP INT TERM
+DOCKER_CONFIG=$YS_DOCKER_CONFIG
 export DOCKER_CONFIG
 emit() {
  key=$1
@@ -196,7 +198,7 @@ export async function collect(profile, scope, signal) {
     profile,
     prelude +
       (scope === "basic" ? basic : inventory) +
-      (profile.allowDocker ? daemon : ""),
+      (scope === "container-inventory" ? daemon : ""),
     signal,
   );
   const values = parse(raw);
@@ -292,7 +294,7 @@ export async function collect(profile, scope, signal) {
       raw: text,
     }));
   }
-  if (profile.allowDocker)
+  if (scope === "container-inventory")
     sections.dockerDaemon = section(values.dockerDaemon, (text) => {
       const server = JSON.parse(text);
       if (!server?.Version) throw new Error("daemon");
@@ -341,7 +343,7 @@ export async function collect(profile, scope, signal) {
           ? values.machineId.text.trim()
           : null,
     },
-    collectedAt: null,
+    collectedAt: new Date().toISOString(),
     sections,
     extensions: {
       adapterVersion: "linux-ssh/1",
@@ -354,5 +356,48 @@ export async function collect(profile, scope, signal) {
           "inventory only; writable layers, volumes and image components not scanned",
       },
     },
+  };
+}
+
+// A bounded read-only check; it does not discover images or generate SBOMs.
+export async function probe(profile, scope, signal) {
+  const script =
+    prelude +
+    `# YS_CAPABILITY_PROBE\nemit identity id -un\nemit basic sh -c 'test -r /etc/os-release && uname -s'\n` +
+    (scope === "container-inventory" && profile.allowDocker
+      ? `emit dockerClient docker --version\n${daemon}emit trivy sh -c 'command -v trivy >/dev/null 2>&1 || exit 127; trivy --version'\n`
+      : "");
+  const values = parse(
+    await execute(
+      { ...profile, timeoutMs: Math.min(profile.timeoutMs ?? 15000, 15000) },
+      script,
+      signal,
+      100000,
+    ),
+  );
+  if (values.hostname?.code !== 0 || !values.hostname.text.trim())
+    throw new Error("identity");
+  const check = (value) => ({
+    status: !value
+      ? "unchecked"
+      : value.code === 0
+        ? "available"
+        : value.code === 127
+          ? "tool_missing"
+          : "access_failed",
+  });
+  return {
+    hostname: values.hostname.text.trim(),
+    identity: values.identity?.code === 0 ? values.identity.text.trim() : null,
+    basic: check(values.basic),
+    docker:
+      scope !== "container-inventory"
+        ? { status: "unchecked" }
+        : !profile.allowDocker
+          ? { status: "unauthorized" }
+          : values.dockerClient?.code === 127
+            ? { status: "tool_missing" }
+            : check(values.dockerDaemon),
+    trivy: check(values.trivy),
   };
 }

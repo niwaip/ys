@@ -1,0 +1,44 @@
+{
+  "parent": {
+    "number": 29,
+    "id": 6551952685,
+    "url": "https://github.com/niwaip/ys/issues/29",
+    "title": "[Spec] 采集页面重构与受控本机 Docker 采集"
+  },
+  "tickets": [
+    {
+      "number": 30,
+      "id": 6551953352,
+      "url": "https://github.com/niwaip/ys/issues/30",
+      "title": "[Collection 01] 独立主机基础采集流程",
+      "blockedBy": []
+    },
+    {
+      "number": 31,
+      "id": 6551954342,
+      "url": "https://github.com/niwaip/ys/issues/31",
+      "title": "[Collection 02] 独立 Docker 目录发现与镜像扫描衔接",
+      "blockedBy": [
+        30
+      ]
+    },
+    {
+      "number": 32,
+      "id": 6551955542,
+      "url": "https://github.com/niwaip/ys/issues/32",
+      "title": "[Collection 03] YS 部署主机的本机采集",
+      "blockedBy": [
+        31
+      ]
+    },
+    {
+      "number": 33,
+      "id": 6551957180,
+      "url": "https://github.com/niwaip/ys/issues/33",
+      "title": "[Collection 04] Linux 离线采集完整流程",
+      "blockedBy": [
+        31
+      ]
+    }
+  ]
+}

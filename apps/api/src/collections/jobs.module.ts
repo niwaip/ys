@@ -1,3 +1,5 @@
+import { hostname, userInfo } from "node:os";
+import { CollectionExperienceController } from "./experience";
 import { requireActiveAsset } from "../assets/asset-state";
 import { DirectCollectionExecutor } from "./direct-collection";
 import { CollectionAccessService, CollectionAccessController } from "./access";
@@ -89,9 +91,13 @@ export class CollectionJobsService {
               ? ["basic", "container-inventory"]
               : ["basic"],
             transport: p.transport ?? "ssh",
-            host: p.host,
+            host: p.transport === "local" ? hostname() : p.host,
+            username:
+              p.transport === "local" ? userInfo().username : p.username,
             credentialName:
-              p.transport === "local" ? "本机服务身份" : "服务器预配置",
+              p.transport === "local"
+                ? `本机服务身份：${userInfo().username}`
+                : "服务器预配置",
           })),
       ],
     };
@@ -309,7 +315,11 @@ export class CollectionJobsModule {
     return {
       module: CollectionJobsModule,
       imports: [CollectionsModule],
-      controllers: [JobsController, CollectionAccessController],
+      controllers: [
+        JobsController,
+        CollectionAccessController,
+        CollectionExperienceController,
+      ],
       exports: [CollectionAccessService, CollectionJobsService],
       providers: [
         {

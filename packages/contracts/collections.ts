@@ -103,7 +103,21 @@ export const hostCollectionSchema = z
   });
 export type HostCollection = z.infer<typeof hostCollectionSchema>;
 export type CollectionSectionName = z.infer<typeof sectionName>;
+export type CollectionScope = "basic" | "container-inventory";
+export type CollectionCapabilities = {
+  assetId: string;
+  profileId: string;
+  scope: CollectionScope;
+  hostname: string;
+  identity: string | null;
+  transport: string;
+  checkedAt: string;
+  basic: { status: string };
+  docker: { status: string };
+  trivy: { status: string };
+};
 export type CollectionSnapshot = {
+  scope?: CollectionScope;
   id: string;
   customerId: string;
   assetId: string;

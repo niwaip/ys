@@ -2,7 +2,7 @@ import { AssetBaseline } from "./AssetBaseline";
 import "./collections.css";
 import { ConnectionEditor } from "./ConnectionEditor";
 import { VersionLinks } from "./VersionLinks";
-import { useEffect, useState, type FormEvent } from "react";
+import { useEffect, useState, useRef, type FormEvent } from "react";
 import type { AssetPage } from "../../../../../packages/contracts";
 import type { CollectionSnapshot } from "../../../../../packages/contracts/collections";
 import { api, ApiError } from "../../api";
@@ -45,15 +45,24 @@ export function CollectionsPage({
   customerId,
   token,
   onUnauthorized,
+  assetId,
+  onNavigate,
 }: FeatureProps) {
+  const completedJobs = useRef(new Set<string>());
   const [assets, setAssets] = useState<AssetPage>();
-  const [target, setTarget] = useState("");
+  const [target, setTarget] = useState(assetId ?? "");
   const [tab, setTab] = useState("connect");
   const [profileId, setProfileId] = useState("");
   const [editingConnection, setEditingConnection] = useState(false);
   const [usePi, setUsePi] = useState(false);
   const [historyTab, setHistoryTab] = useState("records");
   const [scope, setScope] = useState("basic");
+  const [capability, setCapability] =
+    useState<
+      import("../../../../../packages/contracts/collections").CollectionCapabilities
+    >();
+  const [historyScope, setHistoryScope] = useState("all");
+  const [assetOffset, setAssetOffset] = useState(0);
   const [profiles, setProfiles] = useState<Profile[]>([]);
   const [snapshots, setSnapshots] = useState<{
     items: CollectionSnapshot[];
@@ -80,7 +89,7 @@ export function CollectionsPage({
     setError("");
     Promise.all([
       api<AssetPage>(
-        `/customers/${customerId}/assets?limit=100`,
+        `/customers/${customerId}/assets?limit=100&offset=${assetOffset}`,
         token,
         {},
         controller.signal,
@@ -92,7 +101,7 @@ export function CollectionsPage({
         controller.signal,
       ),
       api<{ items: CollectionSnapshot[]; total: number }>(
-        `${base}/snapshots?limit=20&offset=${offset}`,
+        `${base}/snapshots?limit=20&offset=${offset}${historyScope === "all" ? "" : `&scope=${historyScope}`}`,
         token,
         {},
         controller.signal,
@@ -109,11 +118,19 @@ export function CollectionsPage({
         if (!controller.signal.aborted) fail(e);
       });
     return () => controller.abort();
-  }, [base, token, revision, offset, onUnauthorized]);
+  }, [
+    base,
+    token,
+    revision,
+    offset,
+    historyScope,
+    assetOffset,
+    onUnauthorized,
+  ]);
   useEffect(() => {
     const controller = new AbortController();
     let timer: ReturnType<typeof setTimeout>;
-    let hadRunning = false;
+
     const load = async () => {
       try {
         const result = await api<{ items: Job[] }>(
@@ -124,11 +141,13 @@ export function CollectionsPage({
         );
         if (controller.signal.aborted) return;
         setJobs(result.items);
-        const running = result.items.some((job) =>
-          ["queued", "running"].includes(job.status),
+        const completed = result.items.filter(
+          (job) => job.snapshotId && !completedJobs.current.has(job.id),
         );
-        if (hadRunning && !running) setRevision((value) => value + 1);
-        hadRunning = running;
+        if (completed.length) {
+          completed.forEach((job) => completedJobs.current.add(job.id));
+          setRevision((value) => value + 1);
+        }
         if (
           result.items.some((job) => ["queued", "running"].includes(job.status))
         )
@@ -188,7 +207,7 @@ export function CollectionsPage({
       } else if (tab === "upload") {
         const saved = await api<CollectionSnapshot>(`${base}/upload`, token, {
           method: "POST",
-          body: JSON.stringify({ assetId: target, fileName, content }),
+          body: JSON.stringify({ assetId: target, fileName, content, scope }),
         });
         setSelected(saved);
         setNotice("原始资料与快照已保存，尚未评估");
@@ -201,7 +220,10 @@ export function CollectionsPage({
             profileId,
             method: usePi ? "pi" : "ssh",
             scope,
-            message: String(values.get("message") || "基础采集"),
+            message: String(
+              values.get("message") ||
+                (scope === "basic" ? "主机基础采集" : "容器目录发现"),
+            ),
           }),
         });
         setNotice(
@@ -238,8 +260,58 @@ export function CollectionsPage({
         ? old
         : (profiles.find((item) => item.assetId === target)?.id ?? ""),
     );
-    setScope("basic");
   }, [target, profiles]);
+  useEffect(() => {
+    setCapability(undefined);
+  }, [target, profileId, scope]);
+  async function checkCapabilities() {
+    setBusy(true);
+    setError("");
+    try {
+      setCapability(
+        await api(`${base}/capabilities`, token, {
+          method: "POST",
+          body: JSON.stringify({ assetId: target, profileId, scope }),
+        }),
+      );
+    } catch (e) {
+      fail(e);
+    } finally {
+      setBusy(false);
+    }
+  }
+  async function downloadScript() {
+    setBusy(true);
+    setError("");
+    try {
+      const script = await api<{ fileName: string; content: string }>(
+        `${base}/script?scope=${scope}`,
+        token,
+      );
+      const url = URL.createObjectURL(
+        new Blob([script.content], { type: "text/javascript" }),
+      );
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = script.fileName;
+      a.click();
+      setTimeout(() => URL.revokeObjectURL(url), 1000);
+    } catch (e) {
+      fail(e);
+    } finally {
+      setBusy(false);
+    }
+  }
+  const capabilityLabels: Record<string, string> = {
+    unchecked: "未检查",
+    unauthorized: "未授权",
+    tool_missing: "工具缺失",
+    access_failed: "访问失败",
+    available: "可用",
+  };
+  const directoryAuthorized = Boolean(
+    selectedProfile?.scopes.includes("container-inventory"),
+  );
   const address = String(
     asset?.attributes.primaryIp4 ?? asset?.attributes.ip ?? "",
   ).split("/")[0];
@@ -252,11 +324,11 @@ export function CollectionsPage({
         <div>
           <span className="collect-kicker">资产与证据</span>
           <h1>资产采集</h1>
-          <p>连接主机，收集基础资料，为风险分析建立依据。</p>
+          <p>先确定目标与执行位置，再分别取得主机基础资料或容器运行资料。</p>
         </div>
         <div className="collect-live">
           <span />
-          基础采集 · 只读访问
+          Linux 主机 · 只读访问
         </div>
       </header>
       <div className="collect-metrics">
@@ -291,35 +363,13 @@ export function CollectionsPage({
           </div>
           <span className="collect-step">01 / 准备资料</span>
         </div>
-        <div
-          className="collect-methods"
-          role="tablist"
-          aria-label="资料接入方式"
-        >
-          {[
-            ["connect", "连接采集", "↗"],
-            ["upload", "上传脚本结果", "⇧"],
-            ["manual", "手动输入", "✎"],
-          ].map(([key, label, icon]) => (
-            <button
-              type="button"
-              key={key}
-              role="tab"
-              aria-selected={tab === key}
-              className={tab === key ? "selected" : ""}
-              onClick={() => setTab(key)}
-            >
-              <span>{icon}</span>
-              {label}
-            </button>
-          ))}
-        </div>
-        <div className="collect-workspace">
-          <div className="collect-target">
+        <div className="collect-target collect-shared-target">
+          <div className="collect-identity">
             <label>
               主机资产
               <select
                 aria-label="主机资产"
+                disabled={busy}
                 value={target}
                 onChange={(e) => setTarget(e.target.value)}
               >
@@ -334,6 +384,24 @@ export function CollectionsPage({
                 ))}
               </select>
             </label>
+            {assets && assets.total > 100 && (
+              <div className="pagination">
+                <button
+                  type="button"
+                  disabled={!assetOffset}
+                  onClick={() => setAssetOffset(Math.max(0, assetOffset - 100))}
+                >
+                  上一批主机
+                </button>
+                <button
+                  type="button"
+                  disabled={assetOffset + 100 >= assets.total}
+                  onClick={() => setAssetOffset(assetOffset + 100)}
+                >
+                  下一批主机
+                </button>
+              </div>
+            )}
             {asset ? (
               <div className="collect-host">
                 <div className="collect-host-icon">▥</div>
@@ -354,74 +422,178 @@ export function CollectionsPage({
               </div>
             )}
           </div>
+          <div className="collect-access">
+            <div className="collect-label-row">
+              <label htmlFor="collection-connection">
+                主机连接{" "}
+                <span
+                  className="collect-tip"
+                  tabIndex={0}
+                  title="连接将主机地址、登录账号和凭证关联起来。基础采集只执行固定读取命令，不要求目标安装Trivy。"
+                >
+                  ⓘ
+                </span>
+              </label>
+              <button
+                type="button"
+                className="text-button"
+                disabled={!target}
+                onClick={() => setEditingConnection(true)}
+              >
+                ＋ 新建连接
+              </button>
+            </div>
+            <select
+              id="collection-connection"
+              disabled={busy}
+              value={profileId}
+              onChange={(e) => setProfileId(e.target.value)}
+              required
+            >
+              <option value="">选择已关联的连接</option>
+              {availableProfiles.map((item) => (
+                <option value={item.id} key={item.id}>
+                  {item.label}
+                </option>
+              ))}
+            </select>
+            {selectedProfile ? (
+              <div className="collect-connection-summary">
+                <span className="collect-configured-dot" />
+                <div>
+                  <strong>
+                    {selectedProfile.transport === "local"
+                      ? `YS 部署主机 · ${selectedProfile.host ?? "本机"}`
+                      : selectedProfile.host || "SSH访问"}
+                  </strong>
+                  <p>{selectedProfile.credentialName ?? "已关联访问凭证"}</p>
+                </div>
+                <span className="collect-pill">
+                  {selectedProfile.transport === "local" ? "本机身份" : "SSH"}
+                </span>
+              </div>
+            ) : (
+              <div className="collect-connection-empty">
+                <span>⌁</span>
+                <div>
+                  <strong>还没有关联连接</strong>
+                  <p>新建连接，选择或保存一项登录凭证。</p>
+                </div>
+              </div>
+            )}
+            <button
+              type="button"
+              className="secondary"
+              disabled={busy || !profileId || !target}
+              onClick={() => void checkCapabilities()}
+            >
+              检查采集能力
+            </button>
+            {selectedProfile && !capability && (
+              <p className="collect-muted">尚未检查连接与采集能力。</p>
+            )}
+            <p className="collect-muted">
+              本机执行指 YS
+              部署主机，不是浏览器所在电脑。连接由部署端登记并限定客户与资产。
+            </p>
+            {capability && (
+              <div
+                className="collect-capabilities"
+                role="region"
+                aria-label="采集能力检查"
+              >
+                <strong>
+                  {capability.hostname} · {capability.identity ?? "身份未取得"}
+                </strong>
+                <p>
+                  检查于 {new Date(capability.checkedAt).toLocaleString()} ·{" "}
+                  {capability.transport === "local"
+                    ? "YS 部署主机"
+                    : "SSH 目标主机"}
+                </p>
+                <dl>
+                  {[
+                    ["主机基础访问", capability.basic],
+                    ["Docker 目录访问", capability.docker],
+                    ["Trivy 镜像生成", capability.trivy],
+                  ].map(([label, check]) => (
+                    <div key={String(label)}>
+                      <dt>{String(label)}</dt>
+                      <dd>
+                        {capabilityLabels[(check as { status: string }).status]}
+                      </dd>
+                    </div>
+                  ))}
+                </dl>
+              </div>
+            )}
+          </div>
+        </div>
+        <div
+          className="collect-task-tabs"
+          role="tablist"
+          aria-label="采集任务类型"
+        >
+          {[
+            ["basic", "主机基础资料", "操作系统、硬件、系统包及软件版本"],
+            [
+              "container-inventory",
+              "容器运行资料",
+              "Docker 引擎、镜像目录及容器实例",
+            ],
+          ].map(([key, label, description]) => (
+            <button
+              type="button"
+              role="tab"
+              aria-label={label}
+              disabled={busy}
+              key={key}
+              aria-selected={scope === key}
+              onClick={() => {
+                setScope(key);
+                setTab("connect");
+                setContent("");
+                setFileName("");
+              }}
+            >
+              <strong>{label}</strong>
+              <small>{description}</small>
+            </button>
+          ))}
+        </div>
+        <div className="collect-workspace collect-task-workspace">
           <form
             className="collect-input"
             onSubmit={submit}
             key={`${tab}:${target}`}
           >
+            <div
+              className="collect-methods"
+              role="tablist"
+              aria-label="资料接入方式"
+            >
+              {[
+                ["connect", "连接采集", "↗"],
+                ["upload", "上传脚本结果", "⇧"],
+                ["offline", "离线脚本", "↓"],
+                ...(scope === "basic" ? [["manual", "手动输入", "✎"]] : []),
+              ].map(([key, label, icon]) => (
+                <button
+                  type="button"
+                  key={key}
+                  role="tab"
+                  aria-label={label}
+                  aria-selected={tab === key}
+                  className={tab === key ? "selected" : ""}
+                  onClick={() => setTab(key)}
+                >
+                  <span>{icon}</span>
+                  {label}
+                </button>
+              ))}
+            </div>
             {tab === "connect" ? (
               <>
-                <div className="collect-label-row">
-                  <label htmlFor="collection-connection">
-                    主机连接{" "}
-                    <span
-                      className="collect-tip"
-                      tabIndex={0}
-                      title="连接将主机地址、登录账号和凭证关联起来。基础采集只执行固定读取命令，不要求目标安装Trivy。"
-                    >
-                      ⓘ
-                    </span>
-                  </label>
-                  <button
-                    type="button"
-                    className="text-button"
-                    disabled={!target}
-                    onClick={() => setEditingConnection(true)}
-                  >
-                    ＋ 新建连接
-                  </button>
-                </div>
-                <select
-                  id="collection-connection"
-                  value={profileId}
-                  onChange={(e) => setProfileId(e.target.value)}
-                  required
-                >
-                  <option value="">选择已关联的连接</option>
-                  {availableProfiles.map((item) => (
-                    <option value={item.id} key={item.id}>
-                      {item.label}
-                    </option>
-                  ))}
-                </select>
-                {selectedProfile ? (
-                  <div className="collect-connection-summary">
-                    <span className="collect-connected-dot" />
-                    <div>
-                      <strong>
-                        {selectedProfile.transport === "local"
-                          ? "本机访问"
-                          : selectedProfile.host || "SSH访问"}
-                      </strong>
-                      <p>
-                        {selectedProfile.credentialName ?? "已关联访问凭证"}
-                      </p>
-                    </div>
-                    <span className="collect-pill">
-                      {selectedProfile.transport === "local"
-                        ? "本机身份"
-                        : "SSH"}
-                    </span>
-                  </div>
-                ) : (
-                  <div className="collect-connection-empty">
-                    <span>⌁</span>
-                    <div>
-                      <strong>还没有关联连接</strong>
-                      <p>新建连接，选择或保存一项登录凭证。</p>
-                    </div>
-                  </div>
-                )}
                 <div className="collect-scope">
                   <div>
                     <strong>
@@ -432,7 +604,7 @@ export function CollectionsPage({
                       tabIndex={0}
                       title={
                         scope === "basic"
-                          ? "读取操作系统、运行内核、安装包和可见硬件/网络信息。Docker运行版本仅在连接已授权时读取；不会扫描容器内部或应用目录。"
+                          ? "读取操作系统、运行内核、安装包和可见硬件/网络信息。不访问 Docker 引擎，不扫描容器内部或应用目录。"
                           : "单独读取容器和镜像目录及其关系，不扫描镜像内部组件。"
                       }
                     >
@@ -445,24 +617,19 @@ export function CollectionsPage({
                       : "容器实例 · 镜像身份 · 关联关系"}
                   </p>
                 </div>
+                {scope === "container-inventory" && !directoryAuthorized && (
+                  <p className="notice">
+                    该连接未授权 Docker
+                    访问。请在连接管理中配置已授权连接；也可下载离线脚本后上传结果。
+                  </p>
+                )}
+                {scope === "container-inventory" && (
+                  <p className="collect-muted">
+                    目录发现不要求 Trivy；生成镜像组件资料时才需要 Trivy。
+                  </p>
+                )}
                 <details className="collect-options">
-                  <summary>采集选项</summary>
-                  <label>
-                    采集范围
-                    <select
-                      value={scope}
-                      onChange={(e) => setScope(e.target.value)}
-                    >
-                      <option value="basic">基础采集</option>
-                      {selectedProfile?.scopes.includes(
-                        "container-inventory",
-                      ) && (
-                        <option value="container-inventory">
-                          独立容器 / 镜像目录
-                        </option>
-                      )}
-                    </select>
-                  </label>
+                  <summary>高级采集选项</summary>
                   <label className="collect-check">
                     <input
                       type="checkbox"
@@ -491,6 +658,34 @@ export function CollectionsPage({
                   )}
                 </details>
               </>
+            ) : tab === "offline" ? (
+              <section className="collect-offline">
+                <h3>
+                  {scope === "basic"
+                    ? "主机基础资料离线脚本"
+                    : "容器目录离线脚本"}
+                </h3>
+                <p>
+                  在目标 Linux 主机准备 Node.js；基础脚本无需
+                  Docker，容器目录脚本需要 Docker 读取权限，两者均不要求 Trivy。
+                </p>
+                <button
+                  type="button"
+                  className="secondary"
+                  disabled={busy}
+                  onClick={() => void downloadScript()}
+                >
+                  下载{scope === "basic" ? "基础" : "容器目录"}采集脚本
+                </button>
+                <code>
+                  node ys-
+                  {scope === "basic" ? "host-basic" : "docker-inventory"}.mjs
+                  &gt; collection.json
+                </code>
+                <p>
+                  不安装、不提权、不拉取镜像。执行后选择“上传脚本结果”，确认资料属于当前目标主机。
+                </p>
+              </section>
             ) : tab === "upload" ? (
               <>
                 <h3>上传采集资料</h3>
@@ -504,6 +699,10 @@ export function CollectionsPage({
                     ⓘ
                   </span>
                 </p>
+                <label className="collect-check">
+                  <input type="checkbox" required />
+                  我已确认资料属于所选主机
+                </label>
                 <label className="collect-upload">
                   ⇧<strong>{fileName || "选择JSON文件"}</strong>
                   <small>点击选择本地采集结果</small>
@@ -586,31 +785,54 @@ export function CollectionsPage({
               <span>
                 ◈{" "}
                 {tab === "connect"
-                  ? "仅收集基础资料"
+                  ? scope === "basic"
+                    ? "仅收集主机资料，不访问 Docker 引擎"
+                    : "仅发现目录，不自动扫描镜像"
                   : "保存来源与独立资料版本"}
               </span>
-              <button
-                className="primary"
-                disabled={
-                  busy ||
-                  !target ||
-                  (tab === "connect" && !profileId) ||
-                  (tab === "upload" && !content)
-                }
-              >
-                {busy
-                  ? "处理中…"
-                  : tab === "connect"
-                    ? scope === "basic"
-                      ? "开始基础采集 →"
-                      : "采集容器目录 →"
-                    : "保存基础快照"}
-              </button>
+              {tab !== "offline" && (
+                <button
+                  className="primary"
+                  disabled={
+                    busy ||
+                    !target ||
+                    (tab === "connect" &&
+                      (!profileId ||
+                        (scope === "container-inventory" &&
+                          !directoryAuthorized))) ||
+                    (tab === "upload" && !content)
+                  }
+                >
+                  {busy
+                    ? "处理中…"
+                    : tab === "connect"
+                      ? scope === "basic"
+                        ? "开始基础采集 →"
+                        : "采集容器目录 →"
+                      : scope === "basic"
+                        ? "保存基础快照"
+                        : "保存容器目录"}
+                </button>
+              )}
             </div>
           </form>
         </div>
       </section>
       <section className="collect-card collect-history">
+        <label>
+          历史采集类型
+          <select
+            value={historyScope}
+            onChange={(e) => {
+              setHistoryScope(e.target.value);
+              setOffset(0);
+            }}
+          >
+            <option value="all">全部类型</option>
+            <option value="basic">主机基础资料</option>
+            <option value="container-inventory">容器运行资料</option>
+          </select>
+        </label>
         <div className="collect-card-heading">
           <div className="collect-history-tabs">
             <button
@@ -643,7 +865,8 @@ export function CollectionsPage({
                   <thead>
                     <tr>
                       <th>主机</th>
-                      <th>来源</th>
+                      <th>类型</th>
+                      <th>来源 / 执行位置</th>
                       <th>采集时间</th>
                       <th>状态</th>
                       <th />
@@ -656,6 +879,11 @@ export function CollectionsPage({
                           <strong>{snapshot.identity.hostname}</strong>
                         </td>
                         <td>
+                          {snapshot.scope === "container-inventory"
+                            ? "容器运行资料"
+                            : "主机基础资料"}
+                        </td>
+                        <td>
                           {
                             {
                               manual: "人工录入",
@@ -664,6 +892,13 @@ export function CollectionsPage({
                               ssh: "主机采集",
                             }[snapshot.entry]
                           }
+                          {(
+                            snapshot.extensions.execution as
+                              { transport?: string } | undefined
+                          )?.transport === "local" &&
+                            (snapshot.entry === "ssh"
+                              ? " · YS 部署主机"
+                              : " · 目标机离线执行（操作员确认归属）")}
                         </td>
                         <td>
                           {new Date(snapshot.importedAt).toLocaleString()}
@@ -716,33 +951,37 @@ export function CollectionsPage({
           )
         ) : jobs.length ? (
           <div className="collect-task-list">
-            {jobs.map((job) => (
-              <details key={job.id}>
-                <summary>
-                  <span className={"collect-task-status " + job.status}>
-                    {statuses[job.status] ?? job.status}
-                  </span>
-                  <strong>
-                    {job.scope === "basic" ? "基础采集" : "容器目录采集"}
-                  </strong>
-                  <small>{job.message}</small>
-                </summary>
-                {job.error && <p className="error">{job.error}</p>}
-                <ul>
-                  {job.events.map((event, index) => (
-                    <li key={index}>{event.message}</li>
-                  ))}
-                </ul>
-                {job.snapshotId && (
-                  <button
-                    className="secondary"
-                    onClick={() => void showSnapshot(job.snapshotId!)}
-                  >
-                    查看采集资料
-                  </button>
-                )}
-              </details>
-            ))}
+            {jobs
+              .filter(
+                (job) => historyScope === "all" || job.scope === historyScope,
+              )
+              .map((job) => (
+                <details key={job.id} data-job-id={job.id}>
+                  <summary>
+                    <span className={"collect-task-status " + job.status}>
+                      {statuses[job.status] ?? job.status}
+                    </span>
+                    <strong>
+                      {job.scope === "basic" ? "基础采集" : "容器目录采集"}
+                    </strong>
+                    <small>{job.message}</small>
+                  </summary>
+                  {job.error && <p className="error">{job.error}</p>}
+                  <ul>
+                    {job.events.map((event, index) => (
+                      <li key={index}>{event.message}</li>
+                    ))}
+                  </ul>
+                  {job.snapshotId && (
+                    <button
+                      className="secondary"
+                      onClick={() => void showSnapshot(job.snapshotId!)}
+                    >
+                      查看采集资料
+                    </button>
+                  )}
+                </details>
+              ))}
           </div>
         ) : (
           <div className="collect-empty">
@@ -795,6 +1034,25 @@ export function CollectionsPage({
                 ×
               </button>
             </header>
+            {selected.scope === "container-inventory" && (
+              <div className="collect-next-step">
+                <p>这是固定时点的容器目录，不代表镜像组件已扫描。</p>
+                <button
+                  className="primary"
+                  onClick={() =>
+                    onNavigate?.("containers", selected.assetId, {
+                      snapshotId: selected.id,
+                      profileId: (
+                        selected.extensions.execution as
+                          { profileId?: string } | undefined
+                      )?.profileId,
+                    })
+                  }
+                >
+                  选择镜像生成与扫描
+                </button>
+              </div>
+            )}
             <AssetBaseline
               customerId={customerId}
               token={token}

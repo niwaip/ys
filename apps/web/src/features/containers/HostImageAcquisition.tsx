@@ -106,6 +106,38 @@ export function HostImageAcquisition(
     key.current = requestId();
   }, [assetId]);
   useEffect(() => {
+    const snapshotId = props.collectionContext?.snapshotId;
+    if (!snapshotId || assetId !== props.assetId) return;
+    let cancelled = false;
+    call<Inventory>(`/container-runtime/inventory/${snapshotId}`)
+      .then((data) => {
+        if (cancelled) return;
+        if (data.assetId !== assetId)
+          throw new Error("固定目录不属于当前目标主机");
+        setInventory(data);
+        setNotice("已载入所选固定目录；未重新发现或自动扫描镜像");
+      })
+      .catch((e) => {
+        if (!cancelled) fail(e);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [assetId, props.collectionContext?.snapshotId]);
+  useEffect(() => {
+    const id = props.collectionContext?.profileId;
+    if (
+      id &&
+      profiles.some(
+        (p) =>
+          p.id === id &&
+          p.assetId === assetId &&
+          p.scopes.includes("container-inventory"),
+      )
+    )
+      setProfileId(id);
+  }, [assetId, profiles, props.collectionContext?.profileId]);
+  useEffect(() => {
     if (!discovery || !["queued", "running"].includes(discovery.status)) return;
     let cancelled = false;
     const poll = async () => {
@@ -447,9 +479,15 @@ export function HostImageAcquisition(
             </table>
           </div>
           {!rows.length && <p>没有符合条件的镜像；未知目录不代表空目录。</p>}
+          {!profileId && (
+            <p>
+              当前没有选定已授权的在线连接。可切换“离线脚本”按固定 ImageID
+              生成镜像 SBOM 后上传，目录上传不会授予在线访问权限。
+            </p>
+          )}
           <button
             className="primary"
-            disabled={busy || !selected.length}
+            disabled={busy || !selected.length || !profileId}
             onClick={() =>
               void run(async () => {
                 await call("/container-runtime/jobs", "POST", {

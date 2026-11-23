@@ -1061,3 +1061,109 @@
   background: #fffaf0;
   border-color: #e6d1a7;
 }
+
+.collect-task-tabs {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+  margin: 0 0 24px;
+}
+.collect-task-tabs button {
+  text-align: left;
+  background: #f6f8f3;
+  border: 1px solid #dce5d8;
+  padding: 20px;
+  border-radius: 8px;
+  color: #50685a;
+}
+.collect-task-tabs button[aria-selected="true"] {
+  border-color: #28745e;
+  background: #edf6ef;
+  box-shadow: inset 0 0 0 1px #28745e;
+}
+.collect-task-tabs strong,
+.collect-task-tabs small {
+  display: block;
+}
+.collect-task-tabs small {
+  margin-top: 8px;
+  font-weight: 400;
+  line-height: 1.6;
+}
+.collect-capabilities {
+  margin-top: 18px;
+  padding: 14px;
+  background: #edf4ed;
+  border-radius: 8px;
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+.collect-capabilities dl > div {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 7px 0;
+}
+.collect-capabilities dd {
+  margin: 0;
+}
+.collect-offline code {
+  display: block;
+  margin: 20px 0;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+.collect-next-step {
+  padding: 16px;
+  border: 1px solid #dce5d8;
+  border-radius: 8px;
+}
+.collection-page .collect-history > label {
+  display: block;
+  margin-bottom: 16px;
+  max-width: 260px;
+}
+.collection-page .collect-methods {
+  flex-wrap: wrap;
+}
+@media (max-width: 650px) {
+  .collect-task-tabs {
+    grid-template-columns: 1fr;
+  }
+  .collect-task-tabs button {
+    padding: 16px;
+  }
+  .collect-history .table-scroll table {
+    min-width: 650px;
+  }
+}
+.collect-configured-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: #9aaa9e;
+  flex-shrink: 0;
+}
+.collection-page .collect-target.collect-shared-target {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 28px;
+  border-right: 0;
+  border-bottom: 1px solid #e3eadf;
+  margin-bottom: 20px;
+}
+.collect-shared-target > div {
+  min-width: 0;
+}
+.collection-page .collect-workspace.collect-task-workspace {
+  grid-template-columns: minmax(0, 1fr);
+}
+.collection-page .collect-shared-target .collect-host {
+  padding: 16px 0;
+}
+@media (max-width: 650px) {
+  .collection-page .collect-target.collect-shared-target {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 20px;
+  }
+}

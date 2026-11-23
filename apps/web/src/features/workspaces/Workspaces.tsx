@@ -55,7 +55,7 @@ export function CollectionWorkspace(props: FeatureProps) {
   return (
     <>
       <Tabs
-        labels={["基础与Docker采集", "Windows 采集导入", "CSV 资料导入"]}
+        labels={["主机采集", "Windows 采集导入", "CSV 资料导入"]}
         active={tab}
         change={setTab}
       />

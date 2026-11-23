@@ -119,3 +119,127 @@ test("mobile container controls and persisted jobs remain readable", async ({
     fullPage: true,
   });
 });
+
+test("redesigned collection tasks, capability gaps, immutable directory handoff, downloads and scoped offline upload", async ({
+  page,
+}) => {
+  const errors: string[] = [];
+  page.on("pageerror", (e) => errors.push(e.message));
+  await page.goto("/");
+  await page.getByLabel("操作员访问令牌").fill("browser-test-secret-token");
+  await page.getByRole("button", { name: "进入工作台" }).click();
+  await page.locator("nav button").filter({ hasText: "资产采集" }).click();
+  await page.getByLabel("主机资产").selectOption({ label: "Docker测试主机" });
+  await expect(
+    page.getByRole("tab", { name: "主机基础资料", exact: true }),
+  ).toHaveAttribute("aria-selected", "true");
+  await page
+    .getByRole("button", { name: "开始基础采集 →", exact: true })
+    .click();
+  const basic = page
+    .locator(".collect-task-list details")
+    .filter({ hasText: "基础采集" })
+    .first();
+  await basic.locator("summary").click();
+  await basic.getByRole("button", { name: "查看采集资料" }).click();
+  await expect(
+    page.getByRole("dialog", { name: "采集资料详情" }),
+  ).toBeVisible();
+  await page.getByRole("button", { name: "关闭资料详情" }).click();
+  await page.getByRole("tab", { name: "容器运行资料", exact: true }).click();
+  await page.getByRole("button", { name: "检查采集能力" }).click();
+  const checks = page.getByRole("region", { name: "采集能力检查" });
+  await expect(checks).toContainText("reader");
+  await expect(checks).toContainText("工具缺失");
+  const submitted = page.waitForResponse(
+    (r) =>
+      r.url().endsWith("/collections/jobs") && r.request().method() === "POST",
+  );
+  await page
+    .getByRole("button", { name: "采集容器目录 →", exact: true })
+    .click();
+  const task = await (await submitted).json();
+  const directory = page.locator(
+    `.collect-task-list details[data-job-id="${task.id}"]`,
+  );
+  await directory.locator("summary").click();
+  await directory.getByRole("button", { name: "查看采集资料" }).click();
+  await page.getByRole("button", { name: "选择镜像生成与扫描" }).click();
+  await expect(
+    page.getByRole("heading", { name: "主机镜像目录" }),
+  ).toBeVisible();
+  await expect(page.getByLabel("Docker 已授权连接")).toHaveValue(
+    "docker-fixture",
+  );
+  await expect(page).toHaveURL(/snapshot=/);
+  await page.reload();
+  await expect(
+    page.getByRole("heading", { name: "主机镜像目录" }),
+  ).toBeVisible();
+  await expect(page.getByLabel("Docker 已授权连接")).toHaveValue(
+    "docker-fixture",
+  );
+  await page.locator("nav button").filter({ hasText: "资产采集" }).click();
+  await page.getByLabel("主机资产").selectOption({ label: "Docker测试主机" });
+  await page.getByRole("tab", { name: "容器运行资料", exact: true }).click();
+  await page.getByRole("tab", { name: "离线脚本", exact: true }).click();
+  let waiting = page.waitForEvent("download");
+  await page.getByRole("button", { name: "下载容器目录采集脚本" }).click();
+  expect((await waiting).suggestedFilename()).toBe("ys-docker-inventory.mjs");
+  await page.getByRole("tab", { name: "主机基础资料", exact: true }).click();
+  await page.getByRole("tab", { name: "离线脚本", exact: true }).click();
+  waiting = page.waitForEvent("download");
+  await page.getByRole("button", { name: "下载基础采集脚本" }).click();
+  expect((await waiting).suggestedFilename()).toBe("ys-host-basic.mjs");
+  await page.getByRole("tab", { name: "容器运行资料", exact: true }).click();
+  await page.getByRole("tab", { name: "上传脚本结果" }).click();
+  const content = JSON.stringify({
+    schemaVersion: "ys-host/1",
+    identity: {
+      hostname: "fixture-host",
+      machineId: "fixture-machine",
+      serial: null,
+    },
+    collectedAt: "2026-11-23T00:00:00Z",
+    sections: {
+      images: { status: "acquired", data: [] },
+      containers: { status: "acquired", data: [] },
+    },
+    extensions: {
+      execution: {
+        scope: "container-inventory",
+        method: "offline",
+        transport: "local",
+      },
+    },
+  });
+  await page
+    .getByLabel("采集JSON文件")
+    .setInputFiles({
+      name: "offline-directory.json",
+      mimeType: "application/json",
+      buffer: Buffer.from(content),
+    });
+  await page.getByLabel("我已确认资料属于所选主机").check();
+  await page.getByRole("button", { name: "保存容器目录", exact: true }).click();
+  await expect(
+    page.getByRole("dialog", { name: "采集资料详情" }),
+  ).toBeVisible();
+  await page.getByRole("button", { name: "关闭资料详情" }).click();
+  await page.getByRole("button", { name: /采集记录/ }).click();
+  await page.getByLabel("历史采集类型").selectOption("container-inventory");
+  await expect(page.getByRole("table")).not.toContainText("主机基础资料");
+  await page.setViewportSize({ width: 390, height: 844 });
+  await expect
+    .poll(() =>
+      page.evaluate(() => document.documentElement.scrollWidth <= innerWidth),
+    )
+    .toBe(true);
+  await page.screenshot({
+    path: ".data/collection-redesign-mobile.png",
+    fullPage: true,
+  });
+  await page.getByLabel("当前客户").selectOption("river");
+  await expect(page.getByText("还没有采集记录", { exact: true })).toBeVisible();
+  expect(errors).toEqual([]);
+});

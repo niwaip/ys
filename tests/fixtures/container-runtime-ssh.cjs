@@ -6,7 +6,32 @@ process.stdin.on("end", () => {
   const a = "sha256:" + "a".repeat(64),
     b = "sha256:" + "b".repeat(64),
     f = "sha256:" + "f".repeat(64);
-  if (script.includes("trivy image --image-src docker")) {
+  if (script.includes("YS_CAPABILITY_PROBE")) {
+    const values = {
+      hostname: [0, "fixture-host"],
+      identity: [0, "reader"],
+      basic: [0, "linux"],
+      dockerClient: [0, "Docker version 27"],
+      dockerDaemon: [0, '{"Version":"27"}'],
+      trivy: [127, "missing"],
+    };
+    for (const [key, [code, text]] of Object.entries(values))
+      console.log(
+        key + "|" + code + "|" + Buffer.from(text).toString("base64"),
+      );
+  } else if (script.includes("emit packages")) {
+    if (script.includes("emit dockerDaemon")) process.exit(9);
+    const fields = {
+      hostname: "fixture-host",
+      machineId: "fixture-machine",
+      os: "ID=debian\nVERSION_ID=12",
+      kernel: "6.1",
+      architecture: "x86_64",
+      packages: "dpkg\tlibssl3\t3.0.1\tamd64\tinstalled",
+    };
+    for (const [key, text] of Object.entries(fields))
+      console.log(key + "|0|" + Buffer.from(text).toString("base64"));
+  } else if (script.includes("trivy image --image-src docker")) {
     const id = script.match(/set -- '(sha256:[a-f0-9]{64})'/)?.[1];
     if (id === f) {
       process.exit(127);

@@ -39,6 +39,7 @@ export function ContainersPage({
   assessmentOnly = false,
   assetId,
   onNavigate,
+  collectionContext,
 }: FeatureProps & { assessmentOnly?: boolean }) {
   const sourceId = useRef<string | undefined>(undefined);
   const [entry, setEntry] = useState("host");
@@ -173,6 +174,7 @@ export function ContainersPage({
           token={token}
           onUnauthorized={onUnauthorized}
           assetId={assetId}
+          collectionContext={collectionContext}
           onNavigate={onNavigate}
           mode={entry}
           setMode={setEntry}

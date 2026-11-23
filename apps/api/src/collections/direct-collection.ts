@@ -13,7 +13,9 @@ export class DirectCollectionExecutor implements CollectionExecutor {
     await emit(
       "tool_started",
       profile.transport === "local"
-        ? "开始本机基础采集"
+        ? input.scope === "basic"
+          ? "开始 YS 部署主机基础采集"
+          : "开始 YS 部署主机容器目录发现"
         : "正在连接主机执行固定采集",
     );
     try {

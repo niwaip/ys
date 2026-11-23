@@ -21,12 +21,18 @@ import { WindowsPage } from "./features/windows/WindowsPage";
 import { ImportsPage } from "./features/imports/ImportsPage";
 import type { ComponentType } from "react";
 import { AssetsPage } from "./features/assets/AssetsPage";
+export type CollectionContext = { snapshotId?: string; profileId?: string };
 export type FeatureProps = {
+  collectionContext?: CollectionContext;
   customerId: string;
   token: string;
   onUnauthorized: () => void;
   assetId?: string;
-  onNavigate?: (featureId: string, assetId?: string) => void;
+  onNavigate?: (
+    featureId: string,
+    assetId?: string,
+    context?: CollectionContext,
+  ) => void;
 };
 export type Feature = {
   id: string;

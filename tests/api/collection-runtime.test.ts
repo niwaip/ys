@@ -17,7 +17,7 @@ test("固定基础采集保留运行环境、端口与失败状态，未取得�
         executable,
         `#!${process.execPath}
 let script='';process.stdin.on('data', c=>script+=c);process.stdin.on('end',()=>{
- if (!script.includes('emit virtualization systemd-detect-virt --vm') || !script.includes('emit listeningPorts ss -H -lntu') || script.includes('modprobe')) process.exit(2);
+ if (script.includes('emit dockerDaemon') || !script.includes('emit virtualization systemd-detect-virt --vm') || !script.includes('emit listeningPorts ss -H -lntu') || script.includes('modprobe')) process.exit(2);
  const values={hostname:[0,'host'],os:[0,'ID=ubuntu\\nVERSION_ID=24.04'],kernel:[0,'6.8.0-generic'],architecture:[0,'x86_64'],packages:[0,'dpkg\\tlibssl3\\t3.0.1\\tamd64\\tinstalled'],virtualization:[${failed ? 127 : 0},'${failed ? "missing" : "kvm"}'],xenNetback:[${failed ? 1 : 0},'false'],listeningPorts:[${failed ? 127 : 0},'tcp LISTEN 0 128 127.0.0.1:3001 0.0.0.0:*']};
  for(const [k,[code,text]] of Object.entries(values))process.stdout.write(k+'|'+code+'|'+Buffer.from(text).toString('base64')+'\\n');
 });`,
@@ -26,6 +26,7 @@ let script='';process.stdin.on('data', c=>script+=c);process.stdin.on('end',()=>
       const result = hostCollectionSchema.parse(
         await collect(
           {
+            allowDocker: true,
             sshExecutable: executable,
             host: "fixture",
             username: "reader",

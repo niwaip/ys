@@ -7,21 +7,51 @@ export const configSchema = z
         storeDir: z.string().min(1).optional(),
         profiles: z
           .array(
-            z.object({
-              transport: z.enum(["ssh", "local"]).optional(),
-              id: identity,
-              label: z.string().min(1).max(100),
-              customerId: identity,
-              assetId: z.uuid(),
-              host: z.string().regex(/^[a-zA-Z0-9][a-zA-Z0-9.:-]*$/),
-              port: z.number().int().min(1).max(65535).optional(),
-              username: z.string().regex(/^[a-zA-Z_][a-zA-Z0-9_-]*$/),
-              knownHostsFile: z.string().startsWith("/"),
-              identityFile: z.string().startsWith("/"),
-              sshExecutable: z.string().startsWith("/").optional(),
-              timeoutMs: z.number().int().min(50).max(300000).optional(),
-              allowDocker: z.boolean().default(false),
-            }),
+            z
+              .object({
+                transport: z.enum(["ssh", "local"]).optional(),
+                id: identity,
+                label: z.string().min(1).max(100),
+                customerId: identity,
+                assetId: z.uuid(),
+                host: z
+                  .string()
+                  .regex(/^[a-zA-Z0-9][a-zA-Z0-9.:-]*$/)
+                  .or(z.literal(""))
+                  .default(""),
+                port: z.number().int().min(1).max(65535).optional(),
+                username: z
+                  .string()
+                  .regex(/^[a-zA-Z_][a-zA-Z0-9_-]*$/)
+                  .or(z.literal(""))
+                  .default(""),
+                knownHostsFile: z
+                  .string()
+                  .startsWith("/")
+                  .or(z.literal(""))
+                  .default(""),
+                identityFile: z
+                  .string()
+                  .startsWith("/")
+                  .or(z.literal(""))
+                  .default(""),
+                sshExecutable: z.string().startsWith("/").optional(),
+                timeoutMs: z.number().int().min(50).max(300000).optional(),
+                allowDocker: z.boolean().default(false),
+              })
+              .superRefine((p, ctx) => {
+                if (
+                  p.transport !== "local" &&
+                  (!p.host ||
+                    !p.username ||
+                    !p.knownHostsFile ||
+                    !p.identityFile)
+                )
+                  ctx.addIssue({
+                    code: "custom",
+                    message: "SSH 连接需要主机、账号、可信主机与密钥路径",
+                  });
+              }),
           )
           .max(1000),
       })

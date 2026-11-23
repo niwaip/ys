@@ -23,6 +23,14 @@ test("网页保存人工基础快照，刷新回读来源与未评估状态，�
   const assetId = await row.locator("code").first().textContent();
   await page.locator("nav button").filter({ hasText: "资产采集" }).click();
   await page.getByLabel("主机资产").selectOption(assetId!);
+  await expect(
+    page.getByRole("tab", { name: "主机基础资料", exact: true }),
+  ).toBeVisible();
+  await page.getByRole("tab", { name: "容器运行资料", exact: true }).click();
+  await expect(
+    page.getByText("该连接未授权 Docker 访问", { exact: false }),
+  ).toBeVisible();
+  await page.getByRole("tab", { name: "主机基础资料", exact: true }).click();
   await page.getByRole("tab", { name: "手动输入" }).click();
   await page.getByLabel("来源说明").fill("浏览器现场声明");
   await page.getByLabel("主机名", { exact: true }).fill(name);

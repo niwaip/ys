@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState, type FormEvent } from "react";
 import type { Customer } from "../../../packages/contracts";
 import { api } from "./api";
-import { features, featureGroups } from "./features";
+import { features, featureGroups, type CollectionContext } from "./features";
 export function App() {
   const [token, setToken] = useState(
     () => sessionStorage.getItem("ys-token") ?? "",
@@ -21,13 +21,36 @@ export function App() {
       new URLSearchParams(location.hash.split("?")[1]).get("asset") ??
       undefined,
   );
-  function navigate(id: string, asset?: string) {
+  const [collectionContext, setCollectionContext] = useState<CollectionContext>(
+    () => {
+      const query = new URLSearchParams(location.hash.split("?")[1]);
+      return {
+        snapshotId: query.get("snapshot") ?? undefined,
+        profileId: query.get("profile") ?? undefined,
+      };
+    },
+  );
+  function navigate(
+    id: string,
+    asset?: string,
+    context: CollectionContext = {},
+  ) {
     setFeatureId(id);
     setAssetId(asset);
-    location.hash = id + (asset ? "?asset=" + encodeURIComponent(asset) : "");
+    setCollectionContext(context);
+    const query = new URLSearchParams();
+    if (asset) query.set("asset", asset);
+    if (context.snapshotId) query.set("snapshot", context.snapshotId);
+    if (context.profileId) query.set("profile", context.profileId);
+    location.hash = id + (query.size ? "?" + query.toString() : "");
   }
   useEffect(() => {
     const change = () => {
+      const query = new URLSearchParams(location.hash.split("?")[1]);
+      setCollectionContext({
+        snapshotId: query.get("snapshot") ?? undefined,
+        profileId: query.get("profile") ?? undefined,
+      });
       setFeatureId(location.hash.slice(1).split("?")[0] || features[0].id);
       setAssetId(
         new URLSearchParams(location.hash.split("?")[1]).get("asset") ??
@@ -219,6 +242,7 @@ export function App() {
               onUnauthorized={logout}
               onNavigate={navigate}
               assetId={assetId}
+              collectionContext={collectionContext}
             />
           ) : (
             <div className="empty">
