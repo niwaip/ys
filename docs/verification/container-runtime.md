@@ -18,3 +18,11 @@
 ## 使用条件
 
 自动路径需要已授权 Docker 连接、目标已准备 Docker 与 Trivy。不会自动安装工具、提权、拉取镜像或扩大生产连接授权。也可手动上传 CycloneDX 1.4–1.7，或下载离线脚本在主机生成后上传。镜像漏洞及历史运行观测不等同于主机已确认受影响。
+
+## 部署及线上浏览器验证
+
+- 发布版本：`caa0c12`，部署到 `http://47.116.69.153:8001/`；`ys.service` active。
+- 一致性数据库备份：`/var/backups/ys/20261123T003136Z-before-caa0c12/database.tar.gz`，保留旧版本 `2257325` 可回滚。
+- 线上 Chrome 1440px / 390px 均通过：Dashboard 容器概要跳转、选择现有主机、未授权 Docker 连接明确提示、手动入口、离线脚本真实下载、页面无横向溢出。浏览器异常及 API 5xx 均为 0。
+- 线上仅做读取和下载验证，未导入测试数据或扫描现有业务镜像；自动生成完整路径在隔离 API/浏览器夹具及独立真实临时镜像中验证。
+- 本地证据：`output/deployment/container-live-result.json`、`container-host-{1440,390}.png`、`container-offline-{1440,390}.png`（均不入库）。
