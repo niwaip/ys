@@ -37,3 +37,12 @@
 ## 边界
 
 首版 Linux + Docker；不声称支持 macOS Docker Desktop、Windows 原生或 WSL 宿主。离线主机/目录脚本需要 Node.js，目录额外需要 Docker 权限；生成镜像 SBOM 才需要 Trivy。权限不会随部署、检查或上传自动开启，旧连接、资料和外部主数据保持兼容。
+
+## 部署与真实环境验证
+
+- 发布版本：`d27f8a1`，`http://47.116.69.153:8001/`；`ys.service` active。
+- 一致性数据库及服务配置备份：`/var/backups/ys/20261123T041934Z-before-d27f8a1`，旧应用版本 `caa0c12` 保留可回滚。本次无新增数据库迁移。
+- 线上 Chrome 1440px / 390px：本机连接选择、实际服务身份 `ys`、基础能力可用、Docker 未授权明确呈现、两类脚本真实下载、刷新和无页面横向溢出均通过；浏览器异常和 API 5xx 均为 0。
+- 将线上实际下载的基础脚本在目标 Linux 以 `ys` 身份执行，通过真实 ys-host/1 契约解析：取得 1,274 条系统包记录，保留采集时间和原始分区，不包含 dockerDaemon、images 或 containers 区块。临时脚本与产物已清理。
+- 没有更改生产 Docker 授权，没有导入测试快照或扫描既有业务镜像。在线生成及目录到镜像流程在隔离进程/浏览器夹具完成验证；生产本机 Docker 权限依照现有配置保持关闭。
+- 本地非入库证据：`output/deployment/collection-redesign-live-result.json`、`collection-basic-{1440,390}.png`、`collection-docker-{1440,390}.png`。固定模板脚本和运行产物不包含访问令牌。
