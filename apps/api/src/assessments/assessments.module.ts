@@ -325,7 +325,7 @@ export class AssessmentService {
   }
   async progress(customer: string, id: string) {
     const result = await this.db.query(
-      `SELECT id,status,created_at AS "createdAt",details->>'startedAt' AS "startedAt",details->>'finishedAt' AS "finishedAt",details->>'error' AS error FROM vulnerability_jobs WHERE customer_id=$1 AND id=$2`,
+      `SELECT id,status,created_at AS "createdAt",details->>'startedAt' AS "startedAt",details->>'finishedAt' AS "finishedAt",details->>'error' AS error,details->>'phase' AS phase FROM vulnerability_jobs WHERE customer_id=$1 AND id=$2`,
       [customer, id],
     );
     if (!result.rows.length)
@@ -433,12 +433,12 @@ export class AssessmentService {
            ) AS entries GROUP BY identity
          ) AS groups),
          'idempotencyKey',details->'idempotencyKey' ,'target',details->'target','input',details->'input',
-         'createdAt',details->'createdAt','startedAt',details->'startedAt','finishedAt',details->'finishedAt','error',details->'error',
+         'phase',details->'phase','createdAt',details->'createdAt','startedAt',details->'startedAt','finishedAt',details->'finishedAt','error',details->'error',
          'execution',CASE WHEN details ? 'execution' THEN jsonb_build_object(
            'status',details#>'{execution,status}','toolVersion',details#>'{execution,toolVersion}',
            'argv',details#>'{execution,argv}','startedAt',details#>'{execution,startedAt}','finishedAt',details#>'{execution,finishedAt}',
            'exitCode',details#>'{execution,exitCode}','signal',details#>'{execution,signal}','stderr',details#>'{execution,stderr}',
-           'databaseBefore',details#>'{execution,databaseBefore}','databaseAfter',details#>'{execution,databaseAfter}',
+           'databaseUpdate',details#>'{execution,databaseUpdate}','databaseBefore',details#>'{execution,databaseBefore}','databaseAfter',details#>'{execution,databaseAfter}',
            'outputHash',details#>'{execution,outputHash}','error',details#>'{execution,error}'
          ) ELSE NULL END,
          'result',CASE WHEN details ? 'result' THEN jsonb_build_object(
@@ -520,7 +520,7 @@ export class AssessmentService {
       }
     }
     const r = await this.db.query(
-      `SELECT id,customer_id AS "customerId",status,jsonb_build_object('idempotencyKey',details->'idempotencyKey','target',details->'target','input',details->'input','createdAt',details->'createdAt','startedAt',details->'startedAt','finishedAt',details->'finishedAt','error',details->'error') AS details,details#>'{result,coverage}' AS coverage,details#>'{result,database}' AS database,jsonb_array_length(details#>'{result,findings}') AS "findingCount" FROM vulnerability_jobs WHERE ${where} ORDER BY created_at DESC,id LIMIT $${params.length + 1} OFFSET $${params.length + 2}`,
+      `SELECT id,customer_id AS "customerId",status,jsonb_build_object('idempotencyKey',details->'idempotencyKey','target',details->'target','input',details->'input','phase',details->'phase','createdAt',details->'createdAt','startedAt',details->'startedAt','finishedAt',details->'finishedAt','error',details->'error') AS details,details#>'{result,coverage}' AS coverage,details#>'{result,database}' AS database,jsonb_array_length(details#>'{result,findings}') AS "findingCount" FROM vulnerability_jobs WHERE ${where} ORDER BY created_at DESC,id LIMIT $${params.length + 1} OFFSET $${params.length + 2}`,
       [...params, limit, offset],
     );
     const count = await this.db.query(
@@ -577,6 +577,7 @@ export class AssessmentService {
       if (selected.target.kind === "windows")
         throw Error("Windows task cannot be executed by Trivy");
       const job = selected as Assessment;
+      job.phase = "updating_database";
       job.startedAt = new Date().toISOString();
       await this.save(job);
       this.abort = new AbortController();
@@ -599,6 +600,10 @@ export class AssessmentService {
             ...(job.target.kind === "linux" ? { kind: "linux" as const } : {}),
           },
           this.abort.signal,
+          async (phase) => {
+            job.phase = phase;
+            await this.save(job);
+          },
         );
         if (execution.rawReport !== undefined)
           execution.outputHash = createHash("sha256")

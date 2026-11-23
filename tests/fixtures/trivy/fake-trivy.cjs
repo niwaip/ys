@@ -5,6 +5,41 @@ if (args.includes("--version")) {
   console.log("Version: fixture-process-1");
   process.exit(0);
 }
+const path = require("node:path");
+const cache = args.includes("--cache-dir")
+  ? args[args.indexOf("--cache-dir") + 1]
+  : null;
+if (args.includes("--download-db-only")) {
+  fs.mkdirSync(path.join(cache, "db"), { recursive: true });
+  fs.appendFileSync(path.join(cache, "sequence.log"), "update\n");
+  if (fs.existsSync(path.join(cache, "fail-update"))) {
+    console.error("fixture database update failed");
+    process.exit(2);
+  }
+  if (fs.existsSync(path.join(cache, "timeout-update"))) {
+    setInterval(() => {}, 1000);
+    return;
+  }
+  if (
+    fs.existsSync(path.join(cache, "fresh-update")) ||
+    !fs.existsSync(path.join(cache, "db/metadata.json"))
+  )
+    fs.writeFileSync(
+      path.join(cache, "db/metadata.json"),
+      JSON.stringify({
+        Version: 2,
+        UpdatedAt: "2026-11-23T00:00:00Z",
+        NextUpdate: "2099-01-01T00:00:00Z",
+      }),
+    );
+  fs.writeFileSync(path.join(cache, "db/trivy.db"), "test-only");
+  if (fs.existsSync(path.join(cache, "slow-update"))) {
+    setTimeout(() => process.exit(0), 1800);
+    return;
+  }
+  process.exit(0);
+}
+if (cache) fs.appendFileSync(path.join(cache, "sequence.log"), "scan\n");
 if (args[0] === "rootfs") {
   const path = require("node:path");
   const root = args.at(-1);

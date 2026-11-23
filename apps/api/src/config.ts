@@ -92,6 +92,17 @@ export const configSchema = z
       .object({
         executable: z.string().min(1).optional(),
         cacheDir: z.string().min(1).optional(),
+        dbRepositories: z
+          .array(z.string().regex(/^[a-zA-Z0-9][a-zA-Z0-9.:/_-]*$/))
+          .min(1)
+          .max(10)
+          .optional(),
+        databaseUpdateTimeoutMs: z
+          .number()
+          .int()
+          .min(50)
+          .max(3600000)
+          .optional(),
         timeoutMs: z.number().int().min(50).max(3600000).optional(),
         maxOutputBytes: z.number().int().min(1000).max(20000000).optional(),
       })
@@ -180,6 +191,12 @@ export function loadConfig(): AppConfig {
     trivy: {
       executable: process.env.YS_TRIVY_EXECUTABLE,
       cacheDir: process.env.YS_TRIVY_CACHE_DIR,
+      dbRepositories: process.env.YS_TRIVY_DB_REPOSITORIES
+        ? JSON.parse(process.env.YS_TRIVY_DB_REPOSITORIES)
+        : undefined,
+      databaseUpdateTimeoutMs: process.env.YS_TRIVY_DB_UPDATE_TIMEOUT_MS
+        ? Number(process.env.YS_TRIVY_DB_UPDATE_TIMEOUT_MS)
+        : undefined,
       timeoutMs: process.env.YS_TRIVY_TIMEOUT_MS
         ? Number(process.env.YS_TRIVY_TIMEOUT_MS)
         : undefined,

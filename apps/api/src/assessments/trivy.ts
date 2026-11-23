@@ -11,26 +11,36 @@ import {
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { createHash } from "node:crypto";
-import type { TrivyExecution } from "../../../../packages/contracts/assessments";
+import type {
+  TrivyExecution,
+  AssessmentPhase,
+} from "../../../../packages/contracts/assessments";
 export type TrivyInput = {
   content: string;
   contentHash: string;
   kind?: "linux";
 };
 export interface TrivyExecutor {
-  execute(input: TrivyInput, signal: AbortSignal): Promise<TrivyExecution>;
+  execute(
+    input: TrivyInput,
+    signal: AbortSignal,
+    onPhase?: (phase: AssessmentPhase) => Promise<void>,
+  ): Promise<TrivyExecution>;
 }
 export type TrivyConfig = {
   executable?: string;
   cacheDir?: string;
   timeoutMs?: number;
   maxOutputBytes?: number;
+  databaseUpdateTimeoutMs?: number;
+  dbRepositories?: string[];
 };
 export class ProcessTrivyExecutor implements TrivyExecutor {
   constructor(private readonly config: TrivyConfig = {}) {}
   async execute(
     input: TrivyInput,
     signal: AbortSignal,
+    onPhase?: (phase: AssessmentPhase) => Promise<void>,
   ): Promise<TrivyExecution> {
     const startedAt = new Date().toISOString();
     const execution: TrivyExecution = {
@@ -53,7 +63,7 @@ export class ProcessTrivyExecutor implements TrivyExecutor {
     if (!this.config.executable || !this.config.cacheDir)
       return {
         ...execution,
-        error: "Trivy 未配置：需设置可执行文件与离线数据库目录",
+        error: "Trivy 未配置：需设置可执行文件与数据库缓存目录",
       };
     const executable = this.config.executable,
       cacheDir = resolve(this.config.cacheDir);
@@ -63,16 +73,32 @@ export class ProcessTrivyExecutor implements TrivyExecutor {
     const relay = () => abort.abort();
     signal.addEventListener("abort", relay, { once: true });
     if (signal.aborted) abort.abort();
-    const timer = setTimeout(() => {
-      timedOut = true;
-      abort.abort();
-    }, this.config.timeoutMs ?? 120000);
-    const cap = this.config.maxOutputBytes ?? (input.kind === "linux" ? 100000000 : 5000000);
+    let updating = false;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const resetDeadline = (timeoutMs: number) => {
+      clearTimeout(timer);
+      timer = setTimeout(() => {
+        timedOut = true;
+        abort.abort();
+      }, timeoutMs);
+    };
+    resetDeadline(this.config.timeoutMs ?? 120000);
+    const cap =
+      this.config.maxOutputBytes ??
+      (input.kind === "linux" ? 100000000 : 5000000);
     async function metadata() {
       try {
-        return JSON.parse(
+        const value: unknown = JSON.parse(
           await readFile(join(cacheDir, "db", "metadata.json"), "utf8"),
-        ) as Record<string, unknown>;
+        );
+        if (!value || typeof value !== "object" || Array.isArray(value))
+          return null;
+        const data = value as Record<string, unknown>;
+        return typeof data.Version === "number" &&
+          typeof data.UpdatedAt === "string" &&
+          Number.isFinite(Date.parse(data.UpdatedAt))
+          ? data
+          : null;
       } catch {
         return null;
       }
@@ -150,19 +176,71 @@ export class ProcessTrivyExecutor implements TrivyExecutor {
       if (info.code !== 0) throw new Error("无法读取 Trivy 版本");
       execution.toolVersion = info.stdout.trim().slice(0, 2000) || null;
       if (!execution.toolVersion) throw new Error("Trivy 版本为空");
-      execution.databaseBefore = await metadata();
-      if (!execution.databaseBefore)
-        throw Object.assign(new Error("Trivy 漏洞数据库元数据不可用"), {
-          code: "ENOENT",
-        });
-      await access(join(cacheDir, "db", "trivy.db"));
       const inputPath = join(cwd, "input.cdx.json"),
         reportPath = join(cwd, "report.json"),
         configPath = join(cwd, "trivy.yaml"),
         ignorePath = join(cwd, ".trivyignore");
+      await writeFile(configPath, "{}\n");
+      execution.databaseUpdate = {
+        status: "failed",
+        argv: [
+          "image",
+          "--download-db-only",
+          ...(this.config.dbRepositories ?? []).flatMap((repo) => [
+            "--db-repository",
+            repo,
+          ]),
+          "--no-progress",
+          "--skip-version-check",
+          "--disable-telemetry",
+          "--config",
+          configPath,
+          "--cache-dir",
+          cacheDir,
+        ],
+        startedAt: new Date().toISOString(),
+        finishedAt: new Date().toISOString(),
+        exitCode: null,
+        signal: null,
+        stderr: "",
+        before: await metadata(),
+        after: null,
+      };
+      updating = true;
+      resetDeadline(this.config.databaseUpdateTimeoutMs ?? 300000);
+      await onPhase?.("updating_database");
+      const update = await run(execution.databaseUpdate.argv);
+      execution.exitCode = update.code;
+      execution.signal = update.signal;
+      execution.databaseUpdate.exitCode = update.code;
+      execution.databaseUpdate.signal = update.signal;
+      execution.databaseUpdate.stderr = update.stderr;
+      execution.stderr += update.stderr;
+      if (abort.signal.aborted) throw new Error("数据库更新中断");
+      if (update.code !== 0)
+        throw new Error("Trivy 漏洞数据库更新失败，未开始扫描");
+      execution.databaseUpdate.after = await metadata();
+      if (!execution.databaseUpdate.after)
+        throw Object.assign(
+          new Error("Trivy 更新后漏洞数据库元数据不可用，未开始扫描"),
+          { code: "ENOENT" },
+        );
+      try {
+        await access(join(cacheDir, "db", "trivy.db"));
+      } catch {
+        throw Object.assign(
+          new Error("Trivy 更新后漏洞数据库文件不可用，未开始扫描"),
+          { code: "ENOENT" },
+        );
+      }
+      execution.databaseUpdate.status = "succeeded";
+      execution.databaseUpdate.finishedAt = new Date().toISOString();
+      execution.databaseBefore = execution.databaseUpdate.after;
+      updating = false;
+      resetDeadline(this.config.timeoutMs ?? 120000);
+      await onPhase?.("scanning");
       await Promise.all([
         writeFile(inputPath, input.content, { mode: 0o600 }),
-        writeFile(configPath, "{}\n"),
         writeFile(ignorePath, ""),
       ]);
       let targetPath = inputPath;
@@ -252,10 +330,19 @@ export class ProcessTrivyExecutor implements TrivyExecutor {
             ? "unavailable"
             : "failed";
       execution.error = timedOut
-        ? "Trivy 执行超时"
+        ? updating
+          ? "Trivy 漏洞数据库更新超时，未开始扫描"
+          : "Trivy 执行超时"
         : signal.aborted
-          ? "Trivy 执行中断"
+          ? updating
+            ? "Trivy 漏洞数据库更新中断，未开始扫描"
+            : "Trivy 执行中断"
           : e.message;
+      if (updating && execution.databaseUpdate) {
+        execution.databaseUpdate.status = execution.status;
+        execution.databaseUpdate.error = execution.error;
+        execution.databaseUpdate.finishedAt = new Date().toISOString();
+      }
     } finally {
       clearTimeout(timer);
       signal.removeEventListener("abort", relay);

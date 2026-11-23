@@ -7,10 +7,27 @@ export const ScanConditionsTarget = createContext<
   HTMLElement | null | undefined
 >(undefined);
 
-export function ScanConditions({ children }: { children: ReactNode }) {
+export function ScanConditions({
+  children,
+  trivy = false,
+}: {
+  children: ReactNode;
+  trivy?: boolean;
+}) {
+  const content = (
+    <>
+      {children}
+      {trivy && (
+        <p className="subtle">
+          扫描前自动检查并更新 Trivy
+          漏洞数据库；更新成功后开始扫描，失败则停止。
+        </p>
+      )}
+    </>
+  );
   const target = useContext(ScanConditionsTarget);
-  if (target === undefined) return <>{children}</>;
-  return target ? createPortal(children, target) : null;
+  if (target === undefined) return content;
+  return target ? createPortal(content, target) : null;
 }
 
 export function ScanConditionsHeading({

@@ -69,7 +69,7 @@ test("可配置进程契约使用固定argv与隔离环境并保存版本、库�
     delete process.env.TRIVY_IGNORE_UNFIXED;
   }
 });
-test("真实子进程超时、非零退出、缺失工具与缺失数据库明确终止而非零发现", async () => {
+test("真实子进程超时、非零退出和缺失工具明确终止，缺失数据库先自动获取", async () => {
   const executable = await setup();
   const timeout = await new ProcessTrivyExecutor({
     executable,
@@ -96,14 +96,121 @@ test("真实子进程超时、非零退出、缺失工具与缺失数据库明�
     executable,
     cacheDir: directory,
   }).execute(input(), new AbortController().signal);
-  expect(db.status).toBe("unavailable");
-  expect(db.error).toContain("数据库");
+  expect(db.status).toBe("succeeded");
+  expect(db.databaseUpdate).toMatchObject({
+    status: "succeeded",
+    before: null,
+  });
 });
 
-test('Linux进程只构造两份固定元数据文件，不接受任意目标路径',async()=>{
- const executable=await setup();
- await writeFile(executable,`#!${process.execPath}\nconst fs=require('node:fs'),path=require('node:path');const a=process.argv.slice(2);if(a[0]==='--version'){console.log('Version: fixture-linux');process.exit(0)};const root=a.at(-1);if(a[0]!=='rootfs'||a[a.indexOf('--pkg-types')+1]!=='os'||!fs.readFileSync(path.join(root,'var/lib/dpkg/status'),'utf8').includes('Package: fixture')||fs.readdirSync(root).sort().join(',')!=='etc,var')process.exit(3);fs.writeFileSync(a[a.indexOf('--output')+1],JSON.stringify({SchemaVersion:2,Metadata:{OS:{Family:'debian',Name:'12'}},Results:[]}));`);
- const content=JSON.stringify({format:'dpkg-status/1',osRelease:'ID=debian\nVERSION_ID="12"',dpkgStatus:'Package: fixture\nStatus: install ok installed\nVersion: 1\nArchitecture: amd64\n'});
- const result=await new ProcessTrivyExecutor({executable,cacheDir:directory}).execute({content,contentHash:createHash('sha256').update(content).digest('hex'),kind:'linux'},new AbortController().signal);
- expect(result.status).toBe('succeeded');expect(result.argv).toContain('rootfs');expect(result.argv).not.toContain('/');
+test("Linux进程只构造两份固定元数据文件，不接受任意目标路径", async () => {
+  const executable = await setup();
+  await writeFile(
+    executable,
+    `#!${process.execPath}\nconst fs=require('node:fs'),path=require('node:path');const a=process.argv.slice(2);if(a[0]==='--version'){console.log('Version: fixture-linux');process.exit(0)};if(a.includes('--download-db-only'))process.exit(0);const root=a.at(-1);if(a[0]!=='rootfs'||a[a.indexOf('--pkg-types')+1]!=='os'||!fs.readFileSync(path.join(root,'var/lib/dpkg/status'),'utf8').includes('Package: fixture')||fs.readdirSync(root).sort().join(',')!=='etc,var')process.exit(3);fs.writeFileSync(a[a.indexOf('--output')+1],JSON.stringify({SchemaVersion:2,Metadata:{OS:{Family:'debian',Name:'12'}},Results:[]}));`,
+  );
+  const content = JSON.stringify({
+    format: "dpkg-status/1",
+    osRelease: 'ID=debian\nVERSION_ID="12"',
+    dpkgStatus:
+      "Package: fixture\nStatus: install ok installed\nVersion: 1\nArchitecture: amd64\n",
+  });
+  const result = await new ProcessTrivyExecutor({
+    executable,
+    cacheDir: directory,
+  }).execute(
+    {
+      content,
+      contentHash: createHash("sha256").update(content).digest("hex"),
+      kind: "linux",
+    },
+    new AbortController().signal,
+  );
+  expect(result.status).toBe("succeeded");
+  expect(result.argv).toContain("rootfs");
+  expect(result.argv).not.toContain("/");
+});
+
+test("each new scan refreshes the native vulnerability DB first and freezes scan-time metadata", async () => {
+  const executable = await setup();
+  await writeFile(join(directory, "fresh-update"), "");
+  const result = await new ProcessTrivyExecutor({
+    executable,
+    cacheDir: directory,
+  }).execute(input(), new AbortController().signal);
+  expect(result).toMatchObject({
+    status: "succeeded",
+    databaseUpdate: {
+      status: "succeeded",
+      exitCode: 0,
+      before: { UpdatedAt: "2026-11-01T00:00:00Z" },
+      after: { UpdatedAt: "2026-11-23T00:00:00Z" },
+    },
+    databaseBefore: { UpdatedAt: "2026-11-23T00:00:00Z" },
+    databaseAfter: { UpdatedAt: "2026-11-23T00:00:00Z" },
+  });
+  expect(await readFile(join(directory, "sequence.log"), "utf8")).toBe(
+    "update\nscan\n",
+  );
+  expect(result.argv).toContain("--skip-db-update");
+});
+test("native update failure refuses to scan using an old database", async () => {
+  const executable = await setup();
+  await writeFile(join(directory, "fail-update"), "");
+  const result = await new ProcessTrivyExecutor({
+    executable,
+    cacheDir: directory,
+  }).execute(input(), new AbortController().signal);
+  expect(result.status).toBe("failed");
+  expect(result.error).toContain("数据库更新失败");
+  expect(result.rawReport).toBeUndefined();
+  expect(await readFile(join(directory, "sequence.log"), "utf8")).toBe(
+    "update\n",
+  );
+});
+
+test("database update timeout and cancellation stop before the scanning phase", async () => {
+  const executable = await setup();
+  await writeFile(join(directory, "timeout-update"), "");
+  const phases: string[] = [];
+  const timeout = await new ProcessTrivyExecutor({
+    executable,
+    cacheDir: directory,
+    databaseUpdateTimeoutMs: 1000,
+  }).execute(input(), new AbortController().signal, async (phase) => {
+    phases.push(phase);
+  });
+  expect(timeout.status).toBe("timed_out");
+  expect(timeout.error).toContain("数据库更新超时");
+  expect(phases).toEqual(["updating_database"]);
+  expect(timeout.databaseUpdate?.status).toBe("timed_out");
+  expect(await readFile(join(directory, "sequence.log"), "utf8")).toBe(
+    "update\n",
+  );
+  const controller = new AbortController();
+  const cancelled = await new ProcessTrivyExecutor({
+    executable,
+    cacheDir: directory,
+  }).execute(input(), controller.signal, async () => {
+    controller.abort();
+  });
+  expect(cancelled.status).toBe("interrupted");
+  expect(cancelled.databaseUpdate?.status).toBe("interrupted");
+});
+
+test("database registry selection is server controlled and passed to the native updater", async () => {
+  const executable = await setup();
+  const result = await new ProcessTrivyExecutor({
+    executable,
+    cacheDir: directory,
+    dbRepositories: ["ghcr.io/aquasecurity/trivy-db:2"],
+  }).execute(input(), new AbortController().signal);
+  expect(result.status).toBe("succeeded");
+  expect(result.databaseUpdate?.argv).toEqual(
+    expect.arrayContaining([
+      "--db-repository",
+      "ghcr.io/aquasecurity/trivy-db:2",
+    ]),
+  );
+  expect(result.argv).not.toContain("--db-repository");
 });

@@ -6,7 +6,21 @@ export type AssessmentStatus =
   | "unavailable"
   | "timed_out"
   | "interrupted";
+export type AssessmentPhase = "updating_database" | "scanning";
+export type DatabaseUpdate = {
+  status: Exclude<AssessmentStatus, "queued" | "running">;
+  argv: string[];
+  startedAt: string;
+  finishedAt: string;
+  exitCode: number | null;
+  signal: string | null;
+  stderr: string;
+  before: Record<string, unknown> | null;
+  after: Record<string, unknown> | null;
+  error?: string;
+};
 export type TrivyExecution = {
+  databaseUpdate?: DatabaseUpdate;
   status: Exclude<AssessmentStatus, "queued" | "running">;
   toolVersion: string | null;
   argv: string[];
@@ -63,6 +77,7 @@ export type Assessment = {
   id: string;
   customerId: string;
   status: AssessmentStatus;
+  phase?: AssessmentPhase;
   idempotencyKey: string;
   target:
     | { kind: "software"; softwareId: string; versionId: string }

@@ -1,7 +1,10 @@
 import { useEffect, useRef, useState } from "react";
 import type { FeatureProps } from "../../features";
 import { assessmentStatusLabels } from "./AssessmentDetails";
-import type { AssessmentStatus } from "../../../../../packages/contracts/assessments";
+import type {
+  AssessmentStatus,
+  AssessmentPhase,
+} from "../../../../../packages/contracts/assessments";
 
 // Fetch streaming keeps bearer credentials in headers, unlike native EventSource URLs.
 export function AssessmentLiveStatus({
@@ -17,10 +20,12 @@ export function AssessmentLiveStatus({
   unauthorized.current = onUnauthorized;
   const box = useRef<HTMLDivElement>(null);
   const [status, setStatus] = useState<AssessmentStatus>();
+  const [phase, setPhase] = useState<AssessmentPhase>();
   const [message, setMessage] = useState("正在读取任务状态…");
   useEffect(() => {
     box.current?.scrollIntoView({ block: "center", behavior: "smooth" });
     setStatus(undefined);
+    setPhase(undefined);
     const controller = new AbortController();
     let retry: ReturnType<typeof setTimeout> | undefined;
     async function connect() {
@@ -71,11 +76,20 @@ export function AssessmentLiveStatus({
               throw Error("实时状态无效");
             const status = data.status as AssessmentStatus;
             setStatus(status);
+            setPhase(
+              data.phase === "updating_database"
+                ? "updating_database"
+                : data.phase === "scanning"
+                  ? "scanning"
+                  : undefined,
+            );
             setMessage(
               status === "succeeded"
                 ? "扫描完成，结果已生成。"
                 : status === "running"
-                  ? "正在扫描，请稍候…"
+                  ? data.phase === "updating_database"
+                    ? "正在检查并更新 Trivy 漏洞数据库，成功后自动开始扫描…"
+                    : "数据库准备完成，正在扫描，请稍候…"
                   : status === "queued"
                     ? "任务已提交，正在排队…"
                     : assessmentStatusLabels[status],
@@ -113,7 +127,9 @@ export function AssessmentLiveStatus({
             ? "扫描未完成"
             : status === "queued"
               ? "正在排队"
-              : "正在扫描"}
+              : phase === "updating_database"
+                ? "正在更新漏洞数据库"
+                : "正在扫描"}
       </h3>
       <progress
         aria-label="扫描进度"

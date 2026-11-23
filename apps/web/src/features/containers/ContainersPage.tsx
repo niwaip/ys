@@ -208,7 +208,7 @@ export function ContainersPage({
           {!job?.result && (
             <SeverityControls value={severities} onChange={setSeverities} />
           )}
-          <ScanConditions>
+          <ScanConditions trivy>
             {assessmentOnly && (
               <p>
                 选择已保存的镜像及固定 SBOM
@@ -262,7 +262,7 @@ export function ContainersPage({
               <button disabled={busy}>建立镜像对象</button>
             </form>
           )}
-          <ScanConditions>
+          <ScanConditions trivy>
             <div className="panel">
               <ScanConditionsHeading standaloneLevel={2}>
                 镜像对象
@@ -525,7 +525,7 @@ export function ContainersPage({
                   </>
                 )}
               </div>
-              <ScanConditions>
+              <ScanConditions trivy>
                 <div className="panel">
                   <ScanConditionsHeading>镜像漏洞评估</ScanConditionsHeading>
                   <p>

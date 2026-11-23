@@ -196,7 +196,7 @@ export function LinuxAssessmentsPage(
   }
   return (
     <section className="software-page">
-      <ScanConditions>
+      <ScanConditions trivy>
         <ScanConditionsHeading standaloneLevel={2}>
           Linux系统包CVE扫描
         </ScanConditionsHeading>

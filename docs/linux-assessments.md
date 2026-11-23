@@ -6,7 +6,7 @@
 
 基础采集新增只读 `/var/lib/dpkg/status`、`/etc/lsb-release`、`/etc/debian_version`。目标无需安装 Trivy。原始包数据库保留 Source 包及版本语义；held包仍按已安装状态纳入，Trivy输出的epoch/版本/修订号会重建后与输入核对。扫描前核对 OS 及所有已安装包的名称、版本、架构与归一化清单一致。旧快照缺少原始数据库时提示重新采集，不合成无依据的 SBOM。
 
-后台在独立临时目录仅重建发行版文件及 dpkg 数据库，执行 `trivy rootfs --pkg-types os --scanners vuln`，复用软件扫描的超时、进程隔离、离线数据库、空配置与退出状态处理。固定路径均由服务端生成，客户端不能提供扫描路径或命令。包括 SBOM 在内的扫描显式禁用遥测。Linux 报告默认上限100MB，其他扫描仍为5MB；配置中的 maxOutputBytes 可覆盖此限制。超限明确失败。
+后台在独立临时目录仅重建发行版文件及 dpkg 数据库，执行 `trivy rootfs --pkg-types os --scanners vuln`，复用软件扫描的超时、进程隔离、扫描前原生数据库更新、空配置与退出状态处理。固定路径均由服务端生成，客户端不能提供扫描路径或命令。包括 SBOM 在内的扫描显式禁用遥测。Linux 报告默认上限100MB，其他扫描仍为5MB；配置中的 maxOutputBytes 可覆盖此限制。超限明确失败。
 
 发行版识别必须与输入一致；无法识别、非零退出、无效 JSON 不生成有效结果。Ubuntu 需要 lsb-release，Debian 需要 debian_version。此片不支持 RPM、网络设备厂商规则、运行内核适用性判断、Docker 可写层、挂载卷或应用目录。应用和镜像组件继续走独立 SBOM 评估。
 

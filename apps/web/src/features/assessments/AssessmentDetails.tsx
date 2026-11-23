@@ -577,6 +577,32 @@ export function AssessmentDetails({
         <p>
           开始：{date(job.startedAt)} · 完成：{date(job.finishedAt)}
         </p>
+        {job.execution?.databaseUpdate && (
+          <section aria-label="漏洞数据库更新证据">
+            <h3>扫描前漏洞数据库更新</h3>
+            <p>
+              {job.execution.databaseUpdate.status === "succeeded"
+                ? "Trivy 数据库检查与更新成功"
+                : "数据库更新未完成，未开始扫描"}
+            </p>
+            <p>
+              开始：{date(job.execution.databaseUpdate.startedAt)} · 完成：
+              {date(job.execution.databaseUpdate.finishedAt)}
+            </p>
+            <p>
+              更新前库时间：
+              {String(
+                job.execution.databaseUpdate.before?.UpdatedAt ?? "无本地库",
+              )}
+            </p>
+            <p>
+              更新后库时间：
+              {String(
+                job.execution.databaseUpdate.after?.UpdatedAt ?? "未取得",
+              )}
+            </p>
+          </section>
+        )}
         {job.execution && (
           <>
             <p>

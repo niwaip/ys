@@ -99,7 +99,7 @@ export function AssessmentsPage({
   }
   return (
     <section className="software-page">
-      <ScanConditions>
+      <ScanConditions trivy>
         <header className="page-header">
           <div>
             <p className="eyebrow">固定工具评估</p>

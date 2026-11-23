@@ -70,9 +70,6 @@ test("评估对象只选择一次，网络设备缺少支持资料时不提供�
   );
   await page.getByLabel("评估对象", { exact: true }).selectOption("");
   await page.getByLabel("评估对象", { exact: true }).selectOption(asset.id);
-  await page
-    .getByRole("tab", { name: "Windows 补丁评估", exact: true })
-    .click();
   await expect(
     page.getByText("评估对象读取失败，请刷新页面或重新选择。"),
   ).toBeVisible();
