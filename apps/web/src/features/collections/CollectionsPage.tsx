@@ -298,6 +298,16 @@ export function CollectionsPage({
       fail(e);
     }
   }
+  async function readRawSnapshot(id: string) {
+    try {
+      setRaw(
+        (await api<{ content: string }>(`${base}/snapshots/${id}/raw`, token))
+          .content,
+      );
+    } catch (e) {
+      fail(e);
+    }
+  }
   const asset = assets?.items.find((item) => item.id === target);
   const availableProfiles = profiles.filter((item) => item.assetId === target);
   const selectedProfile = availableProfiles.find(
@@ -985,10 +995,29 @@ export function CollectionsPage({
               </button>
             </div>
             <details className="collect-options">
+              <summary>关联软件 / 镜像SBOM版本</summary>
+              <VersionLinks
+                key={selected.id}
+                customerId={customerId}
+                token={token}
+                onUnauthorized={onUnauthorized}
+                snapshot={selected}
+              />
+            </details>
+            <details className="collect-options">
               <summary>来源与完整性</summary>
               <p>接入时间：{new Date(selected.importedAt).toLocaleString()}</p>
               <p className="collect-hash">SHA-256：{selected.contentHash}</p>
               <p>来源说明：{selected.note ?? "自动或脚本采集"}</p>
+              <pre>{JSON.stringify(selected.extensions, null, 2)}</pre>
+              <button
+                type="button"
+                className="secondary"
+                onClick={() => void readRawSnapshot(selected.id)}
+              >
+                读取原始资料
+              </button>
+              {raw && <pre>{raw}</pre>}
             </details>
           </div>
         </section>
@@ -1240,20 +1269,7 @@ export function CollectionsPage({
               <pre>{JSON.stringify(selected.extensions, null, 2)}</pre>
               <button
                 className="secondary"
-                onClick={async () => {
-                  try {
-                    setRaw(
-                      (
-                        await api<{ content: string }>(
-                          `${base}/snapshots/${selected.id}/raw`,
-                          token,
-                        )
-                      ).content,
-                    );
-                  } catch (e) {
-                    fail(e);
-                  }
-                }}
+                onClick={() => void readRawSnapshot(selected.id)}
               >
                 读取原始资料
               </button>

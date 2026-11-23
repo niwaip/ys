@@ -395,7 +395,11 @@ function Layer({
             )}
           </div>
           <div className="table-scroll">
-            <table>
+            <table
+              className={
+                name === "containers" ? "baseline-containers-table" : undefined
+              }
+            >
               <thead>
                 <tr>
                   {changesOnly ? (
