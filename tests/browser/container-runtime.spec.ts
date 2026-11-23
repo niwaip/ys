@@ -213,13 +213,11 @@ test("redesigned collection tasks, capability gaps, immutable directory handoff,
       },
     },
   });
-  await page
-    .getByLabel("采集JSON文件")
-    .setInputFiles({
-      name: "offline-directory.json",
-      mimeType: "application/json",
-      buffer: Buffer.from(content),
-    });
+  await page.getByLabel("采集JSON文件").setInputFiles({
+    name: "offline-directory.json",
+    mimeType: "application/json",
+    buffer: Buffer.from(content),
+  });
   await page.getByLabel("我已确认资料属于所选主机").check();
   await page.getByRole("button", { name: "保存容器目录", exact: true }).click();
   await expect(
@@ -242,4 +240,85 @@ test("redesigned collection tasks, capability gaps, immutable directory handoff,
   await page.getByLabel("当前客户").selectOption("river");
   await expect(page.getByText("还没有采集记录", { exact: true })).toBeVisible();
   expect(errors).toEqual([]);
+});
+
+test("collection action keeps submission, completion and errors visible beside the button", async ({
+  page,
+}) => {
+  await page.goto("/");
+  await page.getByLabel("操作员访问令牌").fill("browser-test-secret-token");
+  await page.getByRole("button", { name: "进入工作台" }).click();
+  await page.locator("nav button").filter({ hasText: "资产采集" }).click();
+  await page.getByLabel("主机资产").selectOption({ label: "Docker测试主机" });
+  await page.getByRole("tab", { name: "容器运行资料", exact: true }).click();
+  let release!: () => void;
+  const gate = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  let holdPolling = true;
+  let submittedJob: Record<string, unknown> | undefined;
+  await page.route("**/collections/jobs", async (route) => {
+    if (route.request().method() === "POST") {
+      await gate;
+      const response = await route.fetch();
+      submittedJob = {
+        ...(await response.json()),
+        status: "queued",
+        snapshotId: null,
+      };
+      await route.fulfill({ response, json: submittedJob });
+    } else if (holdPolling && submittedJob) {
+      await route.fulfill({ json: { items: [submittedJob] } });
+    } else await route.continue();
+  });
+  try {
+    await page
+      .getByRole("button", { name: "采集容器目录 →", exact: true })
+      .click();
+    await expect(
+      page.getByRole("status").filter({ hasText: "正在提交采集任务" }),
+    ).toBeInViewport();
+    await expect(
+      page.getByRole("button", { name: "处理中…", exact: true }),
+    ).toBeDisabled();
+  } finally {
+    release();
+  }
+  const progress = page.getByRole("region", { name: "本次采集任务" });
+  await expect(progress).toContainText("排队");
+  await expect(
+    page.getByRole("button", { name: "采集中…", exact: true }),
+  ).toBeDisabled();
+  holdPolling = false;
+  await expect(progress).toContainText("完成");
+  await expect(progress).toBeInViewport();
+  await page.setViewportSize({ width: 390, height: 844 });
+  await progress.scrollIntoViewIfNeeded();
+  await expect(progress).toBeInViewport();
+  expect(
+    await page.evaluate(
+      () => document.documentElement.scrollWidth <= innerWidth,
+    ),
+  ).toBe(true);
+  await progress.getByRole("button", { name: "查看本次采集资料" }).click();
+  await expect(
+    page.getByRole("dialog", { name: "采集资料详情" }),
+  ).toBeVisible();
+  await page.getByRole("button", { name: "关闭资料详情" }).click();
+  await page.unroute("**/collections/jobs");
+  await page.route("**/collections/jobs", (route) =>
+    route.request().method() === "POST"
+      ? route.fulfill({
+          status: 503,
+          json: { message: "fixture connection unavailable" },
+        })
+      : route.continue(),
+  );
+  await page
+    .getByRole("button", { name: "采集容器目录 →", exact: true })
+    .click();
+  await expect(page.getByRole("alert")).toBeInViewport();
+  await expect(page.getByRole("alert")).toContainText(
+    "fixture connection unavailable",
+  );
 });

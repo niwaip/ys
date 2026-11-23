@@ -77,6 +77,25 @@ export function CollectionsPage({
   const [busy, setBusy] = useState(false);
   const [revision, setRevision] = useState(0);
   const [jobKey, setJobKey] = useState(requestId);
+  const [currentJob, setCurrentJob] = useState<Job>();
+  const feedback = useRef<HTMLDivElement>(null);
+  const submitting = useRef(false);
+  const selection = `${customerId}:${target}:${profileId}:${scope}`;
+  const currentSelection = useRef(selection);
+  currentSelection.current = selection;
+  const collecting =
+    !!currentJob && ["queued", "running"].includes(currentJob.status);
+  useEffect(() => {
+    setCurrentJob(undefined);
+    setNotice("");
+  }, [target, profileId, scope, customerId]);
+  useEffect(() => {
+    if (notice || error || currentJob || busy)
+      feedback.current?.scrollIntoView({
+        block: "nearest",
+        behavior: "smooth",
+      });
+  }, [notice, error, currentJob?.id, busy]);
   const [content, setContent] = useState("");
   const [fileName, setFileName] = useState("");
   const base = `/customers/${customerId}/collections`;
@@ -141,6 +160,11 @@ export function CollectionsPage({
         );
         if (controller.signal.aborted) return;
         setJobs(result.items);
+        setCurrentJob((current) =>
+          current
+            ? (result.items.find((job) => job.id === current.id) ?? current)
+            : undefined,
+        );
         const completed = result.items.filter(
           (job) => job.snapshotId && !completedJobs.current.has(job.id),
         );
@@ -164,9 +188,13 @@ export function CollectionsPage({
   }, [base, token, revision, onUnauthorized]);
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    if (submitting.current || collecting) return;
+    submitting.current = true;
+    const submittedSelection = selection;
+    setCurrentJob(undefined);
     setBusy(true);
     setError("");
-    setNotice("");
+    setNotice(tab === "connect" ? "正在提交采集任务…" : "");
     const values = new FormData(event.currentTarget);
     try {
       if (tab === "manual") {
@@ -226,16 +254,18 @@ export function CollectionsPage({
             ),
           }),
         });
-        setNotice(
-          `采集任务：${statuses[job.status] ?? job.status}${job.error ? `，${job.error}` : ""}`,
-        );
+        if (currentSelection.current !== submittedSelection) return;
+        setCurrentJob(job);
+        setNotice("");
         setJobKey(requestId());
         setHistoryTab("tasks");
       }
       setRevision((x) => x + 1);
     } catch (e) {
+      setNotice("");
       fail(e);
     } finally {
+      submitting.current = false;
       setBusy(false);
     }
   }
@@ -348,16 +378,6 @@ export function CollectionsPage({
           <strong>{active}</strong>
         </div>
       </div>
-      {error && (
-        <div role="alert" className="error">
-          {error}
-        </div>
-      )}
-      {notice && (
-        <div role="status" className="notice">
-          {notice}
-        </div>
-      )}
       <section className="collect-card">
         <div className="collect-card-heading">
           <div>
@@ -804,6 +824,7 @@ export function CollectionsPage({
                   className="primary"
                   disabled={
                     busy ||
+                    collecting ||
                     !target ||
                     (tab === "connect" &&
                       (!profileId ||
@@ -814,14 +835,66 @@ export function CollectionsPage({
                 >
                   {busy
                     ? "处理中…"
-                    : tab === "connect"
-                      ? scope === "basic"
-                        ? "开始基础采集 →"
-                        : "采集容器目录 →"
-                      : scope === "basic"
-                        ? "保存基础快照"
-                        : "保存容器目录"}
+                    : collecting
+                      ? "采集中…"
+                      : tab === "connect"
+                        ? scope === "basic"
+                          ? "开始基础采集 →"
+                          : "采集容器目录 →"
+                        : scope === "basic"
+                          ? "保存基础快照"
+                          : "保存容器目录"}
                 </button>
+              )}
+            </div>
+            <div ref={feedback} className="collect-feedback">
+              {error && (
+                <div role="alert" className="error">
+                  {error}
+                </div>
+              )}
+              {notice && (
+                <div role="status" className="notice">
+                  {notice}
+                </div>
+              )}
+              {currentJob && (
+                <section
+                  aria-label="本次采集任务"
+                  className="notice"
+                  aria-live="polite"
+                >
+                  <h3>
+                    采集任务：{statuses[currentJob.status] ?? currentJob.status}
+                  </h3>
+                  {collecting && (
+                    <>
+                      <progress aria-label="采集进度" />
+                      <p>
+                        正在
+                        {currentJob.scope === "basic"
+                          ? "采集主机基础资料"
+                          : "读取 Docker 镜像与容器目录"}
+                        ，请稍候…
+                      </p>
+                    </>
+                  )}
+                  {currentJob.error && <p>{currentJob.error}</p>}
+                  {currentJob.snapshotId && (
+                    <button
+                      type="button"
+                      className="secondary"
+                      onClick={() => void showSnapshot(currentJob.snapshotId!)}
+                    >
+                      查看本次采集资料
+                    </button>
+                  )}
+                  {!collecting &&
+                    !currentJob.snapshotId &&
+                    !currentJob.error && (
+                      <p>未取得采集资料，请查看任务记录后重试。</p>
+                    )}
+                </section>
               )}
             </div>
           </form>
