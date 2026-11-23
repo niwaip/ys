@@ -1,3 +1,4 @@
+import { LegacyAssetImports } from "./features/imports/LegacyAssetImports";
 import { LifecycleRiskPage } from "./features/lifecycle-risk/LifecycleRiskPage";
 import {
   CollectionWorkspace,
@@ -17,11 +18,14 @@ import { ReportsPage } from "./features/reports/ReportsPage";
 import { AssessmentsPage } from "./features/assessments/AssessmentsPage";
 import { LifecyclePage } from "./features/lifecycle/LifecyclePage";
 import { SoftwarePage } from "./features/software/SoftwarePage";
-import { WindowsPage } from "./features/windows/WindowsPage";
-import { ImportsPage } from "./features/imports/ImportsPage";
+import { LegacyWindowsPage } from "./features/windows/WindowsPage";
 import type { ComponentType } from "react";
 import { AssetsPage } from "./features/assets/AssetsPage";
-export type CollectionContext = { snapshotId?: string; profileId?: string };
+export type CollectionContext = {
+  snapshotId?: string;
+  profileId?: string;
+  assetImport?: boolean;
+};
 export type FeatureProps = {
   collectionContext?: CollectionContext;
   customerId: string;
@@ -86,9 +90,14 @@ const legacyFeatures: Feature[] = [
     id: "windows",
     label: "Windows 采集导入",
     icon: "⇧",
-    component: WindowsPage,
+    component: LegacyWindowsPage,
   },
-  { id: "imports", label: "CSV 资料导入", icon: "⇧", component: ImportsPage },
+  {
+    id: "imports",
+    label: "CSV 资料导入",
+    icon: "⇧",
+    component: LegacyAssetImports,
+  },
   {
     id: "lifecycle",
     label: "EOS/EOL 生命周期",

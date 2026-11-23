@@ -4,8 +4,9 @@ test("CSV上传预览、问题阻断、提交及刷新溯源", async ({ page }) 
   await page.getByLabel("操作员访问令牌").fill("browser-test-secret-token");
   await page.getByRole("button", { name: "进入工作台" }).click();
   await page.locator("nav button").filter({ hasText: "资产台账" }).click();
-  await page.locator("nav button").filter({ hasText: "资产采集" }).click();
-  await page.getByRole("tab", { name: "CSV 资料导入", exact: true }).click();
+  await page
+    .getByRole("button", { name: "批量导入资产清单", exact: true })
+    .click();
   const unique = Date.now();
   const csv = `source,sourceRef,name,kind,collectedAt,ip\ncmdb,ui-${unique},CSV主机-${unique},host,,10.1.0.1`;
   await page.getByLabel("CSV 文件").setInputFiles({
@@ -26,8 +27,9 @@ test("CSV上传预览、问题阻断、提交及刷新溯源", async ({ page }) 
   await page.getByRole("button", { name: "整批提交" }).click();
   await expect(page.getByText("已导入", { exact: true })).toBeVisible();
   await page.reload();
-  await page.locator("nav button").filter({ hasText: "资产采集" }).click();
-  await page.getByRole("tab", { name: "CSV 资料导入", exact: true }).click();
+  await page
+    .getByRole("button", { name: "批量导入资产清单", exact: true })
+    .click();
   await page.getByRole("button", { name: `valid-${unique}.csv` }).click();
   await page.getByText("原始 CSV").click();
   await expect(page.getByText(csv, { exact: true })).toBeVisible();

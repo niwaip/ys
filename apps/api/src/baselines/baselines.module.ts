@@ -1,3 +1,4 @@
+import { WindowsModule, WindowsService } from "../windows/windows.module";
 import { requireActiveAsset } from "../assets/asset-state";
 import {
   BadRequestException,
@@ -27,10 +28,11 @@ import { compare, adopt, type Values } from "./comparison";
 const names = ["identity", ...collectionSectionNames] as const;
 const confirmation = z
   .object({
+    writeMasterData: z.boolean().optional(),
     snapshotId: z.uuid(),
     expectedBaselineId: z.uuid().nullable(),
     idempotencyKey: z.string().min(1).max(100),
-    sections: z.array(z.enum(names)).min(1).max(9),
+    sections: z.array(z.enum(names)).min(1).max(10),
     excludeFields: z
       .array(
         z
@@ -54,6 +56,7 @@ type Approval = {
     netbox: { name?: string; serial?: string } | null;
     expected: string | null;
     remoteExpected?: { name?: string; serial?: string };
+    selection?: { sections: string[]; excludeFields: string[] };
   };
   snapshot_id: string;
   actor: string;
@@ -64,6 +67,7 @@ export class BaselinesService {
     private db: Database,
     private collections: CollectionsService,
     private netbox: NetBoxService,
+    private windows: WindowsService,
   ) {}
   async onModuleInit() {
     await this.db.query(
@@ -155,6 +159,20 @@ export class BaselinesService {
         : null,
       sections,
       history,
+      review:
+        (
+          await this.db.query(
+            "SELECT id FROM asset_baselines WHERE customer_id=$1 AND asset_id=$2 AND snapshot_id=$3 AND status='confirmed' LIMIT 1",
+            [customer, asset, row?.id ?? null],
+          )
+        ).rows.length > 0
+          ? { status: "confirmed" }
+          : ((
+              await this.db.query(
+                "SELECT 'rejected' AS status,actor,reason,created_at AS \"createdAt\" FROM collection_rejections WHERE customer_id=$1 AND snapshot_id=$2",
+                [customer, row?.id ?? null],
+              )
+            ).rows[0] ?? { status: "pending" }),
     };
   }
   async section(
@@ -231,6 +249,15 @@ export class BaselinesService {
     await this.collections.assertTarget(customer, asset);
     const snapshot = await this.snapshot(customer, asset, input.snapshotId);
     const data = snapshot.normalized as HostCollection;
+    if (
+      input.writeMasterData === false &&
+      !Object.values(data.sections).some(
+        (section) => section?.status === "acquired",
+      )
+    )
+      throw new BadRequestException(
+        "本次采集未完整取得可采纳资料，请补采后确认",
+      );
     const approval = await this.db.transaction(async (tx) => {
       await tx.query("SELECT id FROM customers WHERE id=$1 FOR UPDATE", [
         customer,
@@ -251,6 +278,17 @@ export class BaselinesService {
         "SELECT id FROM assets WHERE customer_id=$1 AND id=$2 FOR UPDATE",
         [customer, asset],
       );
+      if (
+        (
+          await tx.query(
+            "SELECT snapshot_id FROM collection_rejections WHERE customer_id=$1 AND snapshot_id=$2",
+            [customer, input.snapshotId],
+          )
+        ).rows.length
+      )
+        throw new ConflictException(
+          "本次资料已拒绝采纳，请重新采集或提交修正资料",
+        );
       const old = (
         await tx.query(
           "SELECT * FROM asset_baselines WHERE customer_id=$1 AND asset_id=$2 AND status='confirmed' ORDER BY sequence DESC LIMIT 1",
@@ -315,7 +353,11 @@ export class BaselinesService {
           : {}),
       };
       const netbox =
-        this.netbox.enabled && Object.keys(patch).length ? patch : null;
+        this.netbox.enabled &&
+        input.writeMasterData !== false &&
+        Object.keys(patch).length
+          ? patch
+          : null;
       if (
         (netbox?.name?.length ?? 0) > 200 ||
         (netbox?.serial?.length ?? 0) > 200
@@ -409,13 +451,62 @@ export class BaselinesService {
     };
   }
   private async finalize(row: Approval) {
-    const saved = await this.db.query(
-      "UPDATE asset_baselines SET status='confirmed' WHERE id=$1 AND status=$2 RETURNING id",
-      [row.id, row.status],
-    );
-    if (!saved.rows.length)
-      throw new ConflictException("确认状态已变化，请刷新");
-    return { ...this.result(row), status: "confirmed" };
+    return this.db.transaction(async (tx) => {
+      const snapshot = await this.collections.row(
+        row.customer_id,
+        row.snapshot_id,
+        tx,
+      );
+      if (
+        (snapshot.normalized as HostCollection).extensions.inputFormat ===
+          "windows-bat/1" &&
+        row.plan.selection?.sections.includes("os") &&
+        !row.plan.selection.excludeFields.some((f) => f.startsWith("os."))
+      )
+        await this.windows.publishCollection(
+          row.customer_id,
+          row.asset_id,
+          snapshot,
+          tx,
+        );
+      const saved = await tx.query(
+        "UPDATE asset_baselines SET status='confirmed' WHERE id=$1 AND status=$2 RETURNING id",
+        [row.id, row.status],
+      );
+      if (!saved.rows.length)
+        throw new ConflictException("确认状态已变化，请刷新");
+      return { ...this.result(row), status: "confirmed" };
+    });
+  }
+  async reject(
+    customer: string,
+    asset: string,
+    snapshotId: string,
+    reason: string,
+    actor: string,
+  ) {
+    await this.collections.assertTarget(customer, asset);
+    await this.snapshot(customer, asset, snapshotId);
+    return this.db.transaction(async (tx) => {
+      await tx.query("SELECT id FROM customers WHERE id=$1 FOR UPDATE", [
+        customer,
+      ]);
+      await requireActiveAsset(tx, customer, asset);
+      if (
+        (
+          await tx.query(
+            "SELECT id FROM asset_baselines WHERE customer_id=$1 AND asset_id=$2 AND snapshot_id=$3 AND status IN ('confirmed','pending','unknown')",
+            [customer, asset, snapshotId],
+          )
+        ).rows.length
+      )
+        throw new ConflictException("本次资料已采纳或正在处理中");
+      await tx.query(
+        "INSERT INTO collection_rejections(customer_id,asset_id,snapshot_id,actor,reason) VALUES($1,$2,$3,$4,$5) ON CONFLICT(customer_id,snapshot_id) DO NOTHING",
+        [customer, asset, snapshotId, actor, reason],
+      );
+      return { status: "rejected", snapshotId };
+    });
   }
   async cancel(customer: string, asset: string, id: string) {
     await this.asset(customer, asset);
@@ -481,6 +572,23 @@ class BaselinesController {
       changesOnly: q.data.changesOnly === "true",
     });
   }
+  @Post("reject") reject(req: AuthorizedRequest) {
+    const input = z
+      .object({
+        snapshotId: z.uuid(),
+        reason: z.string().trim().min(1).max(1000),
+      })
+      .strict()
+      .safeParse(req.body);
+    if (!input.success)
+      throw new BadRequestException("请选择资料并填写拒绝原因");
+    return this.service.reject(
+      ...this.ids(req),
+      input.data.snapshotId,
+      input.data.reason,
+      req.operator.name,
+    );
+  }
   @Post("confirm") confirm(req: AuthorizedRequest) {
     const p = confirmation.safeParse(req.body);
     if (!p.success)
@@ -499,6 +607,7 @@ class BaselinesController {
   }
 }
 for (const m of [
+  "reject",
   "preview",
   "section",
   "confirm",
@@ -508,14 +617,18 @@ for (const m of [
   Req()(BaselinesController.prototype, m, 0);
 Inject(BaselinesService)(BaselinesController, undefined, 0);
 @Module({
-  imports: [CollectionsModule],
+  imports: [CollectionsModule, WindowsModule],
   controllers: [BaselinesController],
   providers: [
     {
       provide: BaselinesService,
-      inject: [DATABASE, CollectionsService, NetBoxService],
-      useFactory: (db: Database, c: CollectionsService, n: NetBoxService) =>
-        new BaselinesService(db, c, n),
+      inject: [DATABASE, CollectionsService, NetBoxService, WindowsService],
+      useFactory: (
+        db: Database,
+        c: CollectionsService,
+        n: NetBoxService,
+        w: WindowsService,
+      ) => new BaselinesService(db, c, n, w),
     },
   ],
 })

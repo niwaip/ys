@@ -14,6 +14,7 @@ export default defineConfig({
       command:
         "node tests/fixtures/trivy/setup.cjs && npx tsx tests/fixtures/container-runtime-server.ts",
       url: "http://127.0.0.1:3219/api/customers",
+      env: { YS_TRIVY_FIXTURE_DIR: ".data/container-trivy-browser-fixture" },
       reuseExistingServer: false,
     },
     {

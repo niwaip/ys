@@ -181,6 +181,8 @@ export class AssessmentService {
               softwareId: input.softwareId,
               versionId: input.versionId,
             };
+    if (target.kind === "linux")
+      await this.collections.assertAccepted(customer, target.snapshotId);
     const snapshot = await this.snapshot(customer, target);
     const material =
       target.kind === "linux"
@@ -300,6 +302,7 @@ export class AssessmentService {
     const items = [];
     for (const item of page.items) {
       try {
+        await this.collections.assertAccepted(customer, item.id);
         const input = linuxInput(
           await this.collections.row(customer, item.id),
           assetId,

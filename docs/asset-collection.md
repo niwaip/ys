@@ -1,6 +1,6 @@
 # NetBox资产与网页分层采集
 
-> 本文主要记录 2026-11-19 的历史实现。2026-11-23 的采集页面、基础与 Docker 分工、离线脚本及本机配置以[采集页面设计](collection-page-redesign.md)为准；镜像在线生成以[容器运行资料设计](container-runtime-design.md)为准。下文早期“未新增”不代表当前版本仍不支持。
+> 本文主要记录 2026-11-19 的历史实现。2026-11-23 的采集页面、基础与 Docker 分工、离线脚本及本机配置以[采集页面设计](collection-page-redesign.md)为准；镜像在线生成以[容器运行资料设计](container-runtime-design.md)为准。统一设备分类、脚本接入及结果确认以[多设备采集设计](multi-device-collection-design.md)为准。下文早期“未新增”不代表当前版本仍不支持。
 
 本地实现，2026-11-19。来源：[规格#18](https://github.com/niwaip/ys/issues/18)及后续NetBox方向澄清。没有连接或修改远端NetBox/YS，没有真实SSH、Pi提供商或Trivy扫描验收。本次实现直接提交当前ys/integration分支，按功能组织；测试边界沿用业务HTTP、关键浏览器流程和固定外部进程替身。
 

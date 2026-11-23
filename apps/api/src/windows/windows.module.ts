@@ -12,7 +12,11 @@ import {
 } from "@nestjs/common";
 import { createHash, randomUUID } from "node:crypto";
 import { z } from "zod";
-import { DATABASE, type Database } from "../persistence/database";
+import {
+  DATABASE,
+  type Database,
+  type Queryable,
+} from "../persistence/database";
 import type { AuthorizedRequest } from "../auth/auth";
 import { parseCollector } from "./collector";
 const upload = z
@@ -63,6 +67,65 @@ export class WindowsService {
         return item;
       }),
     };
+  }
+  async publishCollection(
+    customer: string,
+    asset: string,
+    row: Record<string, unknown>,
+    session: Queryable,
+  ) {
+    const content = String(row.content),
+      snapshot = parseCollector(content),
+      hash = String(row.content_hash);
+    const old = (
+      await session.query(
+        "SELECT id,result FROM import_materials WHERE customer_id=$1 AND format='windows-json' AND content_hash=$2",
+        [customer, hash],
+      )
+    ).rows[0];
+    if (old) {
+      const prior = old.result as {
+        assetId?: string | null;
+        snapshotId?: string | null;
+      };
+      if (prior.assetId && prior.assetId !== asset)
+        throw new BadRequestException(
+          "Windows原始资料已归属其他资产，请先解决关联",
+        );
+      if (prior.assetId === asset && prior.snapshotId) return;
+    }
+    const importId = old ? String(old.id) : randomUUID(),
+      snapshotId = randomUUID();
+    const result = {
+      status: "imported",
+      adapterVersion: "windows-bat/1",
+      assetId: asset,
+      snapshotId,
+      snapshot,
+      issues: [],
+      collectionSnapshotId: row.id,
+    };
+    if (old)
+      await session.query(
+        "UPDATE import_materials SET result=$3::jsonb WHERE customer_id=$1 AND id=$2",
+        [customer, importId, JSON.stringify(result)],
+      );
+    else
+      await session.query(
+        "INSERT INTO import_materials(id,customer_id,format,file_name,content,content_hash,result) VALUES($1,$2,'windows-json',$3,$4,$5,$6::jsonb)",
+        [
+          importId,
+          customer,
+          row.file_name,
+          content,
+          hash,
+          JSON.stringify(result),
+        ],
+      );
+    await session.query(
+      "INSERT INTO windows_snapshots(id,customer_id,asset_id,import_id,snapshot) VALUES($1,$2,$3,$4,$5::jsonb)",
+      [snapshotId, customer, asset, importId, JSON.stringify(snapshot)],
+    );
   }
   async ingest(customer: string, fileName: string, content: string) {
     if (Buffer.byteLength(content, "utf8") > 500000 || content.includes("\0"))

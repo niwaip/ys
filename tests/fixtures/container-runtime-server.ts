@@ -18,8 +18,8 @@ const config = {
     },
   ],
   trivy: {
-    executable: resolve(".data/trivy-browser-fixture/trivy.cjs"),
-    cacheDir: resolve(".data/trivy-browser-fixture"),
+    executable: resolve(".data/container-trivy-browser-fixture/trivy.cjs"),
+    cacheDir: resolve(".data/container-trivy-browser-fixture"),
   },
 };
 const fixture = resolve(".data/container-runtime-ssh.cjs");

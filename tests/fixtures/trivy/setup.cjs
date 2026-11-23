@@ -1,7 +1,9 @@
 // Provision isolated fake executable/database for browser tests only.
 const fs = require("node:fs");
 const path = require("node:path");
-const root = path.resolve(".data/trivy-browser-fixture");
+const root = path.resolve(
+  process.env.YS_TRIVY_FIXTURE_DIR || ".data/trivy-browser-fixture",
+);
 fs.mkdirSync(path.join(root, "db"), { recursive: true });
 fs.writeFileSync(
   path.join(root, "db", "metadata.json"),

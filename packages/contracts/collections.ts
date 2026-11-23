@@ -1,9 +1,11 @@
 import { z } from "zod";
+import { deviceFacts } from "./device-collection";
 import { runtimeObservationsSchema } from "./finding-context";
 export const collectionSectionNames = [
   "os",
   "packages",
   "hardware",
+  "device",
   "network",
   "dockerClient",
   "dockerDaemon",
@@ -73,6 +75,15 @@ export const hostCollectionSchema = z
   })
   .strict()
   .superRefine((v, ctx) => {
+    if (
+      ["acquired", "partial"].includes(v.sections.device?.status ?? "") &&
+      !deviceFacts.safeParse(v.sections.device?.data).success
+    )
+      ctx.addIssue({
+        code: "custom",
+        path: ["sections", "device"],
+        message: "设备资料类型、字段或日期无效",
+      });
     const packages = v.sections.packages;
     if (packages?.status === "acquired" || packages?.status === "partial")
       if (!z.array(packageRecord).max(50000).safeParse(packages.data).success)

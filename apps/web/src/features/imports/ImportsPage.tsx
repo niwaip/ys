@@ -12,7 +12,8 @@ export function ImportsPage({
   customerId,
   token,
   onUnauthorized,
-}: FeatureProps) {
+  onImported,
+}: FeatureProps & { onImported?: () => void }) {
   const [file, setFile] = useState<File>();
   const [material, setMaterial] = useState<ImportMaterial>();
   const [history, setHistory] = useState<ImportMaterial[]>([]);
@@ -79,6 +80,7 @@ export function ImportsPage({
         ),
       );
       refresh();
+      onImported?.();
     } catch (e) {
       fail(e);
     } finally {

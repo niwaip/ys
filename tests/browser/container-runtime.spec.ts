@@ -125,7 +125,7 @@ test("redesigned collection tasks, capability gaps, immutable directory handoff,
   await page.getByLabel("操作员访问令牌").fill("browser-test-secret-token");
   await page.getByRole("button", { name: "进入工作台" }).click();
   await page.locator("nav button").filter({ hasText: "资产采集" }).click();
-  await page.getByLabel("主机资产").selectOption({ label: "Docker测试主机" });
+  await page.getByLabel("目标资产").selectOption({ label: "Docker测试主机" });
   await expect(
     page.getByRole("tab", { name: "主机基础资料", exact: true }),
   ).toHaveAttribute("aria-selected", "true");
@@ -139,9 +139,8 @@ test("redesigned collection tasks, capability gaps, immutable directory handoff,
   await basic.locator("summary").click();
   await basic.getByRole("button", { name: "查看采集资料" }).click();
   await expect(
-    page.getByRole("dialog", { name: "采集资料详情" }),
+    page.getByRole("region", { name: "采集结果", exact: true }),
   ).toBeVisible();
-  await page.getByRole("button", { name: "关闭资料详情" }).click();
   await page.getByRole("tab", { name: "容器运行资料", exact: true }).click();
   await page.getByRole("button", { name: "检查采集能力" }).click();
   const checks = page.getByRole("region", { name: "采集能力检查" });
@@ -187,7 +186,7 @@ test("redesigned collection tasks, capability gaps, immutable directory handoff,
     "docker-fixture",
   );
   await page.locator("nav button").filter({ hasText: "资产采集" }).click();
-  await page.getByLabel("主机资产").selectOption({ label: "Docker测试主机" });
+  await page.getByLabel("目标资产").selectOption({ label: "Docker测试主机" });
   await page.getByRole("tab", { name: "容器运行资料", exact: true }).click();
   await page.getByRole("tab", { name: "离线脚本", exact: true }).click();
   let waiting = page.waitForEvent("download");
@@ -265,7 +264,7 @@ test("collection action keeps submission, completion and errors visible beside t
   await page.getByLabel("操作员访问令牌").fill("browser-test-secret-token");
   await page.getByRole("button", { name: "进入工作台" }).click();
   await page.locator("nav button").filter({ hasText: "资产采集" }).click();
-  await page.getByLabel("主机资产").selectOption({ label: "Docker测试主机" });
+  await page.getByLabel("目标资产").selectOption({ label: "Docker测试主机" });
   await page.getByRole("tab", { name: "容器运行资料", exact: true }).click();
   let release!: () => void;
   const gate = new Promise<void>((resolve) => {
@@ -339,9 +338,9 @@ test("collection action keeps submission, completion and errors visible beside t
   await progress.getByRole("button", { name: "查看本次采集资料" }).click();
   await expect(inline).toBeVisible();
   await inline.getByRole("button", { name: "确认采纳容器资料" }).click();
-  await expect(inline.getByRole("status")).toContainText(
-    "已确认并更新资产基线",
-  );
+  await expect(
+    inline.getByText("已确认并更新资产基线", { exact: true }),
+  ).toBeVisible();
   expect(confirmationBodies).toHaveLength(1);
   expect(confirmationBodies[0].sections).toEqual(
     expect.arrayContaining(["containers", "images"]),

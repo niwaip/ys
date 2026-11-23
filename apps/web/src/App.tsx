@@ -25,6 +25,7 @@ export function App() {
     () => {
       const query = new URLSearchParams(location.hash.split("?")[1]);
       return {
+        assetImport: query.get("import") === "csv",
         snapshotId: query.get("snapshot") ?? undefined,
         profileId: query.get("profile") ?? undefined,
       };
@@ -39,6 +40,7 @@ export function App() {
     setAssetId(asset);
     setCollectionContext(context);
     const query = new URLSearchParams();
+    if (context.assetImport) query.set("import", "csv");
     if (asset) query.set("asset", asset);
     if (context.snapshotId) query.set("snapshot", context.snapshotId);
     if (context.profileId) query.set("profile", context.profileId);
@@ -48,6 +50,7 @@ export function App() {
     const change = () => {
       const query = new URLSearchParams(location.hash.split("?")[1]);
       setCollectionContext({
+        assetImport: query.get("import") === "csv",
         snapshotId: query.get("snapshot") ?? undefined,
         profileId: query.get("profile") ?? undefined,
       });

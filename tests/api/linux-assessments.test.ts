@@ -209,6 +209,22 @@ test("Linux固定快照经真实任务队列扫描，Dashboard和报告冻结结
       },
     },
   };
+  const adoptSnapshot = async (snapshotId: string) => {
+    const preview = (
+      await h.get(`${base}/assets/${asset.id}/baseline`).set(auth).expect(200)
+    ).body;
+    await h
+      .post(`${base}/assets/${asset.id}/baseline/confirm`)
+      .set(auth)
+      .send({
+        snapshotId,
+        expectedBaselineId: preview.current?.id ?? null,
+        idempotencyKey: `adopt-${snapshotId}`,
+        sections: ["os", "packages"],
+        writeMasterData: false,
+      })
+      .expect(201);
+  };
   const snapshot = (
     await h
       .post(base + "/collections/manual")
@@ -216,6 +232,7 @@ test("Linux固定快照经真实任务队列扫描，Dashboard和报告冻结结
       .send({ assetId: asset.id, note: "fixed input", data })
       .expect(201)
   ).body;
+  await adoptSnapshot(snapshot.id);
   const inconsistent = structuredClone(data);
   inconsistent.extensions.rawSections.dpkgStatus +=
     inconsistent.extensions.rawSections.dpkgStatus;
@@ -234,6 +251,7 @@ test("Linux固定快照经真实任务队列扫描，Dashboard和报告冻结结
       })
       .expect(201)
   ).body;
+  await adoptSnapshot(bad.id);
   await h
     .post(base + "/assessments")
     .set(auth)
@@ -252,6 +270,7 @@ test("Linux固定快照经真实任务队列扫描，Dashboard和报告冻结结
       .send({ assetId: asset.id, note: "Missing release input", data: missing })
       .expect(201)
   ).body;
+  await adoptSnapshot(old.id);
   await h
     .post(base + "/assessments")
     .set(auth)
@@ -576,6 +595,7 @@ test("Linux固定快照经真实任务队列扫描，Dashboard和报告冻结结
       .send({ assetId: asset.id, note: "multiarch", data: multiData })
       .expect(201)
   ).body;
+  await adoptSnapshot(multiSnap.id);
   const multiJob = (
     await h
       .post(base + "/assessments")
@@ -640,6 +660,7 @@ test("Linux固定快照经真实任务队列扫描，Dashboard和报告冻结结
         })
         .expect(201)
     ).body;
+    await adoptSnapshot(snap.id);
     const scan = (
       await h
         .post(base + "/assessments")

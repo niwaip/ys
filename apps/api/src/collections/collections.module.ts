@@ -1,3 +1,5 @@
+import { parseCollector } from "../windows/collector";
+import { parseCollection } from "./input";
 import {
   BadRequestException,
   ConflictException,
@@ -27,6 +29,7 @@ import {
 } from "../persistence/database";
 import type { AuthorizedRequest } from "../auth/auth";
 import { NetBoxService } from "../netbox/netbox.module";
+import { deviceCategory } from "../../../../packages/contracts/device-collection";
 const pagination = z
   .object({
     limit: z.coerce.number().int().min(1).max(100).default(50),
@@ -93,6 +96,26 @@ export class CollectionsService {
     private readonly db: Database,
     private readonly netbox: NetBoxService,
   ) {}
+  async roleTemplates(customer: string) {
+    const rows = (
+      await this.db.query(
+        "SELECT role_id,category FROM collection_role_templates WHERE customer_id=$1",
+        [customer],
+      )
+    ).rows;
+    return {
+      mappings: Object.fromEntries(
+        rows.map((r) => [String(r.role_id), r.category]),
+      ),
+    };
+  }
+  async setRoleTemplate(customer: string, roleId: number, category: string) {
+    await this.db.query(
+      "INSERT INTO collection_role_templates(customer_id,role_id,category) VALUES($1,$2,$3) ON CONFLICT(customer_id,role_id) DO UPDATE SET category=EXCLUDED.category",
+      [customer, roleId, category],
+    );
+    return this.roleTemplates(customer);
+  }
   private async checkedTarget(
     customerId: string,
     assetId: string,
@@ -147,23 +170,36 @@ export class CollectionsService {
       throw new BadRequestException(
         "采集JSON最多5000000字节，不能含NUL；不会截断输入",
       );
-    let raw: unknown;
-    try {
-      raw = JSON.parse(content);
-    } catch {
-      throw new BadRequestException("采集内容必须为JSON");
-    }
-    const parsed = hostCollectionSchema.safeParse(raw);
-    if (!parsed.success)
-      throw new BadRequestException(
-        "不支持的采集格式或字段；请使用ys-host/1规范，未知资料放extensions",
-      );
-    const data = parsed.data;
+    const data = parseCollection(content);
     const hash = createHash("sha256").update(content).digest("hex");
     await this.assertTarget(customerId, assetId);
     return this.db.transaction(async (session) => {
       const { asset } = await this.checkedTarget(customerId, assetId, session);
       const attrs = asset.attributes as Record<string, unknown>;
+      const objectType = (attrs.netbox as { objectType?: string } | undefined)
+        ?.objectType;
+      const category = (
+        data.sections.device?.data as { category?: string } | undefined
+      )?.category;
+      if (
+        category &&
+        ((objectType === "virtual-machine" && category !== "vm") ||
+          (objectType === "device" && category === "vm"))
+      )
+        throw new ConflictException("设备资料类型与NetBox原生对象不符");
+      if (
+        data.extensions.targetAssetId &&
+        data.extensions.targetAssetId !== assetId
+      )
+        throw new ConflictException("脚本声明的目标编号与所选资产不符");
+      if (
+        data.extensions.inputFormat === "windows-bat/1" &&
+        !attrs.serial &&
+        data.extensions.targetAssetId !== assetId
+      )
+        throw new ConflictException(
+          "目标资产未登记序列号，Windows资料身份待确认；请先在资产主数据补充序列号",
+        );
       if (
         data.identity.serial &&
         attrs.serial &&
@@ -201,7 +237,7 @@ export class CollectionsService {
         );
       const saved = (
         await session.query(
-          "INSERT INTO collection_snapshots(id,customer_id,asset_id,entry,file_name,content,content_hash,note,normalized,target) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9::jsonb,$10::jsonb) RETURNING *",
+          "INSERT INTO collection_snapshots(id,customer_id,asset_id,entry,file_name,content,content_hash,note,normalized,target,review_required) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9::jsonb,$10::jsonb,true) RETURNING *",
           [
             randomUUID(),
             customerId,
@@ -227,15 +263,39 @@ export class CollectionsService {
       return view;
     });
   }
-  async row(customerId: string, id: string) {
+  async row(customerId: string, id: string, session: Queryable = this.db) {
     const row = (
-      await this.db.query(
+      await session.query(
         "SELECT * FROM collection_snapshots WHERE customer_id=$1 AND id=$2",
         [customerId, id],
       )
     ).rows[0];
     if (!row) throw new NotFoundException("该客户下未找到采集快照");
     return row;
+  }
+  async assertAccepted(customer: string, id: string) {
+    const row = await this.row(customer, id);
+    if (!row.review_required) return;
+    const approvals = (
+      await this.db.query(
+        "SELECT plan->'selection' AS selection FROM asset_baselines WHERE customer_id=$1 AND snapshot_id=$2 AND status='confirmed'",
+        [customer, id],
+      )
+    ).rows;
+    const selections = approvals.map(
+      (r) => r.selection as { sections: string[]; excludeFields: string[] },
+    );
+    if (
+      !selections.some(
+        (s) =>
+          s.sections.includes("os") &&
+          !s.excludeFields.some((f) => f.startsWith("os.")),
+      ) ||
+      !selections.some((s) => s.sections.includes("packages"))
+    )
+      throw new ConflictException(
+        "采集资料尚未采纳完整的操作系统及系统包区块，请先确认资料再评估",
+      );
   }
   async get(customerId: string, id: string) {
     return summary(await this.row(customerId, id));
@@ -265,6 +325,29 @@ export class CollectionsService {
       total: Number(total),
       limit: query.limit,
       offset: query.offset,
+    };
+  }
+  async windowsPreview(customer: string, id: string, offset: number) {
+    const row = await this.row(customer, id);
+    if (
+      (row.normalized as HostCollection).extensions.inputFormat !==
+      "windows-bat/1"
+    )
+      throw new NotFoundException("该快照不是Windows脚本资料");
+    const { extensions, software, kbs, ...snapshot } = parseCollector(
+      String(row.content),
+    );
+    return {
+      snapshot,
+      software: {
+        items: software?.slice(offset, offset + 50) ?? null,
+        total: software?.length ?? null,
+      },
+      kbs: {
+        items: kbs?.slice(offset, offset + 50) ?? null,
+        total: kbs?.length ?? null,
+      },
+      offset,
     };
   }
   async raw(customerId: string, id: string) {
@@ -303,6 +386,24 @@ export class CollectionsService {
 @Controller("api/customers/:customerId/collections")
 class CollectionsController {
   constructor(private readonly service: CollectionsService) {}
+  @Get("role-templates") roleTemplates(req: AuthorizedRequest) {
+    return this.service.roleTemplates(req.params.customerId);
+  }
+  @Post("role-templates") setRoleTemplate(req: AuthorizedRequest) {
+    const input = z
+      .object({
+        roleId: z.number().int().positive(),
+        category: deviceCategory.exclude(["vm"]),
+      })
+      .strict()
+      .safeParse(req.body);
+    if (!input.success) throw new BadRequestException("设备角色及表单类型无效");
+    return this.service.setRoleTemplate(
+      req.params.customerId,
+      input.data.roleId,
+      input.data.category,
+    );
+  }
   @Post("upload") upload(req: AuthorizedRequest) {
     const input = upload.safeParse(req.body);
     if (!input.success)
@@ -310,8 +411,9 @@ class CollectionsController {
     if (input.data.scope) {
       let raw;
       try {
-        raw = hostCollectionSchema.parse(JSON.parse(input.data.content));
-      } catch {
+        raw = parseCollection(input.data.content);
+      } catch (error) {
+        if (error instanceof ConflictException) throw error;
         throw new BadRequestException("采集格式无效");
       }
       const declared = (
@@ -391,6 +493,18 @@ class CollectionsController {
   @Get("snapshots/:snapshotId") get(req: AuthorizedRequest) {
     return this.service.get(req.params.customerId, this.id(req));
   }
+  @Get("snapshots/:snapshotId/windows") windowsPreview(req: AuthorizedRequest) {
+    const q = z
+      .object({ offset: z.coerce.number().int().min(0).max(10000).default(0) })
+      .strict()
+      .safeParse(req.query);
+    if (!q.success) throw new BadRequestException("Windows资料分页无效");
+    return this.service.windowsPreview(
+      req.params.customerId,
+      this.id(req),
+      q.data.offset,
+    );
+  }
   @Get("snapshots/:snapshotId/raw") raw(req: AuthorizedRequest) {
     return this.service.raw(req.params.customerId, this.id(req));
   }
@@ -410,6 +524,9 @@ class CollectionsController {
   }
 }
 for (const method of [
+  "windowsPreview",
+  "roleTemplates",
+  "setRoleTemplate",
   "upload",
   "manual",
   "list",

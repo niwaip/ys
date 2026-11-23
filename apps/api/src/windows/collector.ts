@@ -6,6 +6,7 @@ const text = z.preprocess(
 );
 const rawSchema = z
   .object({
+    TargetAssetId: z.uuid().optional(),
     Hostname: z.string().trim().min(1).max(200),
     SerialNumber: text,
     CollectorVersion: text,
@@ -58,6 +59,7 @@ export function parseCollector(content: string) {
       ? r.SerialNumber
       : null;
   return {
+    targetAssetId: r.TargetAssetId ?? null,
     hostname: r.Hostname,
     serial,
     collectorVersion: r.CollectorVersion ?? null,

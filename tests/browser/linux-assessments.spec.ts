@@ -49,6 +49,25 @@ test("Linux快照扫描分页、原始证据下载、历史回读及客户隔离
       },
     },
   };
+  const adopt = async (snapshotId: string) => {
+    const preview = await (
+      await request.get(`${api}/assets/${asset.id}/baseline`, { headers })
+    ).json();
+    const confirmed = await request.post(
+      `${api}/assets/${asset.id}/baseline/confirm`,
+      {
+        headers,
+        data: {
+          snapshotId,
+          expectedBaselineId: preview.current?.id ?? null,
+          idempotencyKey: `adopt-${snapshotId}`,
+          sections: ["os", "packages"],
+          writeMasterData: false,
+        },
+      },
+    );
+    expect(confirmed.ok()).toBe(true);
+  };
   const snapshotResponse = await request.post(`${api}/collections/manual`, {
     headers,
     data: {
@@ -59,6 +78,7 @@ test("Linux快照扫描分页、原始证据下载、历史回读及客户隔离
   });
   expect(snapshotResponse.ok()).toBe(true);
   const snapshot = await snapshotResponse.json();
+  await adopt(snapshot.id);
   let streams = 0,
     submissions = 0;
   page.on("request", (r) => {
@@ -358,6 +378,7 @@ test("Linux快照扫描分页、原始证据下载、历史回读及客户隔离
       },
     })
   ).json();
+  await adopt(newer.id);
   const rescanResponse = page.waitForResponse(
     (r) => r.url().endsWith("/assessments") && r.request().method() === "POST",
   );

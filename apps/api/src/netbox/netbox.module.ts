@@ -6,6 +6,7 @@ import {
   Controller,
   Get,
   Global,
+  ForbiddenException,
   Inject,
   Module,
   NotFoundException,
@@ -87,6 +88,22 @@ const nativeAsset = z.object({
     .object({ id: z.number(), name: z.string() })
     .nullable()
     .optional(),
+  role: z
+    .object({
+      id: z.number().int().positive(),
+      name: z.string(),
+      slug: z.string().optional(),
+    })
+    .nullable()
+    .optional(),
+  device_type: z
+    .object({
+      id: z.number().int().positive(),
+      model: z.string(),
+      manufacturer: z.object({ id: z.number(), name: z.string() }).optional(),
+    })
+    .nullable()
+    .optional(),
   primary_ip4: z.object({ address: z.string() }).nullable().optional(),
   primary_ip6: z.object({ address: z.string() }).nullable().optional(),
 });
@@ -145,9 +162,14 @@ export class NetBoxService {
         signal: AbortSignal.timeout(config.timeoutMs ?? 15000),
         redirect: "error",
       });
+      if (response.status === 403)
+        throw new ForbiddenException(
+          "NetBox目录读取权限不足（403），请为集成令牌配置所需对象的读取权限",
+        );
       if (!response.ok) throw new Error("remote");
       return await boundedJson(response);
-    } catch {
+    } catch (error) {
+      if (error instanceof ForbiddenException) throw error;
       throw new BadGatewayException(
         "无法读取NetBox，请检查连接、权限与响应格式；本地缓存未视为最新",
       );
@@ -233,6 +255,8 @@ export class NetBoxService {
       serial: row.serial ?? null,
       assetTag: row.asset_tag ?? null,
       platform: row.platform ?? null,
+      role: row.role ?? null,
+      deviceType: row.device_type ?? null,
       primaryIp4: row.primary_ip4?.address ?? null,
       primaryIp6: row.primary_ip6?.address ?? null,
     };
@@ -251,6 +275,61 @@ export class NetBoxService {
       [customerId, id, instance, type, row.id, row.tenant!.id],
     );
     return { assetId: id, objectType: type, externalId: row.id };
+  }
+  async catalog(customer: string, type?: z.infer<typeof objectType>) {
+    this.tenant(customer);
+    const definitions = {
+      roles: "dcim/device-roles/",
+      deviceTypes: "dcim/device-types/",
+      sites: "dcim/sites/",
+      clusters: "virtualization/clusters/",
+    };
+    const result: Record<string, { id: number; name: string }[]> = {};
+    for (const [key, path] of Object.entries(definitions)) {
+      if (type === "device" && key === "clusters") continue;
+      if (type === "virtual-machine" && ["roles", "deviceTypes"].includes(key))
+        continue;
+      let next: string | null = path + "?limit=100";
+      const seen = new Set<string>();
+      const items: { id: number; name: string }[] = [];
+      while (next) {
+        const url = new URL(next, this.config!.baseUrl);
+        if (
+          url.pathname !== new URL(path, this.config!.baseUrl).pathname ||
+          seen.has(url.href) ||
+          seen.size >= 100
+        )
+          throw new BadGatewayException("NetBox目录分页无效或过大");
+        seen.add(url.href);
+        const parsed = z
+          .object({
+            count: z.number().int().nonnegative().max(10000),
+            next: z.string().nullable(),
+            results: z.array(
+              z.object({
+                id: z.number().int().positive(),
+                name: z.string().optional(),
+                model: z.string().optional(),
+              }),
+            ),
+          })
+          .safeParse(await this.read(next));
+        if (!parsed.success)
+          throw new BadGatewayException("NetBox目录响应格式无效");
+        for (const item of parsed.data.results) {
+          if (items.some((i) => i.id === item.id) || items.length >= 10000)
+            throw new BadGatewayException("NetBox目录包含重复项或过大");
+          const name = key === "deviceTypes" ? item.model : item.name;
+          if (!name) throw new BadGatewayException("NetBox目录缺少名称");
+          items.push({ id: item.id, name });
+        }
+        next = parsed.data.next;
+        if (!next && items.length !== parsed.data.count)
+          throw new BadGatewayException("NetBox目录分页不完整");
+      }
+      result[key] = items;
+    }
+    return result;
   }
   async sync(customerId: string) {
     const tenantId = this.tenant(customerId);
@@ -649,6 +728,14 @@ export class NetBoxController {
       );
     return this.service.create(req.params.customerId, input.data);
   }
+  @Get("catalog") catalog(req: AuthorizedRequest) {
+    const q = z
+      .object({ objectType: objectType.optional() })
+      .strict()
+      .safeParse(req.query);
+    if (!q.success) throw new BadRequestException("目录对象类型无效");
+    return this.service.catalog(req.params.customerId, q.data.objectType);
+  }
   @Get("operations") operations(req: AuthorizedRequest) {
     return this.service.operations(req.params.customerId);
   }
@@ -677,6 +764,7 @@ export class NetBoxController {
   }
 }
 for (const method of [
+  "catalog",
   "status",
   "mappings",
   "sync",

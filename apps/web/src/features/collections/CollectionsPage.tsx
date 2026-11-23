@@ -1,3 +1,12 @@
+import { WindowsCollectionPreview } from "./WindowsCollectionPreview";
+import { NewCollectionAsset } from "./NewCollectionAsset";
+import { DeviceFields } from "./DeviceFields";
+import {
+  categoryForAsset,
+  deviceCategories,
+  deviceFields,
+  type DeviceCategory,
+} from "../../../../../packages/contracts/device-collection";
 import { AssetBaseline } from "./AssetBaseline";
 import "./collections.css";
 import "./collection-workbench.css";
@@ -57,6 +66,12 @@ export function CollectionsPage({
   const [editingConnection, setEditingConnection] = useState(false);
   const [usePi, setUsePi] = useState(false);
   const [historyTab, setHistoryTab] = useState("records");
+  const [category, setCategory] = useState<DeviceCategory>("other");
+  const [roleMappings, setRoleMappings] = useState<
+    Record<string, DeviceCategory>
+  >({});
+  const [platform, setPlatform] = useState("linux");
+  const [addingAsset, setAddingAsset] = useState(false);
   const [scope, setScope] = useState("basic");
   const [capability, setCapability] =
     useState<
@@ -81,7 +96,7 @@ export function CollectionsPage({
   const [currentJob, setCurrentJob] = useState<Job>();
   const feedback = useRef<HTMLDivElement>(null);
   const submitting = useRef(false);
-  const selection = `${customerId}:${target}:${profileId}:${scope}`;
+  const selection = `${customerId}:${target}:${profileId}:${scope}:${category}:${platform}`;
   const currentSelection = useRef(selection);
   currentSelection.current = selection;
   const collecting =
@@ -90,6 +105,10 @@ export function CollectionsPage({
     setCurrentJob(undefined);
     setSelected(undefined);
     setNotice("");
+    setRaw(undefined);
+    setContent("");
+    setFileName("");
+    setError("");
   }, [target, profileId, scope, customerId]);
   useEffect(() => {
     if (notice || error || currentJob || busy)
@@ -100,6 +119,14 @@ export function CollectionsPage({
   }, [notice, error, currentJob?.id, busy]);
   const [content, setContent] = useState("");
   const [fileName, setFileName] = useState("");
+  const fileRevision = useRef(0);
+  const selectedSnapshotId = useRef(selected?.id);
+  selectedSnapshotId.current = selected?.id;
+  useEffect(() => {
+    fileRevision.current++;
+    setContent("");
+    setFileName("");
+  }, [tab, target, scope, platform, category]);
   const base = `/customers/${customerId}/collections`;
   function fail(e: unknown) {
     if (e instanceof ApiError && e.status === 401) onUnauthorized();
@@ -193,11 +220,12 @@ export function CollectionsPage({
     if (submitting.current || collecting) return;
     submitting.current = true;
     const submittedSelection = selection;
-    if (scope === "container-inventory") setSelected(undefined);
+    setRaw(undefined);
     setCurrentJob(undefined);
     setBusy(true);
     setError("");
     setNotice(tab === "connect" ? "正在提交采集任务…" : "");
+    setSelected(undefined);
     const values = new FormData(event.currentTarget);
     try {
       if (tab === "manual") {
@@ -224,6 +252,25 @@ export function CollectionsPage({
                 ? new Date(String(values.get("collectedAt"))).toISOString()
                 : null,
               sections: {
+                ...(deviceFields(category).some((field) =>
+                  values.get(`device.${field}`),
+                )
+                  ? {
+                      device: {
+                        status: "acquired",
+                        data: {
+                          category,
+                          ...Object.fromEntries(
+                            deviceFields(category).map((field) => [
+                              field,
+                              String(values.get(`device.${field}`) || "") ||
+                                null,
+                            ]),
+                          ),
+                        },
+                      },
+                    }
+                  : {}),
                 os: {
                   status: hasOs ? "acquired" : "not_collected",
                   data: hasOs ? os : null,
@@ -233,6 +280,7 @@ export function CollectionsPage({
             },
           }),
         });
+        if (currentSelection.current !== submittedSelection) return;
         setSelected(saved);
         setNotice("人工来源快照已保存，尚未评估");
       } else if (tab === "upload") {
@@ -240,6 +288,7 @@ export function CollectionsPage({
           method: "POST",
           body: JSON.stringify({ assetId: target, fileName, content, scope }),
         });
+        if (currentSelection.current !== submittedSelection) return;
         setSelected(saved);
         setNotice("原始资料与快照已保存，尚未评估");
       } else {
@@ -273,12 +322,11 @@ export function CollectionsPage({
     }
   }
   useEffect(() => {
-    if (currentJob?.scope === "container-inventory" && currentJob.snapshotId)
-      void showSnapshot(currentJob.snapshotId);
+    if (currentJob?.snapshotId) void showSnapshot(currentJob.snapshotId);
   }, [currentJob?.id, currentJob?.snapshotId]);
   const inlineResult = useRef<HTMLElement>(null);
   useEffect(() => {
-    if (selected?.scope === "container-inventory")
+    if (selected)
       inlineResult.current?.scrollIntoView({
         block: "start",
         behavior: "smooth",
@@ -300,16 +348,56 @@ export function CollectionsPage({
     }
   }
   async function readRawSnapshot(id: string) {
+    const requestedSelection = currentSelection.current;
     try {
-      setRaw(
-        (await api<{ content: string }>(`${base}/snapshots/${id}/raw`, token))
-          .content,
+      const result = await api<{ content: string }>(
+        `${base}/snapshots/${id}/raw`,
+        token,
       );
+      if (
+        requestedSelection === currentSelection.current &&
+        selectedSnapshotId.current === id
+      )
+        setRaw(result.content);
     } catch (e) {
-      fail(e);
+      if (requestedSelection === currentSelection.current) fail(e);
     }
   }
   const asset = assets?.items.find((item) => item.id === target);
+  useEffect(() => {
+    const controller = new AbortController();
+    api<{ mappings: Record<string, DeviceCategory> }>(
+      `${base}/role-templates`,
+      token,
+      {},
+      controller.signal,
+    )
+      .then((v) => {
+        if (!controller.signal.aborted) setRoleMappings(v.mappings);
+      })
+      .catch((e) => {
+        if (!controller.signal.aborted) fail(e);
+      });
+    return () => controller.abort();
+  }, [base, token]);
+  useEffect(() => {
+    if (!asset) return;
+    setCategory(categoryForAsset(asset, roleMappings));
+    const platformName = JSON.stringify(
+      asset.attributes.platform ?? "",
+    ).toLowerCase();
+    setPlatform(platformName.includes("windows") ? "windows" : "linux");
+  }, [asset?.id, roleMappings]);
+  const hostType =
+    ["server", "vm"].includes(category) ||
+    (category === "other" && asset?.source !== "netbox");
+  const linuxSupported = hostType && platform === "linux";
+  useEffect(() => {
+    if (!linuxSupported) {
+      setScope("basic");
+      if (tab === "connect" || tab === "offline") setTab("manual");
+    }
+  }, [linuxSupported]);
   const availableProfiles = profiles.filter((item) => item.assetId === target);
   const selectedProfile = availableProfiles.find(
     (item) => item.id === profileId,
@@ -323,7 +411,7 @@ export function CollectionsPage({
   }, [target, profiles]);
   useEffect(() => {
     setCapability(undefined);
-  }, [target, profileId, scope]);
+  }, [target, profileId, scope, platform]);
   async function checkCapabilities() {
     setBusy(true);
     setError("");
@@ -345,7 +433,7 @@ export function CollectionsPage({
     setError("");
     try {
       const script = await api<{ fileName: string; content: string }>(
-        `${base}/script?scope=${scope}`,
+        `${base}/script?scope=${scope}&platform=${platform}${target ? `&assetId=${target}` : ""}`,
         token,
       );
       const url = URL.createObjectURL(
@@ -391,12 +479,12 @@ export function CollectionsPage({
         </div>
         <div className="collect-live">
           <span />
-          Linux 采集 · 只读命令
+          多类型设备 · 资料采集
         </div>
       </header>
       <section className="collect-metrics" aria-label="采集概览">
         <div>
-          <span>主机资产</span>
+          <span>纳管资产</span>
           <strong>{assets?.total ?? "—"}</strong>
         </div>
         <div>
@@ -412,7 +500,7 @@ export function CollectionsPage({
         <div className="collect-card-heading">
           <div>
             <h2>采集配置</h2>
-            <p>选择采集内容、目标主机与资料接入方式。</p>
+            <p>选择目标资产、适用资料与接入方式。</p>
           </div>
           <span className="collect-step">配置 → 采集 → 确认</span>
         </div>
@@ -433,7 +521,9 @@ export function CollectionsPage({
               type="button"
               role="tab"
               aria-label={label}
-              disabled={busy}
+              disabled={
+                busy || (key === "container-inventory" && !linuxSupported)
+              }
               key={key}
               aria-selected={scope === key}
               onClick={() => {
@@ -456,14 +546,14 @@ export function CollectionsPage({
         <div className="collect-target collect-shared-target">
           <div className="collect-identity">
             <label>
-              主机资产
+              目标资产
               <select
-                aria-label="主机资产"
+                aria-label="目标资产"
                 disabled={busy}
                 value={target}
                 onChange={(e) => setTarget(e.target.value)}
               >
-                <option value="">选择主机</option>
+                <option value="">选择资产</option>
                 {assets?.items.map((item) => (
                   <option key={item.id} value={item.id}>
                     {item.name}
@@ -474,6 +564,68 @@ export function CollectionsPage({
                 ))}
               </select>
             </label>
+            <button
+              type="button"
+              className="text-button"
+              disabled={busy}
+              onClick={() => setAddingAsset(true)}
+            >
+              ＋ 新增资产
+            </button>
+            <label>
+              设备资料类型
+              <select
+                aria-label="设备资料类型"
+                value={category}
+                disabled={
+                  busy ||
+                  (
+                    asset?.attributes.netbox as
+                      { objectType?: string } | undefined
+                  )?.objectType === "virtual-machine"
+                }
+                onChange={(e) => setCategory(e.target.value as DeviceCategory)}
+              >
+                {Object.entries(deviceCategories).map(([key, label]) => (
+                  <option key={key} value={key}>
+                    {label}
+                  </option>
+                ))}
+              </select>
+            </label>
+            {!!(asset?.attributes.role as { id?: number } | undefined)?.id &&
+              category !== "vm" && (
+                <button
+                  type="button"
+                  className="text-button"
+                  onClick={async () => {
+                    try {
+                      const v = await api<{
+                        mappings: Record<string, DeviceCategory>;
+                      }>(`${base}/role-templates`, token, {
+                        method: "POST",
+                        body: JSON.stringify({
+                          roleId: (asset!.attributes.role as { id: number }).id,
+                          category,
+                        }),
+                      });
+                      setRoleMappings(v.mappings);
+                      setNotice("已保存该NetBox角色的表单映射");
+                    } catch (e) {
+                      fail(e);
+                    }
+                  }}
+                >
+                  将此表单用于同角色设备
+                </button>
+              )}
+            <p className="collect-muted">
+              主数据来源：
+              {asset?.source === "netbox"
+                ? "NetBox · 角色、型号及平台"
+                : "本地资产"}
+              。设备类别与操作系统分别选择。
+            </p>
             {assets && assets.total > 100 && (
               <details className="collect-host-pages">
                 <summary>
@@ -510,19 +662,58 @@ export function CollectionsPage({
                     <summary>资产详情</summary>
                     <code>{asset.id}</code>
                     <p>来源：{asset.source}</p>
+                    {asset.source === "netbox" && (
+                      <>
+                        <p>
+                          角色：
+                          {String(
+                            (
+                              asset.attributes.role as
+                                { name?: string } | undefined
+                            )?.name ?? "未登记",
+                          )}{" "}
+                          · 型号：
+                          {String(
+                            (
+                              asset.attributes.deviceType as
+                                { model?: string } | undefined
+                            )?.model ?? "未登记",
+                          )}
+                        </p>
+                        <p>
+                          平台：
+                          {String(
+                            (
+                              asset.attributes.platform as
+                                { name?: string } | undefined
+                            )?.name ?? "未登记",
+                          )}{" "}
+                          · 同步时间：
+                          {String(
+                            (
+                              asset.attributes.netbox as
+                                { syncedAt?: string } | undefined
+                            )?.syncedAt ?? "未知",
+                          )}
+                        </p>
+                      </>
+                    )}
                   </details>
                 </div>
-                <span className="collect-pill">已选择主机</span>
+                <span className="collect-pill">已选择资产</span>
               </div>
             ) : (
               <div className="collect-empty">
                 <span>▥</span>
-                <h3>先选择一台主机</h3>
+                <h3>先选择一项资产</h3>
                 <p>在资产台账登记后，即可关联访问凭证并开始采集。</p>
               </div>
             )}
           </div>
-          <div className="collect-access">
+          <div
+            className="collect-access"
+            hidden={tab !== "connect" || !linuxSupported}
+          >
             <div className="collect-label-row">
               <label htmlFor="collection-connection">
                 主机连接{" "}
@@ -601,7 +792,7 @@ export function CollectionsPage({
             </details>
           </div>
         </div>
-        {capability && (
+        {capability && tab === "connect" && (
           <div
             className="collect-capabilities"
             role="region"
@@ -642,33 +833,86 @@ export function CollectionsPage({
           <form
             className={`collect-input collect-mode-${tab}`}
             onSubmit={submit}
-            key={`${tab}:${target}`}
+            key={`${tab}:${target}:${category}:${platform}`}
           >
             <div
-              className="collect-methods"
+              className="collect-methods collect-entry-groups"
               role="tablist"
               aria-label="资料接入方式"
             >
-              {[
-                ["connect", "连接采集", "↗"],
-                ["upload", "上传脚本结果", "⇧"],
-                ["offline", "离线脚本", "↓"],
-                ...(scope === "basic" ? [["manual", "手动输入", "✎"]] : []),
-              ].map(([key, label, icon]) => (
+              <button
+                type="button"
+                role="tab"
+                aria-selected={tab !== "manual"}
+                onClick={() => setTab(linuxSupported ? "connect" : "upload")}
+              >
+                自动／脚本采集
+              </button>
+              {scope === "basic" && (
                 <button
                   type="button"
-                  key={key}
                   role="tab"
-                  aria-label={label}
-                  aria-selected={tab === key}
-                  className={tab === key ? "selected" : ""}
-                  onClick={() => setTab(key)}
+                  aria-label="手动输入"
+                  aria-selected={tab === "manual"}
+                  onClick={() => setTab("manual")}
                 >
-                  <span>{icon}</span>
-                  {label}
+                  手动输入
                 </button>
-              ))}
+              )}
             </div>
+            {tab !== "manual" && (
+              <div className="collect-auto-options">
+                {scope === "basic" && hostType && (
+                  <label>
+                    目标平台
+                    <select
+                      aria-label="目标平台"
+                      value={platform}
+                      onChange={(e) => {
+                        setPlatform(e.target.value);
+                        setTab(
+                          e.target.value === "windows" ? "upload" : "connect",
+                        );
+                        setContent("");
+                        setFileName("");
+                      }}
+                    >
+                      <option value="linux">Linux</option>
+                      <option value="windows">Windows</option>
+                    </select>
+                  </label>
+                )}
+                <div
+                  className="collect-methods"
+                  role="tablist"
+                  aria-label="自动采集方式"
+                >
+                  {[
+                    ...(linuxSupported ? [["connect", "连接采集"]] : []),
+                    ["upload", "上传脚本结果"],
+                    ...(hostType ? [["offline", "离线脚本"]] : []),
+                  ].map(([key, label]) => (
+                    <button
+                      type="button"
+                      role="tab"
+                      aria-label={label}
+                      aria-selected={tab === key}
+                      key={key}
+                      onClick={() => setTab(key)}
+                    >
+                      {label}
+                    </button>
+                  ))}
+                </div>
+                {!linuxSupported && (
+                  <p className="notice">
+                    {hostType
+                      ? "Windows目前支持脚本结果上传，不支持远程执行。"
+                      : "该类设备暂不支持连接采集；可上传ys-host/1设备资料或手动输入。SNMP v3将在后续阶段提供。"}
+                  </p>
+                )}
+              </div>
+            )}
             {tab === "connect" ? (
               <>
                 <div className="collect-scope">
@@ -737,12 +981,20 @@ export function CollectionsPage({
               </>
             ) : tab === "offline" ? (
               <section className="collect-offline">
+                {platform === "windows" && (
+                  <p>
+                    在目标Windows上运行下载的PowerShell脚本：
+                    <code>powershell -File .\\ys-windows.ps1</code>，生成
+                    windows-collection.json
+                    后上传。仅执行只读查询，不更改执行策略。
+                  </p>
+                )}
                 <h3>
                   {scope === "basic"
                     ? "主机基础资料离线脚本"
                     : "容器目录离线脚本"}
                 </h3>
-                <p>
+                <p hidden={platform === "windows"}>
                   在目标 Linux 主机准备 Node.js；基础脚本无需
                   Docker，容器目录脚本需要 Docker 读取权限，两者均不要求 Trivy。
                 </p>
@@ -754,7 +1006,7 @@ export function CollectionsPage({
                 >
                   下载{scope === "basic" ? "基础" : "容器目录"}采集脚本
                 </button>
-                <code>
+                <code hidden={platform === "windows"}>
                   node ys-
                   {scope === "basic" ? "host-basic" : "docker-inventory"}.mjs
                   &gt; collection.json
@@ -767,7 +1019,9 @@ export function CollectionsPage({
               <>
                 <h3>上传采集资料</h3>
                 <p className="collect-muted">
-                  使用脚本生成的主机JSON；软件与镜像SBOM在对应功能上传。
+                  支持 Linux ys-host/1、Windows
+                  windows-bat/1，以及包含设备资料区块的 ys-host/1
+                  JSON；软件与镜像SBOM在对应功能上传。
                   <span
                     className="collect-tip"
                     tabIndex={0}
@@ -797,7 +1051,15 @@ export function CollectionsPage({
                         setError("资料超过5MB，未截断上传");
                         return;
                       }
-                      setContent(await file.text());
+                      const revision = ++fileRevision.current;
+                      const requested = currentSelection.current;
+                      const text = await file.text();
+                      if (
+                        requested !== currentSelection.current ||
+                        revision !== fileRevision.current
+                      )
+                        return;
+                      setContent(text);
                       setFileName(file.name);
                     }}
                   />
@@ -813,7 +1075,7 @@ export function CollectionsPage({
               <>
                 <div className="collect-fields">
                   <label>
-                    主机名
+                    资产名称 / 主机名
                     <input
                       name="hostname"
                       required
@@ -830,18 +1092,22 @@ export function CollectionsPage({
                       placeholder="例如：客户现场提供"
                     />
                   </label>
-                  {[
-                    ["id", "OS发行版ID"],
-                    ["version", "OS版本"],
-                    ["kernel", "运行内核"],
-                    ["architecture", "架构"],
-                  ].map(([key, label]) => (
+                  {(hostType
+                    ? [
+                        ["id", "OS发行版ID"],
+                        ["version", "OS版本"],
+                        ["kernel", "运行内核"],
+                        ["architecture", "架构"],
+                      ]
+                    : []
+                  ).map(([key, label]) => (
                     <label key={key}>
                       {label}
                       <input name={key} maxLength={255} />
                     </label>
                   ))}
                 </div>
+                <DeviceFields category={category} />
                 <details className="collect-options">
                   <summary>更多来源信息</summary>
                   <div className="collect-fields">
@@ -954,16 +1220,25 @@ export function CollectionsPage({
           </form>
         </div>
       </section>
-      {selected?.scope === "container-inventory" && (
+      {selected && (
         <section
           ref={inlineResult}
           className="collect-card collect-inline-result"
-          aria-label="容器采集结果"
+          aria-label={
+            selected.scope === "container-inventory"
+              ? "容器采集结果"
+              : "采集结果"
+          }
         >
           <header className="collect-card-heading">
             <div>
               <span className="collect-kicker">本次采集结果</span>
-              <h2>容器与镜像目录 · {selected.identity.hostname}</h2>
+              <h2>
+                {selected.scope === "container-inventory"
+                  ? "容器与镜像目录"
+                  : "设备资料"}{" "}
+                · {selected.identity.hostname}
+              </h2>
               <p>
                 采集时间：{selected.collectedAt ?? "未知"} ·
                 独立快照，尚未进行漏洞评估
@@ -980,12 +1255,23 @@ export function CollectionsPage({
                 className="secondary"
                 onClick={() => {
                   setSelected(undefined);
-                  setNotice("暂未采纳，本次采集记录已保留，原基线不变。");
+                  setNotice(
+                    "暂未采纳，资料仍待确认，原基线不变；可在历史中继续处理。",
+                  );
                 }}
               >
                 暂不采纳
               </button>
             </div>
+            {selected.extensions.inputFormat === "windows-bat/1" && (
+              <WindowsCollectionPreview
+                key={selected.id}
+                customerId={customerId}
+                token={token}
+                onUnauthorized={onUnauthorized}
+                snapshotId={selected.id}
+              />
+            )}
             <AssetBaseline
               key={selected.id}
               customerId={customerId}
@@ -993,26 +1279,33 @@ export function CollectionsPage({
               onUnauthorized={onUnauthorized}
               assetId={selected.assetId}
               snapshotId={selected.id}
-              scope="container-inventory"
+              observationOnly
+              scope={
+                selected.scope === "container-inventory"
+                  ? "container-inventory"
+                  : undefined
+              }
               onConfirmed={() => setRevision((v) => v + 1)}
             />
-            <div className="collect-next-step">
-              <p>需要评估镜像组件时，可继续选择镜像生成扫描资料。</p>
-              <button
-                className="secondary"
-                onClick={() =>
-                  onNavigate?.("containers", selected.assetId, {
-                    snapshotId: selected.id,
-                    profileId: (
-                      selected.extensions.execution as
-                        { profileId?: string } | undefined
-                    )?.profileId,
-                  })
-                }
-              >
-                选择镜像生成与扫描
-              </button>
-            </div>
+            {selected.scope === "container-inventory" && (
+              <div className="collect-next-step">
+                <p>需要评估镜像组件时，可继续选择镜像生成扫描资料。</p>
+                <button
+                  className="secondary"
+                  onClick={() =>
+                    onNavigate?.("containers", selected.assetId, {
+                      snapshotId: selected.id,
+                      profileId: (
+                        selected.extensions.execution as
+                          { profileId?: string } | undefined
+                      )?.profileId,
+                    })
+                  }
+                >
+                  选择镜像生成与扫描
+                </button>
+              </div>
+            )}
             <details className="collect-options">
               <summary>关联软件 / 镜像SBOM版本</summary>
               <VersionLinks
@@ -1238,64 +1531,19 @@ export function CollectionsPage({
           }}
         />
       )}
-      {selected && selected.scope !== "container-inventory" && (
-        <div className="collect-overlay">
-          <section
-            className="collect-dialog collect-detail baseline-dialog"
-            role="dialog"
-            aria-modal="true"
-            aria-label="采集资料详情"
-          >
-            <header>
-              <div>
-                <span className="collect-kicker">采集资料 · 未评估</span>
-                <h2>快照详情 · {selected.identity.hostname}</h2>
-                <p>接入于 {new Date(selected.importedAt).toLocaleString()}</p>
-              </div>
-              <button
-                className="collect-icon-button"
-                aria-label="关闭资料详情"
-                onClick={() => setSelected(undefined)}
-              >
-                ×
-              </button>
-            </header>
-            <AssetBaseline
-              customerId={customerId}
-              token={token}
-              onUnauthorized={onUnauthorized}
-              assetId={selected.assetId}
-              snapshotId={selected.id}
-              onConfirmed={() => setRevision((v) => v + 1)}
-            />
-            <details className="collect-options">
-              <summary>关联软件 / 镜像SBOM版本</summary>
-              <VersionLinks
-                key={selected.id}
-                customerId={customerId}
-                token={token}
-                onUnauthorized={onUnauthorized}
-                snapshot={selected}
-              />
-            </details>
-            <details className="collect-options">
-              <summary>来源与完整性</summary>
-              <p>采集时间：{selected.collectedAt ?? "未知"}</p>
-              <p>
-                SHA256：<code>{selected.contentHash}</code>
-              </p>
-              <p>来源说明：{selected.note ?? "自动或脚本采集"}</p>
-              <pre>{JSON.stringify(selected.extensions, null, 2)}</pre>
-              <button
-                className="secondary"
-                onClick={() => void readRawSnapshot(selected.id)}
-              >
-                读取原始资料
-              </button>
-              {raw && <pre>{raw}</pre>}
-            </details>
-          </section>
-        </div>
+      {addingAsset && (
+        <NewCollectionAsset
+          customerId={customerId}
+          token={token}
+          onUnauthorized={onUnauthorized}
+          onClose={() => setAddingAsset(false)}
+          onCreated={(id) => {
+            setAddingAsset(false);
+            setTarget(id);
+            setAssetOffset(0);
+            setRevision((v) => v + 1);
+          }}
+        />
       )}
     </div>
   );

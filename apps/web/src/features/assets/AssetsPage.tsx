@@ -1,3 +1,4 @@
+import { ImportsPage } from "../imports/ImportsPage";
 import "./assets.css";
 import { ContainerRuntimeSummary } from "../containers/ContainerRuntimeSummary";
 import { AssetLifecycleForm } from "../lifecycle-risk/AssetLifecycleForm";
@@ -17,9 +18,13 @@ export function AssetsPage({
   onUnauthorized,
   onNavigate,
   assetId,
+  collectionContext,
 }: FeatureProps) {
   const [lifecycleAsset, setLifecycleAsset] = useState<string | undefined>(
     assetId,
+  );
+  const [bulkImport, setBulkImport] = useState(
+    !!collectionContext?.assetImport,
   );
   const [status, setStatus] = useState("active");
   const [deleting, setDeleting] = useState<{ id: string; name: string }>();
@@ -138,6 +143,12 @@ export function AssetsPage({
           <p>掌握资产分布，集中查看主机资料与评估入口。</p>
         </div>
         <div className="inventory-heading-actions">
+          <button
+            className="secondary"
+            onClick={() => setBulkImport((v) => !v)}
+          >
+            批量导入资产清单
+          </button>
           <button className="secondary" aria-label="刷新资产" onClick={refresh}>
             ↻ 刷新
           </button>
@@ -194,6 +205,17 @@ export function AssetsPage({
           ))}
         </div>
       </section>
+      {bulkImport && (
+        <section className="asset-panel" aria-label="批量导入资产清单">
+          <button onClick={() => setBulkImport(false)}>关闭批量导入</button>
+          <ImportsPage
+            customerId={customerId}
+            token={token}
+            onUnauthorized={onUnauthorized}
+            onImported={refresh}
+          />
+        </section>
+      )}
       <details className="inventory-source">
         <summary>
           <span className="inventory-source-mark" aria-hidden="true">

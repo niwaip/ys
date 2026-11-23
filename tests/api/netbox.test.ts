@@ -37,6 +37,12 @@ test("客户同步NetBox原生资产，保留稳定身份、分页与来源，�
                   sourceRef: "Contract",
                 },
               },
+              role: { id: 3, name: "Core Switch", slug: "core-switch" },
+              device_type: {
+                id: 4,
+                model: "C9300",
+                manufacturer: { id: 5, name: "Cisco" },
+              },
               platform: { id: 2, name: "Debian" },
               primary_ip4: { address: "10.0.0.1/24" },
             },
@@ -84,6 +90,12 @@ test("客户同步NetBox原生资产，保留稳定身份、分页与来源，�
     attributes: {
       netbox: { objectType: "device", id: 42, tenantId: 7 },
       serial: "SERIAL",
+      role: { id: 3, name: "Core Switch" },
+      deviceType: {
+        id: 4,
+        model: "C9300",
+        manufacturer: { id: 5, name: "Cisco" },
+      },
     },
   });
   const risk = (
@@ -509,4 +521,61 @@ test("资产迁出Tenant后，即使缓存未同步也拒绝新快照和Pi任务
     .set(auth)
     .send({ idempotencyKey: "deleted-update", name: "forbidden" })
     .expect(409);
+});
+
+test("NetBox新增目录分页可读取，权限不足明确报403且不伪造目录", async () => {
+  let denied = false;
+  server = createServer((req, res) => {
+    res.setHeader("Content-Type", "application/json");
+    if (denied) {
+      res.statusCode = 403;
+      res.end("{}");
+      return;
+    }
+    const second = req.url?.includes("offset=1");
+    res.end(
+      JSON.stringify({
+        count: 2,
+        next: second
+          ? null
+          : `http://127.0.0.1:${(server.address() as { port: number }).port}${req.url}&offset=1`,
+        results: [
+          {
+            id: second ? 2 : 1,
+            name: second ? "B" : "A",
+            model: second ? "Model B" : "Model A",
+          },
+        ],
+      }),
+    );
+  });
+  await new Promise<void>((r) => server.listen(0, "127.0.0.1", r));
+  directory = await mkdtemp(join(tmpdir(), "ys-catalog-"));
+  app = await createApp({
+    databaseUrl: `pglite://${directory}`,
+    customers: [{ id: "acme", name: "A" }],
+    operators: [
+      { name: "T", token: "test-netbox-operator", customerIds: ["acme"] },
+    ],
+    netbox: {
+      baseUrl: `http://127.0.0.1:${(server.address() as { port: number }).port}/api/`,
+      token: "private",
+      tenantIds: { acme: 7 },
+    },
+  });
+  const http = request(app.getHttpServer());
+  const catalog = (
+    await http.get("/api/customers/acme/netbox/catalog").set(auth).expect(200)
+  ).body;
+  expect(catalog.roles).toEqual([
+    { id: 1, name: "A" },
+    { id: 2, name: "B" },
+  ]);
+  expect(catalog.deviceTypes[0].name).toBe("Model A");
+  denied = true;
+  const failure = await http
+    .get("/api/customers/acme/netbox/catalog")
+    .set(auth)
+    .expect(403);
+  expect(failure.body.message).toContain("目录读取权限");
 });

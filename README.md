@@ -57,11 +57,11 @@ API 测试通过真实 HTTP 边界使用临时 PGlite 数据目录，结束自�
 - `apps/api/src/persistence/database.ts`：导出 DATABASE 注入令牌和参数化 query 接口。现提供串行 transaction 回调，普通 query 同样排队；只在回调内使用 session，不能跨异步请求直接拼接 BEGIN/COMMIT。迁移在 migrations 数组末尾追加版本，禁止修改已发布迁移。首片单进程启动，生产横向扩容前需加入迁移互斥。
 - `apps/web/src/features.ts`：可组合页面注册，页面得到已授权客户上下文与 API 凭据；客户切换时重挂载页面，取消旧请求，避免旧资料留在新客户视图。
 
-资产主数据选择及边界见 [ADR 001](docs/adr/001-local-asset-master.md)与后续[NetBox权威来源决定](docs/adr/002-netbox-asset-authority.md)。配置NetBox时本地手工资产写入关闭，使用NetBox资产入口；网页三入口、连接配置与范围限制见[资产采集契约](docs/asset-collection.md)。
+资产主数据选择及边界见 [ADR 001](docs/adr/001-local-asset-master.md)与后续[NetBox权威来源决定](docs/adr/002-netbox-asset-authority.md)。配置NetBox时本地手工资产写入关闭，使用NetBox资产入口；统一多设备采集、连接配置与范围限制见[多设备采集设计](docs/multi-device-collection-design.md)和[资产采集契约](docs/asset-collection.md)。
 
 ## CSV 资料导入
 
-进入客户空间的“CSV 资料导入”，选择 UTF-8 CSV，检查映射及问题后整批提交。所有来源、采集时间、原始文本、SHA-256 与对象引用可从导入历史回读；问题记录不会显示为成功。输入示例、完整 HTTP 契约、整批事务及幂等规则见 [CSV 导入契约](docs/csv-import.md)，验证证据见 [T02 验证](docs/verification/t02.md)。
+在资产台账选择“批量导入资产清单”，选择 UTF-8 CSV，检查映射及问题后整批提交。所有来源、采集时间、原始文本、SHA-256 与对象引用可从导入历史回读；问题记录不会显示为成功。输入示例、完整 HTTP 契约、整批事务及幂等规则见 [CSV 导入契约](docs/csv-import.md)，验证证据见 [T02 验证](docs/verification/t02.md)。
 
 ## EOS/EOL 生命周期
 
@@ -72,7 +72,7 @@ API 测试通过真实 HTTP 边界使用临时 PGlite 数据目录，结束自�
 
 ## Windows 采集 JSON
 
-客户空间的“Windows 采集导入”接收本地 BAT 资料，保留原文、软件/KB/Build/UBR、来源完整性及未知字段。新内容生成独立快照，同名身份冲突保留待确认。支持范围、API 和后续评估读取边界见 [Windows 输入契约](docs/windows-import.md)。
+在“资产采集”的自动／脚本入口选择Windows平台，可下载PowerShell脚本及上传windows-bat/1资料；需目标主数据的序列号匹配，或使用绑定目标编号的下载脚本（适用于VM），先预览，明确采纳操作系统资料后才供补丁评估。保留原文、软件/KB/Build/UBR及来源完整性。旧Windows入口提供统一入口引导及历史资料只读查看。支持范围、API 和后续评估读取边界见 [Windows 输入契约](docs/windows-import.md)。
 
 ## 公开 CVE 对话
 

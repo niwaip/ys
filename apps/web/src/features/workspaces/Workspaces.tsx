@@ -17,8 +17,6 @@ import type {
 } from "../../../../../packages/contracts/assessments";
 import { AssessmentDetails } from "../assessments/AssessmentDetails";
 import { CollectionsPage } from "../collections/CollectionsPage";
-import { ImportsPage } from "../imports/ImportsPage";
-import { WindowsPage } from "../windows/WindowsPage";
 import { AssessmentsPage } from "../assessments/AssessmentsPage";
 import { WindowsAssessmentsPage } from "../windows-assessments/WindowsAssessmentsPage";
 import { ContainersPage } from "../containers/ContainersPage";
@@ -51,26 +49,13 @@ function Tabs({
   );
 }
 export function CollectionWorkspace(props: FeatureProps) {
-  const [tab, setTab] = useState(0);
   return (
     <div className="collection-workbench">
-      <nav className="collection-entry-nav" aria-label="采集入口">
-        <Tabs
-          labels={["主机采集", "Windows 采集导入", "CSV 资料导入"]}
-          active={tab}
-          change={setTab}
-        />
-      </nav>
-      {tab === 0 ? (
-        <CollectionsPage {...props} />
-      ) : tab === 1 ? (
-        <WindowsPage {...props} />
-      ) : (
-        <ImportsPage {...props} />
-      )}
+      <CollectionsPage {...props} />
     </div>
   );
 }
+
 export function LifecycleMaterials(props: FeatureProps) {
   return <LifecyclePage {...props} mode="materials" />;
 }

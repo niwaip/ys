@@ -12,7 +12,8 @@ export function WindowsPage({
   customerId,
   token,
   onUnauthorized,
-}: FeatureProps) {
+  readOnly = false,
+}: FeatureProps & { readOnly?: boolean }) {
   const [items, setItems] = useState<WindowsMaterial[]>([]),
     [selected, setSelected] = useState<WindowsMaterial | null>(null),
     [file, setFile] = useState<File | null>(null),
@@ -61,17 +62,21 @@ export function WindowsPage({
         支持 Windows BAT 资料字段适配器 windows-bat/1。上传本地
         JSON，保存独立快照；没有执行扫描。序列号缺失或同名冲突进入待确认。
       </p>
-      <label>
-        Windows JSON 文件
-        <input
-          type="file"
-          accept=".json"
-          onChange={(e) => setFile(e.target.files?.[0] ?? null)}
-        />
-      </label>
-      <button disabled={!file || busy} onClick={submit}>
-        导入采集资料
-      </button>
+      {!readOnly && (
+        <>
+          <label>
+            Windows JSON 文件
+            <input
+              type="file"
+              accept=".json"
+              onChange={(e) => setFile(e.target.files?.[0] ?? null)}
+            />
+          </label>
+          <button disabled={!file || busy} onClick={submit}>
+            导入采集资料
+          </button>
+        </>
+      )}
       {error && <p role="alert">{error}</p>}
       <h3>资料历史</h3>
       {items.map((x) => (
@@ -189,6 +194,22 @@ export function WindowsPage({
           </details>
         </article>
       )}
+    </section>
+  );
+}
+
+export function LegacyWindowsPage(props: FeatureProps) {
+  return (
+    <section className="asset-panel">
+      <h1>Windows采集入口已合并</h1>
+      <p>请在资产采集中选择目标资产及Windows平台，再下载脚本或上传结果。</p>
+      <button onClick={() => props.onNavigate?.("collections", props.assetId)}>
+        前往统一资产采集
+      </button>
+      <details>
+        <summary>查看历史Windows资料</summary>
+        <WindowsPage {...props} readOnly />
+      </details>
     </section>
   );
 }

@@ -1,3 +1,4 @@
+import { deviceFieldLabels } from "../../../../../packages/contracts/device-collection";
 import {
   hardwareSummary,
   networkSummary,
@@ -12,6 +13,7 @@ const labels: Record<string, string> = {
   identity: "主机身份",
   os: "操作系统",
   hardware: "硬件",
+  device: "设备资料",
   network: "网络",
   dockerClient: "Docker客户端",
   dockerDaemon: "Docker引擎",
@@ -20,6 +22,8 @@ const labels: Record<string, string> = {
   images: "镜像目录",
 };
 const fields: Record<string, string> = {
+  ...deviceFieldLabels,
+  category: "设备类型",
   hostname: "主机名",
   serial: "序列号",
   machineId: "机器标识",
@@ -64,6 +68,7 @@ type Preview = {
       issues: string[];
     }
   >;
+  review?: { status: string; reason?: string; actor?: string };
   history: {
     id: string;
     status: string;
@@ -612,7 +617,9 @@ export function AssetBaseline({
   onConfirmed,
   readOnly = false,
   scope,
+  observationOnly = false,
 }: {
+  observationOnly?: boolean;
   scope?: "container-inventory";
   readOnly?: boolean;
   assetId: string;
@@ -636,7 +643,8 @@ export function AssetBaseline({
     [error, setError] = useState(""),
     [notice, setNotice] = useState(""),
     [busy, setBusy] = useState(false),
-    [view, setView] = useState("observed");
+    [view, setView] = useState("observed"),
+    [rejectReason, setRejectReason] = useState("");
   const base = `/customers/${customerId}/assets/${assetId}/baseline`;
   function fail(e: unknown) {
     if (e instanceof ApiError && e.status === 401) onUnauthorized();
@@ -681,6 +689,7 @@ export function AssetBaseline({
         {
           method: "POST",
           body: JSON.stringify({
+            writeMasterData: !observationOnly,
             snapshotId: data.snapshot.id,
             expectedBaselineId: data.current?.id ?? null,
             idempotencyKey: requestId(),
@@ -694,6 +703,26 @@ export function AssetBaseline({
         setNotice("");
         setError(r.message ?? "写回待核对");
       }
+      setRevision((v) => v + 1);
+      onConfirmed?.();
+    } catch (e) {
+      fail(e);
+    } finally {
+      setBusy(false);
+    }
+  }
+  async function reject() {
+    if (!data?.snapshot) return;
+    setBusy(true);
+    setError("");
+    try {
+      await api(base + "/reject", token, {
+        method: "POST",
+        body: JSON.stringify({
+          snapshotId: data.snapshot.id,
+          reason: rejectReason,
+        }),
+      });
       setRevision((v) => v + 1);
       onConfirmed?.();
     } catch (e) {
@@ -738,6 +767,7 @@ export function AssetBaseline({
     identity: ["identity"],
     os: ["os"],
     hardware: ["hardware"],
+    device: ["device"],
     network: ["network"],
     packages: ["packages"],
     docker: ["dockerClient", "dockerDaemon"],
@@ -776,6 +806,18 @@ export function AssetBaseline({
           </p>
         </div>
       </div>
+      {observationOnly && (
+        <p className="notice" role="status">
+          <span>
+            {data.review?.status === "confirmed"
+              ? "已采纳"
+              : data.review?.status === "rejected"
+                ? "已拒绝采纳"
+                : "待确认采纳"}
+          </span>
+          {data.review?.reason ? ` · ${data.review.reason}` : ""}
+        </p>
+      )}
       {error && (
         <p role="alert" className="error">
           {error}
@@ -841,6 +883,7 @@ export function AssetBaseline({
                   key={key}
                   role="tab"
                   aria-selected={activeTab === key}
+                  aria-label={tabLabels[key as keyof typeof tabLabels]}
                   aria-controls={`baseline-${key}`}
                   onClick={() => setActiveTab(key)}
                 >
@@ -951,44 +994,71 @@ export function AssetBaseline({
                 </section>
               );
             })}
-          {!readOnly && view === "observed" && (
-            <div className="baseline-confirm">
-              <div>
-                <strong>
-                  {containerScope
-                    ? "是否采纳本次容器资料？"
-                    : "确认本次基础资料"}
-                </strong>
-                <p>
-                  {containerScope
-                    ? "仅将勾选的 Docker、容器与镜像目录保存为YS资产基线，不修改主机身份。"
-                    : data.netboxConfigured
-                      ? "主机身份区块的主机名、序列号将写回NetBox；其他区块保存在YS资产基线。"
-                      : "当前未配置NetBox，将更新YS资产基线。"}{" "}
-                  原始采集记录保留。
-                </p>
+          {!readOnly &&
+            view === "observed" &&
+            (!observationOnly || data.review?.status !== "rejected") && (
+              <div className="baseline-confirm">
+                <div>
+                  <strong>
+                    {containerScope
+                      ? "是否采纳本次容器资料？"
+                      : "确认本次基础资料"}
+                  </strong>
+                  <p>
+                    {containerScope
+                      ? "仅将勾选的 Docker、容器与镜像目录保存为YS资产基线，不修改主机身份。"
+                      : observationOnly
+                        ? "选中资料仅保存为YS资产基线，NetBox主数据保持独立维护。"
+                        : data.netboxConfigured
+                          ? "主机身份区块的主机名、序列号将写回NetBox；其他区块保存在YS资产基线。"
+                          : "当前未配置NetBox，将更新YS资产基线。"}{" "}
+                    原始采集记录保留。
+                  </p>
+                </div>
+                <button
+                  className="primary"
+                  disabled={
+                    busy ||
+                    !selected.length ||
+                    data.history.some((h) =>
+                      ["pending", "unknown"].includes(h.status),
+                    )
+                  }
+                  onClick={() => void confirm()}
+                >
+                  {busy
+                    ? "处理中…"
+                    : observationOnly && data.review?.status === "confirmed"
+                      ? "补充采纳选中资料"
+                      : containerScope
+                        ? "确认采纳容器资料"
+                        : "确认选中资料并更新基线"}
+                </button>
               </div>
-              <button
-                className="primary"
-                disabled={
-                  busy ||
-                  !selected.length ||
-                  data.history.some((h) =>
-                    ["pending", "unknown"].includes(h.status),
-                  )
-                }
-                onClick={() => void confirm()}
-              >
-                {busy
-                  ? "处理中…"
-                  : containerScope
-                    ? "确认采纳容器资料"
-                    : "确认选中资料并更新基线"}
-              </button>
-            </div>
-          )}
+            )}
         </>
       )}
+      {observationOnly &&
+        data.snapshot &&
+        data.review?.status === "pending" && (
+          <div className="collect-reject">
+            <label>
+              拒绝原因
+              <input
+                value={rejectReason}
+                maxLength={1000}
+                onChange={(e) => setRejectReason(e.target.value)}
+              />
+            </label>
+            <button
+              type="button"
+              disabled={busy || !rejectReason.trim()}
+              onClick={() => void reject()}
+            >
+              拒绝采纳
+            </button>
+          </div>
+        )}
       <details className="collect-options">
         <summary>基线确认记录</summary>
         {data.history.length ? (

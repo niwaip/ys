@@ -175,6 +175,15 @@ CREATE TABLE windows_snapshots(id uuid PRIMARY KEY,customer_id text NOT NULL,ass
       ALTER TABLE vulnerability_jobs ADD COLUMN dashboard_details jsonb GENERATED ALWAYS AS (ys_dashboard_assessment(details)) STORED;
       CREATE INDEX vulnerability_jobs_dashboard_target ON vulnerability_jobs(customer_id,target_object_id,target_input_id,created_at DESC,id);`,
   },
+  {
+    version: 31,
+    sql: `ALTER TABLE collection_snapshots ADD COLUMN review_required boolean NOT NULL DEFAULT false;`,
+  },
+  {
+    version: 30,
+    sql: `CREATE TABLE collection_role_templates(customer_id text NOT NULL REFERENCES customers(id),role_id integer NOT NULL,category text NOT NULL,PRIMARY KEY(customer_id,role_id));
+  CREATE TABLE collection_rejections(customer_id text NOT NULL,snapshot_id uuid NOT NULL,asset_id uuid NOT NULL,actor text NOT NULL,reason text NOT NULL,created_at timestamptz NOT NULL DEFAULT now(),PRIMARY KEY(customer_id,snapshot_id),FOREIGN KEY(customer_id,snapshot_id) REFERENCES collection_snapshots(customer_id,id),FOREIGN KEY(customer_id,asset_id) REFERENCES assets(customer_id,id));`,
+  },
 ];
 export async function openDatabase(url: string): Promise<Database> {
   let raw: Queryable & { close(): Promise<void> };

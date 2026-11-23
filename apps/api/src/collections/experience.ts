@@ -31,9 +31,38 @@ export class CollectionExperienceController {
     private readonly collections: CollectionsService,
   ) {}
   @Get("script") async script(req: AuthorizedRequest) {
-    const input = z.object({ scope }).strict().safeParse(req.query);
+    const input = z
+      .object({
+        scope,
+        platform: z.enum(["linux", "windows"]).default("linux"),
+        assetId: z.uuid().optional(),
+      })
+      .strict()
+      .safeParse(req.query);
     if (!input.success)
       throw new BadRequestException("请选择基础或容器目录采集范围");
+    if (input.data.assetId)
+      await this.collections.assertTarget(
+        req.params.customerId,
+        input.data.assetId,
+      );
+    if (input.data.platform === "windows") {
+      if (input.data.scope !== "basic")
+        throw new BadRequestException("Windows脚本暂不支持Docker目录采集");
+      const source = await readFile(
+        resolve(dirname(collectorPath), "collect-windows.ps1"),
+        "utf8",
+      );
+      return {
+        fileName: "ys-windows.ps1",
+        content: input.data.assetId
+          ? source.replace(
+              "$result = @{",
+              `$result = @{\n  TargetAssetId='${input.data.assetId}'`,
+            )
+          : source,
+      };
+    }
     const source = await readFile(collectorPath, "utf8");
     const selected = input.data.scope;
     return {
