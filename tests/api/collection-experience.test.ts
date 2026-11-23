@@ -363,3 +363,92 @@ test("offline Docker directory preserves immutable runtime evidence without auth
     .expect(400);
   await http().get(`${base}/script?scope=all`).set(auth).expect(400);
 });
+
+test("legacy explicit basic scope has the same classification on import, read and filtered history", async () => {
+  const content = JSON.stringify({
+    schemaVersion: "ys-host/1",
+    identity: { hostname: "legacy-mixed", serial: null, machineId: null },
+    collectedAt: null,
+    sections: { images: { status: "acquired", data: [] } },
+    extensions: { execution: { scope: "basic" } },
+  });
+  const saved = (
+    await http()
+      .post(`${base}/upload`)
+      .set(auth)
+      .send({ assetId, fileName: "legacy.json", content })
+      .expect(201)
+  ).body;
+  expect(saved.scope).toBe("basic");
+  expect(
+    (await http().get(`${base}/snapshots/${saved.id}`).set(auth)).body.scope,
+  ).toBe("basic");
+  expect(
+    (
+      await http().get(`${base}/snapshots?scope=basic`).set(auth)
+    ).body.items.map((x: any) => x.id),
+  ).toContain(saved.id);
+  expect(
+    (
+      await http().get(`${base}/snapshots?scope=container-inventory`).set(auth)
+    ).body.items.map((x: any) => x.id),
+  ).not.toContain(saved.id);
+});
+test("failed offline directory keeps the selected task scope without rewriting raw evidence", async () => {
+  const content = JSON.stringify({
+    schemaVersion: "ys-host/1",
+    identity: { hostname: "offline-failed", serial: null, machineId: null },
+    collectedAt: null,
+    sections: {
+      images: { status: "permission_denied", data: null },
+      containers: { status: "failed", data: null },
+    },
+    extensions: {},
+  });
+  const saved = (
+    await http()
+      .post(`${base}/upload`)
+      .set(auth)
+      .send({
+        assetId,
+        fileName: "failed.json",
+        content,
+        scope: "container-inventory",
+      })
+      .expect(201)
+  ).body;
+  expect(saved.scope).toBe("container-inventory");
+  expect(
+    (
+      await http().get(`${base}/snapshots?scope=container-inventory`).set(auth)
+    ).body.items.map((x: any) => x.id),
+  ).toContain(saved.id);
+  expect(
+    (
+      await http().get(`${base}/snapshots?scope=basic`).set(auth)
+    ).body.items.map((x: any) => x.id),
+  ).not.toContain(saved.id);
+  expect(
+    (await http().get(`${base}/snapshots/${saved.id}/raw`).set(auth)).body
+      .content,
+  ).toBe(content);
+});
+test("explicit basic upload refuses Docker engine evidence but legacy unscoped input stays accepted", async () => {
+  const content = JSON.stringify({
+    schemaVersion: "ys-host/1",
+    identity: { hostname: "legacy-engine", serial: null, machineId: null },
+    collectedAt: null,
+    sections: { dockerDaemon: { status: "acquired", data: { version: "27" } } },
+    extensions: {},
+  });
+  await http()
+    .post(`${base}/upload`)
+    .set(auth)
+    .send({ assetId, fileName: "engine.json", content, scope: "basic" })
+    .expect(400);
+  await http()
+    .post(`${base}/upload`)
+    .set(auth)
+    .send({ assetId, fileName: "engine.json", content })
+    .expect(201);
+});

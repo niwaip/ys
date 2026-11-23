@@ -1,3 +1,4 @@
+import type { CollectionCapabilities } from "../../../../packages/contracts/collections";
 import {
   BadRequestException,
   Controller,
@@ -61,7 +62,10 @@ export class CollectionExperienceController {
     });
     try {
       const module = await import(pathToFileURL(collectorPath).href);
-      let checks;
+      let checks: Pick<
+        CollectionCapabilities,
+        "hostname" | "identity" | "basic" | "docker" | "trivy"
+      >;
       try {
         checks = await module.probe(connection.profile, input.data.scope);
       } catch {

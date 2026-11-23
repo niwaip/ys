@@ -13,6 +13,8 @@ import { createHash, randomUUID } from "node:crypto";
 import { z } from "zod";
 import {
   collectionSectionNames,
+  collectionScope,
+  type CollectionScope,
   hostCollectionSchema,
   sectionName,
   type CollectionSnapshot,
@@ -46,20 +48,12 @@ const manual = z
     data: hostCollectionSchema,
   })
   .strict();
+const scopeExpression =
+  "COALESCE(summary->>'scope',CASE WHEN normalized->'extensions'->'execution'->>'scope' IN ('basic','container-inventory') THEN normalized->'extensions'->'execution'->>'scope' WHEN normalized->'sections'->'images'->>'status' IN ('acquired','partial') THEN 'container-inventory' ELSE 'basic' END)";
 function summary(row: Record<string, unknown>): CollectionSnapshot {
   if (row.summary) {
     const old = row.summary as CollectionSnapshot;
-    const execution = old.extensions.execution as
-      { scope?: string } | undefined;
-    return {
-      ...old,
-      scope:
-        execution?.scope === "container-inventory" ||
-        (!execution?.scope &&
-          ["acquired", "partial"].includes(old.sections.images.status))
-          ? "container-inventory"
-          : "basic",
-    };
+    return { ...old, scope: old.scope ?? collectionScope(old) };
   }
   const data = row.normalized as HostCollection;
   return {
@@ -76,12 +70,7 @@ function summary(row: Record<string, unknown>): CollectionSnapshot {
     extensions: Object.fromEntries(
       Object.entries(data.extensions).filter(([key]) => key !== "rawSections"),
     ),
-    scope:
-      (data.extensions.execution as { scope?: string } | undefined)?.scope ===
-        "container-inventory" ||
-      ["acquired", "partial"].includes(data.sections.images?.status ?? "")
-        ? "container-inventory"
-        : "basic",
+    scope: collectionScope(data),
     assessmentStatus: "not_assessed",
     target: row.target as Record<string, unknown>,
     sections: Object.fromEntries(
@@ -152,6 +141,7 @@ export class CollectionsService {
     fileName: string,
     content: string,
     note: string | null = null,
+    expectedScope?: CollectionScope,
   ) {
     if (Buffer.byteLength(content) > 5000000 || content.includes("\0"))
       throw new BadRequestException(
@@ -187,7 +177,11 @@ export class CollectionsService {
         )
       ).rows[0];
       if (old) {
-        if (old.asset_id !== assetId || old.note !== note)
+        if (
+          old.asset_id !== assetId ||
+          old.note !== note ||
+          (expectedScope && summary(old).scope !== expectedScope)
+        )
           throw new ConflictException("相同资料已绑定其他目标或来源声明");
         return { ...summary(old), replayed: true };
       }
@@ -222,7 +216,10 @@ export class CollectionsService {
           ],
         )
       ).rows[0];
-      const view = summary(saved);
+      const view = {
+        ...summary(saved),
+        ...(expectedScope ? { scope: expectedScope } : {}),
+      };
       await session.query(
         "UPDATE collection_snapshots SET summary=$3::jsonb WHERE customer_id=$1 AND id=$2",
         [customerId, view.id, JSON.stringify(view)],
@@ -248,7 +245,7 @@ export class CollectionsService {
     query: { limit: number; offset: number; assetId?: string; scope?: string },
   ) {
     const rows = await this.db.query(
-      "SELECT id,customer_id,asset_id,entry,file_name,content_hash,note,created_at,target,summary,CASE WHEN summary IS NULL THEN normalized ELSE NULL END AS normalized FROM collection_snapshots WHERE customer_id=$1 AND ($2::uuid IS NULL OR asset_id=$2)  AND ($5::text IS NULL OR COALESCE(normalized->'extensions'->'execution'->>'scope',CASE WHEN normalized->'sections'->'images'->>'status' IN ('acquired','partial') THEN 'container-inventory' ELSE 'basic' END)=$5) ORDER BY created_at DESC,id LIMIT $3 OFFSET $4",
+      `SELECT id,customer_id,asset_id,entry,file_name,content_hash,note,created_at,target,summary,CASE WHEN summary IS NULL THEN normalized ELSE NULL END AS normalized FROM collection_snapshots WHERE customer_id=$1 AND ($2::uuid IS NULL OR asset_id=$2)  AND ($5::text IS NULL OR ${scopeExpression}=$5) ORDER BY created_at DESC,id LIMIT $3 OFFSET $4`,
       [
         customerId,
         query.assetId ?? null,
@@ -259,7 +256,7 @@ export class CollectionsService {
     );
     const total = (
       await this.db.query(
-        "SELECT count(*)::int AS total FROM collection_snapshots WHERE customer_id=$1 AND ($2::uuid IS NULL OR asset_id=$2) AND ($3::text IS NULL OR COALESCE(normalized->'extensions'->'execution'->>'scope',CASE WHEN normalized->'sections'->'images'->>'status' IN ('acquired','partial') THEN 'container-inventory' ELSE 'basic' END)=$3)",
+        `SELECT count(*)::int AS total FROM collection_snapshots WHERE customer_id=$1 AND ($2::uuid IS NULL OR asset_id=$2) AND ($3::text IS NULL OR ${scopeExpression}=$3)`,
         [customerId, query.assetId ?? null, query.scope ?? null],
       )
     ).rows[0].total;
@@ -322,7 +319,12 @@ class CollectionsController {
       )?.scope;
       const docker =
         ["acquired", "partial"].includes(raw.sections.images?.status ?? "") ||
-        ["acquired", "partial"].includes(raw.sections.containers?.status ?? "");
+        ["acquired", "partial"].includes(
+          raw.sections.containers?.status ?? "",
+        ) ||
+        ["acquired", "partial"].includes(
+          raw.sections.dockerDaemon?.status ?? "",
+        );
       if (
         (declared && declared !== input.data.scope) ||
         (input.data.scope === "basic" && docker) ||
@@ -340,6 +342,8 @@ class CollectionsController {
       "upload",
       input.data.fileName,
       input.data.content,
+      null,
+      input.data.scope,
     );
   }
   @Post("manual") manual(req: AuthorizedRequest) {
@@ -366,6 +370,7 @@ class CollectionsController {
       "manual.json",
       JSON.stringify(input.data.data),
       input.data.note,
+      "basic",
     );
   }
   @Get("snapshots") list(req: AuthorizedRequest) {

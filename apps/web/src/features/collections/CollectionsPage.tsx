@@ -302,7 +302,10 @@ export function CollectionsPage({
       setBusy(false);
     }
   }
-  const capabilityLabels: Record<string, string> = {
+  const capabilityLabels: Record<
+    import("../../../../../packages/contracts/collections").CapabilityStatus,
+    string
+  > = {
     unchecked: "未检查",
     unauthorized: "未授权",
     tool_missing: "工具缺失",
@@ -520,7 +523,13 @@ export function CollectionsPage({
                     <div key={String(label)}>
                       <dt>{String(label)}</dt>
                       <dd>
-                        {capabilityLabels[(check as { status: string }).status]}
+                        {
+                          capabilityLabels[
+                            (
+                              check as import("../../../../../packages/contracts/collections").CapabilityCheck
+                            ).status
+                          ]
+                        }
                       </dd>
                     </div>
                   ))}

@@ -104,17 +104,32 @@ export const hostCollectionSchema = z
 export type HostCollection = z.infer<typeof hostCollectionSchema>;
 export type CollectionSectionName = z.infer<typeof sectionName>;
 export type CollectionScope = "basic" | "container-inventory";
+export type CapabilityStatus =
+  "unchecked" | "unauthorized" | "tool_missing" | "access_failed" | "available";
+export type CapabilityCheck = { status: CapabilityStatus };
+export function collectionScope(data: {
+  extensions: Record<string, unknown>;
+  sections: Partial<Record<CollectionSectionName, { status: string }>>;
+}): CollectionScope {
+  const declared = (data.extensions.execution as { scope?: string } | undefined)
+    ?.scope;
+  if (declared === "basic" || declared === "container-inventory")
+    return declared;
+  return ["acquired", "partial"].includes(data.sections.images?.status ?? "")
+    ? "container-inventory"
+    : "basic";
+}
 export type CollectionCapabilities = {
   assetId: string;
   profileId: string;
   scope: CollectionScope;
   hostname: string;
   identity: string | null;
-  transport: string;
+  transport: "ssh" | "local";
   checkedAt: string;
-  basic: { status: string };
-  docker: { status: string };
-  trivy: { status: string };
+  basic: CapabilityCheck;
+  docker: CapabilityCheck;
+  trivy: CapabilityCheck;
 };
 export type CollectionSnapshot = {
   scope?: CollectionScope;
