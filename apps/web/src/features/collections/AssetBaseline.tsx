@@ -411,6 +411,18 @@ function Layer({
                       <th>架构</th>
                       <th>状态</th>
                     </>
+                  ) : name === "containers" ? (
+                    <>
+                      <th>容器</th>
+                      <th>镜像</th>
+                      <th>状态</th>
+                    </>
+                  ) : name === "images" ? (
+                    <>
+                      <th>镜像仓库</th>
+                      <th>标签</th>
+                      <th>镜像标识</th>
+                    </>
                   ) : (
                     <>
                       <th>条目</th>
@@ -450,6 +462,31 @@ function Layer({
                           <td>{String(v.version ?? "未知")}</td>
                           <td>{String(v.architecture ?? "未知")}</td>
                           <td>{String(v.state)}</td>
+                        </>
+                      ) : name === "containers" ? (
+                        <>
+                          <td>
+                            <strong>
+                              {String(
+                                v.name ?? v.Names ?? v.containerId ?? "未知",
+                              )}
+                            </strong>
+                            <small className="block subtle">
+                              {String(v.containerId ?? v.ID ?? "")}
+                            </small>
+                          </td>
+                          <td>
+                            {String(v.image ?? v.imageId ?? v.Image ?? "未知")}
+                          </td>
+                          <td>{String(v.state ?? v.State ?? "未知")}</td>
+                        </>
+                      ) : name === "images" ? (
+                        <>
+                          <td>
+                            {String(v.repository ?? v.Repository ?? "未知")}
+                          </td>
+                          <td>{String(v.tag ?? v.Tag ?? "未知")}</td>
+                          <td>{String(v.imageId ?? v.id ?? v.ID ?? "未知")}</td>
                         </>
                       ) : (
                         <>
@@ -570,13 +607,24 @@ export function AssetBaseline({
   snapshotId,
   onConfirmed,
   readOnly = false,
+  scope,
 }: {
+  scope?: "container-inventory";
   readOnly?: boolean;
   assetId: string;
   snapshotId?: string;
   onConfirmed?: () => void;
 } & FeatureProps) {
-  const [activeTab, setActiveTab] = useState("identity");
+  const containerScope = scope === "container-inventory";
+  const containerSections = [
+    "dockerClient",
+    "dockerDaemon",
+    "containers",
+    "images",
+  ];
+  const [activeTab, setActiveTab] = useState(
+    containerScope ? "containers" : "identity",
+  );
   const [data, setData] = useState<Preview>(),
     [selected, setSelected] = useState<string[]>([]),
     [excluded, setExcluded] = useState<string[]>([]),
@@ -604,7 +652,11 @@ export function AssetBaseline({
         if (readOnly) setView(v.current ? "baseline" : "observed");
         setSelected(
           Object.entries(v.sections)
-            .filter(([, s]) => s.comparable)
+            .filter(
+              ([name, s]) =>
+                s.comparable &&
+                (!containerScope || containerSections.includes(name)),
+            )
             .map(([key]) => key),
         );
         setExcluded([]);
@@ -698,7 +750,9 @@ export function AssetBaseline({
     <div className="asset-baseline">
       <div className="baseline-overview">
         <div>
-          <span className="collect-kicker">资产基础资料</span>
+          <span className="collect-kicker">
+            {containerScope ? "容器采集资料" : "资产基础资料"}
+          </span>
           <h2>{data.asset.name}</h2>
           <p>
             {data.current
@@ -758,10 +812,12 @@ export function AssetBaseline({
               </button>
             </div>
             <strong>
-              {Object.values(data.sections).reduce(
-                (n, s) => n + s.totalChanges,
-                0,
-              )}{" "}
+              {Object.entries(data.sections)
+                .filter(
+                  ([name]) =>
+                    !containerScope || containerSections.includes(name),
+                )
+                .reduce((n, [, section]) => n + section.totalChanges, 0)}{" "}
               项待比较变化
             </strong>
           </div>
@@ -770,27 +826,34 @@ export function AssetBaseline({
             role="tablist"
             aria-label="资产资料分区"
           >
-            {Object.keys(tabs).map((key) => (
-              <button
-                type="button"
-                key={key}
-                role="tab"
-                aria-selected={activeTab === key}
-                aria-controls={`baseline-${key}`}
-                onClick={() => setActiveTab(key)}
-              >
-                {tabLabels[key as keyof typeof tabLabels]}
-                {tabs[key].some((name) => data.sections[name]?.totalChanges) ? (
-                  <b>
-                    {tabs[key].reduce(
-                      (sum, name) =>
-                        sum + (data.sections[name]?.totalChanges ?? 0),
-                      0,
-                    )}
-                  </b>
-                ) : null}
-              </button>
-            ))}
+            {Object.keys(tabs)
+              .filter(
+                (key) =>
+                  !containerScope || ["docker", "containers"].includes(key),
+              )
+              .map((key) => (
+                <button
+                  type="button"
+                  key={key}
+                  role="tab"
+                  aria-selected={activeTab === key}
+                  aria-controls={`baseline-${key}`}
+                  onClick={() => setActiveTab(key)}
+                >
+                  {tabLabels[key as keyof typeof tabLabels]}
+                  {tabs[key].some(
+                    (name) => data.sections[name]?.totalChanges,
+                  ) ? (
+                    <b>
+                      {tabs[key].reduce(
+                        (sum, name) =>
+                          sum + (data.sections[name]?.totalChanges ?? 0),
+                        0,
+                      )}
+                    </b>
+                  ) : null}
+                </button>
+              ))}
           </div>
           {!readOnly && view === "observed" && (
             <p className="collect-muted">
@@ -806,10 +869,7 @@ export function AssetBaseline({
               onError={fail}
             />
           )}
-          {activeTab === "containers" && (
-            <p className="collect-muted">容器组件扫描尚未接入</p>
-          )}
-          {activeTab === "containers" && (
+          {activeTab === "containers" && !containerScope && (
             <AssetSoftware
               customerId={customerId}
               token={token}
@@ -890,11 +950,17 @@ export function AssetBaseline({
           {!readOnly && view === "observed" && (
             <div className="baseline-confirm">
               <div>
-                <strong>确认本次基础资料</strong>
+                <strong>
+                  {containerScope
+                    ? "是否采纳本次容器资料？"
+                    : "确认本次基础资料"}
+                </strong>
                 <p>
-                  {data.netboxConfigured
-                    ? "主机身份区块的主机名、序列号将写回NetBox；其他区块保存在YS资产基线。"
-                    : "当前未配置NetBox，将更新YS资产基线。"}{" "}
+                  {containerScope
+                    ? "仅将勾选的 Docker、容器与镜像目录保存为YS资产基线，不修改主机身份。"
+                    : data.netboxConfigured
+                      ? "主机身份区块的主机名、序列号将写回NetBox；其他区块保存在YS资产基线。"
+                      : "当前未配置NetBox，将更新YS资产基线。"}{" "}
                   原始采集记录保留。
                 </p>
               </div>
@@ -909,7 +975,11 @@ export function AssetBaseline({
                 }
                 onClick={() => void confirm()}
               >
-                {busy ? "处理中…" : "确认选中资料并更新基线"}
+                {busy
+                  ? "处理中…"
+                  : containerScope
+                    ? "确认采纳容器资料"
+                    : "确认选中资料并更新基线"}
               </button>
             </div>
           )}

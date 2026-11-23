@@ -87,6 +87,7 @@ export function CollectionsPage({
     !!currentJob && ["queued", "running"].includes(currentJob.status);
   useEffect(() => {
     setCurrentJob(undefined);
+    setSelected(undefined);
     setNotice("");
   }, [target, profileId, scope, customerId]);
   useEffect(() => {
@@ -191,6 +192,7 @@ export function CollectionsPage({
     if (submitting.current || collecting) return;
     submitting.current = true;
     const submittedSelection = selection;
+    if (scope === "container-inventory") setSelected(undefined);
     setCurrentJob(undefined);
     setBusy(true);
     setError("");
@@ -269,11 +271,28 @@ export function CollectionsPage({
       setBusy(false);
     }
   }
+  useEffect(() => {
+    if (currentJob?.scope === "container-inventory" && currentJob.snapshotId)
+      void showSnapshot(currentJob.snapshotId);
+  }, [currentJob?.id, currentJob?.snapshotId]);
+  const inlineResult = useRef<HTMLElement>(null);
+  useEffect(() => {
+    if (selected?.scope === "container-inventory")
+      inlineResult.current?.scrollIntoView({
+        block: "start",
+        behavior: "smooth",
+      });
+  }, [selected?.id]);
   async function showSnapshot(id: string) {
     try {
-      setSelected(
-        await api<CollectionSnapshot>(`${base}/snapshots/${id}`, token),
+      const requestedSelection = currentSelection.current;
+      const snapshot = await api<CollectionSnapshot>(
+        `${base}/snapshots/${id}`,
+        token,
       );
+      if (requestedSelection !== currentSelection.current) return;
+      setSelected(snapshot);
+      if (snapshot.scope === "container-inventory") setNotice("");
       setRaw(undefined);
     } catch (e) {
       fail(e);
@@ -861,15 +880,21 @@ export function CollectionsPage({
               {currentJob && (
                 <section
                   aria-label="本次采集任务"
-                  className="notice"
+                  className="collect-progress-card"
                   aria-live="polite"
                 >
                   <h3>
                     采集任务：{statuses[currentJob.status] ?? currentJob.status}
                   </h3>
+                  <progress
+                    aria-label="采集进度"
+                    max={100}
+                    value={
+                      collecting ? undefined : currentJob.snapshotId ? 100 : 0
+                    }
+                  />
                   {collecting && (
                     <>
-                      <progress aria-label="采集进度" />
                       <p>
                         正在
                         {currentJob.scope === "basic"
@@ -900,21 +925,92 @@ export function CollectionsPage({
           </form>
         </div>
       </section>
+      {selected?.scope === "container-inventory" && (
+        <section
+          ref={inlineResult}
+          className="collect-card collect-inline-result"
+          aria-label="容器采集结果"
+        >
+          <header className="collect-card-heading">
+            <div>
+              <span className="collect-kicker">本次采集结果</span>
+              <h2>容器与镜像目录 · {selected.identity.hostname}</h2>
+              <p>
+                采集时间：{selected.collectedAt ?? "未知"} ·
+                独立快照，尚未进行漏洞评估
+              </p>
+            </div>
+          </header>
+          <div className="collect-result-body">
+            <div className="collect-review-intro">
+              <p className="notice">
+                确认后才会更新资产基线，原始采集记录会保留。
+              </p>
+              <button
+                type="button"
+                className="secondary"
+                onClick={() => {
+                  setSelected(undefined);
+                  setNotice("暂未采纳，本次采集记录已保留，原基线不变。");
+                }}
+              >
+                暂不采纳
+              </button>
+            </div>
+            <AssetBaseline
+              key={selected.id}
+              customerId={customerId}
+              token={token}
+              onUnauthorized={onUnauthorized}
+              assetId={selected.assetId}
+              snapshotId={selected.id}
+              scope="container-inventory"
+              onConfirmed={() => setRevision((v) => v + 1)}
+            />
+            <div className="collect-next-step">
+              <p>需要评估镜像组件时，可继续选择镜像生成扫描资料。</p>
+              <button
+                className="secondary"
+                onClick={() =>
+                  onNavigate?.("containers", selected.assetId, {
+                    snapshotId: selected.id,
+                    profileId: (
+                      selected.extensions.execution as
+                        { profileId?: string } | undefined
+                    )?.profileId,
+                  })
+                }
+              >
+                选择镜像生成与扫描
+              </button>
+            </div>
+            <details className="collect-options">
+              <summary>来源与完整性</summary>
+              <p>接入时间：{new Date(selected.importedAt).toLocaleString()}</p>
+              <p className="collect-hash">SHA-256：{selected.contentHash}</p>
+              <p>来源说明：{selected.note ?? "自动或脚本采集"}</p>
+            </details>
+          </div>
+        </section>
+      )}
       <section className="collect-card collect-history">
-        <label>
-          历史采集类型
-          <select
-            value={historyScope}
-            onChange={(e) => {
-              setHistoryScope(e.target.value);
-              setOffset(0);
-            }}
-          >
-            <option value="all">全部类型</option>
-            <option value="basic">主机基础资料</option>
-            <option value="container-inventory">容器运行资料</option>
-          </select>
-        </label>
+        <div className="collect-history-toolbar">
+          <h2>采集历史</h2>
+          <label>
+            历史采集类型
+            <select
+              value={historyScope}
+              onChange={(e) => {
+                setHistoryScope(e.target.value);
+                setOffset(0);
+              }}
+            >
+              <option value="all">全部类型</option>
+              <option value="basic">主机基础资料</option>
+              <option value="container-inventory">容器运行资料</option>
+            </select>
+          </label>
+        </div>
         <div className="collect-card-heading">
           <div className="collect-history-tabs">
             <button
@@ -1094,7 +1190,7 @@ export function CollectionsPage({
           }}
         />
       )}
-      {selected && (
+      {selected && selected.scope !== "container-inventory" && (
         <div className="collect-overlay">
           <section
             className="collect-dialog collect-detail baseline-dialog"
@@ -1116,25 +1212,6 @@ export function CollectionsPage({
                 ×
               </button>
             </header>
-            {selected.scope === "container-inventory" && (
-              <div className="collect-next-step">
-                <p>这是固定时点的容器目录，不代表镜像组件已扫描。</p>
-                <button
-                  className="primary"
-                  onClick={() =>
-                    onNavigate?.("containers", selected.assetId, {
-                      snapshotId: selected.id,
-                      profileId: (
-                        selected.extensions.execution as
-                          { profileId?: string } | undefined
-                      )?.profileId,
-                    })
-                  }
-                >
-                  选择镜像生成与扫描
-                </button>
-              </div>
-            )}
             <AssetBaseline
               customerId={customerId}
               token={token}

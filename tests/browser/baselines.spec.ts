@@ -132,7 +132,7 @@ test("台账只读展示分组Tab与SBOM组件，再采集突出变化并保留�
   ).toBeVisible();
   await dialog.getByRole("tab", { name: "容器", exact: true }).click();
   await expect(
-    dialog.getByText("容器组件扫描尚未接入", { exact: true }),
+    dialog.getByText("尚未关联镜像 SBOM", { exact: true }),
   ).toBeVisible();
   await dialog.getByRole("tab", { name: "软件 / 项目", exact: true }).click();
   await expect(

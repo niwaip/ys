@@ -163,7 +163,18 @@ test("redesigned collection tasks, capability gaps, immutable directory handoff,
     `.collect-task-list details[data-job-id="${task.id}"]`,
   );
   await directory.locator("summary").click();
-  await directory.getByRole("button", { name: "查看采集资料" }).click();
+  const inline = page.getByRole("region", { name: "容器采集结果" });
+  await expect(inline).toBeVisible();
+  await expect(page.getByRole("dialog", { name: "采集资料详情" })).toHaveCount(
+    0,
+  );
+  await expect(inline.getByRole("tab", { name: /^容器/ })).toHaveAttribute(
+    "aria-selected",
+    "true",
+  );
+  await expect(
+    inline.getByRole("button", { name: "确认采纳容器资料" }),
+  ).toBeVisible();
   await page.getByRole("button", { name: "选择镜像生成与扫描" }).click();
   await expect(
     page.getByRole("heading", { name: "主机镜像目录" }),
@@ -221,12 +232,16 @@ test("redesigned collection tasks, capability gaps, immutable directory handoff,
   await page.getByLabel("我已确认资料属于所选主机").check();
   await page.getByRole("button", { name: "保存容器目录", exact: true }).click();
   await expect(
-    page.getByRole("dialog", { name: "采集资料详情" }),
+    page.getByRole("region", { name: "容器采集结果" }),
   ).toBeVisible();
-  await page.getByRole("button", { name: "关闭资料详情" }).click();
+  await expect(page.getByRole("dialog", { name: "采集资料详情" })).toHaveCount(
+    0,
+  );
   await page.getByRole("button", { name: /采集记录/ }).click();
   await page.getByLabel("历史采集类型").selectOption("container-inventory");
-  await expect(page.getByRole("table")).not.toContainText("主机基础资料");
+  await expect(
+    page.locator(".collect-history").getByRole("table"),
+  ).not.toContainText("主机基础资料");
   await page.setViewportSize({ width: 390, height: 844 });
   await expect
     .poll(() =>
@@ -245,6 +260,11 @@ test("redesigned collection tasks, capability gaps, immutable directory handoff,
 test("collection action keeps submission, completion and errors visible beside the button", async ({
   page,
 }) => {
+  const confirmationBodies: { sections: string[] }[] = [];
+  page.on("request", (r) => {
+    if (r.method() === "POST" && r.url().endsWith("/baseline/confirm"))
+      confirmationBodies.push(r.postDataJSON());
+  });
   await page.goto("/");
   await page.getByLabel("操作员访问令牌").fill("browser-test-secret-token");
   await page.getByRole("button", { name: "进入工作台" }).click();
@@ -289,6 +309,11 @@ test("collection action keeps submission, completion and errors visible beside t
   await expect(
     page.getByRole("button", { name: "采集中…", exact: true }),
   ).toBeDisabled();
+  const bar = progress.getByRole("progressbar", { name: "采集进度" });
+  const barBox = await bar.boundingBox(),
+    progressBox = await progress.boundingBox();
+  expect(barBox!.width).toBeGreaterThan(progressBox!.width * 0.8);
+  expect(barBox!.height).toBeGreaterThanOrEqual(12);
   holdPolling = false;
   await expect(progress).toContainText("完成");
   await expect(progress).toBeInViewport();
@@ -300,11 +325,32 @@ test("collection action keeps submission, completion and errors visible beside t
       () => document.documentElement.scrollWidth <= innerWidth,
     ),
   ).toBe(true);
-  await progress.getByRole("button", { name: "查看本次采集资料" }).click();
+  const inline = page.getByRole("region", { name: "容器采集结果" });
+  await expect(inline).toBeVisible();
+  await expect(inline.getByText("app-1", { exact: true })).toBeVisible();
   await expect(
-    page.getByRole("dialog", { name: "采集资料详情" }),
+    inline.getByRole("checkbox", { name: "采纳容器目录" }),
+  ).toBeChecked();
+  await expect(
+    inline.getByText("确认后才会更新资产基线，原始采集记录会保留。", {
+      exact: true,
+    }),
   ).toBeVisible();
-  await page.getByRole("button", { name: "关闭资料详情" }).click();
+  expect(confirmationBodies).toHaveLength(0);
+  await inline.getByRole("button", { name: "暂不采纳", exact: true }).click();
+  await expect(inline).toHaveCount(0);
+  expect(confirmationBodies).toHaveLength(0);
+  await progress.getByRole("button", { name: "查看本次采集资料" }).click();
+  await expect(inline).toBeVisible();
+  await inline.getByRole("button", { name: "确认采纳容器资料" }).click();
+  await expect(inline.getByRole("status")).toContainText(
+    "已确认并更新资产基线",
+  );
+  expect(confirmationBodies).toHaveLength(1);
+  expect(confirmationBodies[0].sections).toEqual(
+    expect.arrayContaining(["containers", "images"]),
+  );
+  expect(confirmationBodies[0].sections).not.toContain("identity");
   await page.unroute("**/collections/jobs");
   await page.route("**/collections/jobs", (route) =>
     route.request().method() === "POST"
