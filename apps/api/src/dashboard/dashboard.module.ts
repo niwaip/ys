@@ -122,7 +122,7 @@ export class DashboardService {
       [customer, limit, offset],
     );
     const a = await this.db.query(
-      `SELECT id,status,details->'target' AS target,details->>'createdAt' AS "createdAt" FROM vulnerability_jobs WHERE customer_id=$1 ORDER BY created_at DESC,id LIMIT 1001`,
+      `SELECT id,status,dashboard_details->'target' AS target,dashboard_details->>'createdAt' AS "createdAt" FROM vulnerability_jobs WHERE customer_id=$1 ORDER BY created_at DESC,id LIMIT 1001`,
       [customer],
     );
     const l = await this.lifecycle.assessments(customer);
