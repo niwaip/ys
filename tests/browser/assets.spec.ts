@@ -91,6 +91,17 @@ test("台账上方概览与下方明细分层，来源管理折叠且手机无�
       () => document.documentElement.scrollWidth <= innerWidth,
     ),
   ).toBe(true);
+  await page.getByText("资产来源与同步", { exact: true }).click();
+  await page.getByText("在NetBox新增资产", { exact: true }).click();
+  await expect(
+    page.getByRole("button", { name: "写入NetBox", exact: true }),
+  ).toBeVisible();
+  expect(
+    await page.evaluate(
+      () => document.documentElement.scrollWidth <= innerWidth,
+    ),
+  ).toBe(true);
+  await page.getByText("资产来源与同步", { exact: true }).click();
   await page.screenshot({
     path: "output/asset-inventory-mobile.png",
     fullPage: true,
