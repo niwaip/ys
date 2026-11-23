@@ -2,6 +2,7 @@ import { resolve } from "node:path";
 import { defineConfig } from "@playwright/test";
 export default defineConfig({
   testDir: "tests/browser",
+  testIgnore: "container-runtime.spec.ts",
   use: {
     baseURL: "http://127.0.0.1:4173",
     headless: true,

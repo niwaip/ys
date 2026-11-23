@@ -1,0 +1,96 @@
+.container-acquisition {
+  margin: 24px 0;
+}
+.container-acquisition .panel {
+  padding: 24px;
+  background: #fff;
+  border: 1px solid #dce4d9;
+  border-radius: 10px;
+  margin: 20px 0;
+}
+.container-acquisition label {
+  display: block;
+  margin: 16px 0;
+  color: #4f6252;
+  font-size: 13px;
+}
+.container-acquisition select {
+  display: block;
+  width: 100%;
+  padding: 10px;
+  border: 1px solid #d4ddce;
+  border-radius: 6px;
+  background: #fcfdfb;
+  margin-top: 8px;
+}
+.container-acquisition table code {
+  display: block;
+  max-width: 260px;
+  overflow-wrap: anywhere;
+  white-space: normal;
+}
+.container-acquisition small {
+  display: block;
+  color: #697d6d;
+  margin-top: 6px;
+}
+.container-acquisition input[type="checkbox"] {
+  width: 16px;
+  height: 16px;
+  display: inline-block;
+  margin: 0 8px 0 0;
+}
+.container-acquisition .container-inline {
+  display: flex;
+  align-items: center;
+}
+.container-acquisition progress {
+  display: block;
+  width: 130px;
+  margin: 8px 0;
+}
+.container-source {
+  padding: 14px 0;
+  border-top: 1px solid #e0e6ef;
+}
+.container-source button {
+  margin-left: 12px;
+}
+.container-runtime-summary {
+  padding: 24px;
+  margin: 24px 0;
+}
+.container-runtime-summary .runtime-cards {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 16px;
+}
+.runtime-cards div {
+  padding: 16px;
+  border: 1px solid #e0e6ef;
+  border-radius: 8px;
+}
+.runtime-cards strong {
+  display: block;
+  font-size: 28px;
+  margin: 10px 0;
+}
+@media (max-width: 650px) {
+  .container-acquisition .panel {
+    padding: 16px;
+  }
+  .container-runtime-summary .runtime-cards {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+.container-acquisition .panel {
+  min-width: 0;
+}
+.container-acquisition .panel > code,
+.container-source,
+.container-runtime-summary {
+  overflow-wrap: anywhere;
+}
+.container-acquisition .panel > code {
+  white-space: normal;
+}

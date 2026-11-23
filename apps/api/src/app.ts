@@ -1,3 +1,6 @@
+import { ContainerGenerationModule } from "./container-runtime/jobs.module";
+import type { ImageGenerator } from "./container-runtime/generator";
+import { ContainerRuntimeModule } from "./container-runtime/container-runtime.module";
 import { LifecycleRiskModule } from "./lifecycle-risk/lifecycle-risk.module";
 import { CveRecordResearch } from "./finding-analysis/public-cve";
 import { FindingAnalysisModule } from "./finding-analysis/finding-analysis.module";
@@ -89,6 +92,7 @@ export async function createApp(
     findingResearchExecutor?: PublicQueryExecutor;
     findingAnalysisTimeoutMs?: number;
     collectionExecutor?: CollectionExecutor;
+    imageGenerator?: ImageGenerator;
     trivyExecutor?: TrivyExecutor;
     reportNarrationExecutor?: ReportNarrationExecutor;
     reportNarrationTimeoutMs?: number;
@@ -107,6 +111,10 @@ export async function createApp(
       runtime.trivyExecutor ?? new ProcessTrivyExecutor(config.trivy),
     );
     const history = SoftwareHistoryModule.register(assessments);
+    const collectionJobs = CollectionJobsModule.register(
+      config,
+      runtime.collectionExecutor,
+    );
     const app = await NestFactory.create(
       {
         module: ApplicationModule,
@@ -116,12 +124,18 @@ export async function createApp(
           AssetsModule,
           CollectionsModule,
           BaselinesModule,
-          CollectionJobsModule.register(config, runtime.collectionExecutor),
+          collectionJobs,
           ImportsModule,
           LifecycleModule,
           LifecycleRiskModule,
           SoftwareModule,
           ContainersModule,
+          ContainerRuntimeModule,
+          ContainerGenerationModule.register(
+            collectionJobs,
+            assessments,
+            runtime.imageGenerator,
+          ),
           WindowsModule,
           ...(!features.some(
             (f) =>
@@ -176,6 +190,11 @@ export async function createApp(
       { logger: false, bodyParser: false },
     );
     app.use("/api/customers/:customerId/collections", json({ limit: "8mb" }));
+    app.use("/api/customers/:customerId/containers", json({ limit: "32mb" }));
+    app.use(
+      "/api/customers/:customerId/container-runtime",
+      json({ limit: "32mb" }),
+    );
     app.use(json({ limit: "1mb" }));
     await app.init();
     return app;

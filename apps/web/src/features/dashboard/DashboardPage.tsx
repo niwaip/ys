@@ -1,3 +1,4 @@
+import { ContainerRuntimeSummary } from "../containers/ContainerRuntimeSummary";
 import { LifecycleRiskSummary } from "../lifecycle-risk/LifecycleRiskSummary";
 import { useEffect, useRef, useState } from "react";
 import { api, ApiError } from "../../api";
@@ -46,6 +47,7 @@ export function DashboardPage({
   token,
   onUnauthorized,
   title = "客户风险概览",
+  onNavigate,
 }: FeatureProps & { title?: string }) {
   const [autoCurrent, setAutoCurrent] = useState(true);
   const [hardwareType, setHardwareType] = useState<
@@ -182,6 +184,12 @@ export function DashboardPage({
         customerId={customerId}
         token={token}
         onUnauthorized={onUnauthorized}
+      />
+      <ContainerRuntimeSummary
+        customerId={customerId}
+        token={token}
+        onUnauthorized={onUnauthorized}
+        onNavigate={onNavigate}
       />
       {catalog && (
         <p className="dashboard-directory">

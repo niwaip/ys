@@ -26,7 +26,7 @@ import { parseImageIdentity } from "./identity";
 const inputSchema = z
   .object({
     fileName: z.string().trim().min(1).max(200),
-    content: z.string().min(1).max(500000),
+    content: z.string().min(1).max(20000000),
     repository: z.string().trim().min(1).max(500).optional(),
     digest: z
       .string()
@@ -55,8 +55,13 @@ function version(row: Record<string, unknown>): ContainerVersion {
 }
 export class ContainerService {
   constructor(private readonly db: Database) {}
-  async create(customer: string, name: string, source: string) {
-    const r = await this.db.query(
+  async create(
+    customer: string,
+    name: string,
+    source: string,
+    session: Queryable = this.db,
+  ) {
+    const r = await session.query(
       `INSERT INTO container_images(id,customer_id,name,source) VALUES($1,$2,$3,$4) RETURNING ${cols}`,
       [randomUUID(), customer, name, source],
     );
@@ -99,12 +104,17 @@ export class ContainerService {
     customer: string,
     containerId: string,
     input: z.infer<typeof inputSchema>,
+    session?: Queryable,
   ) {
-    const parsed = parseCycloneDx(input.content);
+    const parsed = parseCycloneDx(input.content, {
+      maxBytes: 20000000,
+      maxComponents: 50000,
+      versions: ["1.4", "1.5", "1.6", "1.7"],
+    });
     const { fileName, content, ...claim } = input;
     const identity = parseImageIdentity(content, claim);
     const hash = createHash("sha256").update(content).digest("hex");
-    return this.db.transaction(async (session) => {
+    const save = async (session: Queryable) => {
       await this.get(customer, containerId, session);
       const existing = await session.query(
         `SELECT id,result FROM import_materials WHERE customer_id=$1 AND format='container-cyclonedx-json' AND content_hash=$2`,
@@ -186,7 +196,8 @@ export class ContainerService {
         ],
       );
       return { ...version(r.rows[0]), replayed: false };
-    });
+    };
+    return session ? save(session) : this.db.transaction(save);
   }
 }
 @Controller("api/customers/:customerId/containers")

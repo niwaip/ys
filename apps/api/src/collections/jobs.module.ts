@@ -310,6 +310,7 @@ export class CollectionJobsModule {
       module: CollectionJobsModule,
       imports: [CollectionsModule],
       controllers: [JobsController, CollectionAccessController],
+      exports: [CollectionAccessService, CollectionJobsService],
       providers: [
         {
           provide: CollectionAccessService,

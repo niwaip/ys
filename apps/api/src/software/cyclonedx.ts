@@ -35,7 +35,7 @@ const component: z.ZodType<any> = z.lazy(() =>
 const schema = z
   .object({
     bomFormat: z.literal("CycloneDX"),
-    specVersion: z.enum(["1.4", "1.5", "1.6"]),
+    specVersion: z.enum(["1.4", "1.5", "1.6", "1.7"]),
     version: z.number().int().positive().optional(),
     metadata: z
       .object({
@@ -47,9 +47,20 @@ const schema = z
     components: z.array(component),
   })
   .passthrough();
-export function parseCycloneDx(content: string) {
-  if (Buffer.byteLength(content, "utf8") > 500000 || content.includes("\0"))
-    throw new BadRequestException("SBOM 最多 500000 UTF-8 字节且不能含 NUL");
+export function parseCycloneDx(
+  content: string,
+  limits: { maxBytes: number; maxComponents: number; versions?: string[] } = {
+    maxBytes: 500000,
+    maxComponents: 1000,
+  },
+) {
+  if (
+    Buffer.byteLength(content, "utf8") > limits.maxBytes ||
+    content.includes("\0")
+  )
+    throw new BadRequestException(
+      `SBOM 最多 ${limits.maxBytes} UTF-8 字节且不能含 NUL`,
+    );
   let json: unknown;
   try {
     json = JSON.parse(content.replace(/^\uFEFF/, ""));
@@ -61,13 +72,19 @@ export function parseCycloneDx(content: string) {
     throw new BadRequestException(
       "结构不受支持；需 CycloneDX JSON 1.4–1.6、components 数组及有效组件名称/类型/PURL",
     );
+  if (
+    !(limits.versions ?? ["1.4", "1.5", "1.6"]).includes(
+      parsed.data.specVersion,
+    )
+  )
+    throw new BadRequestException("当前入口不支持该CycloneDX版本");
   const components: SoftwareComponent[] = [];
   const refs = new Set<string>();
   function walk(items: any[], parentRef: string | null, depth: number) {
     if (depth > 30) throw new BadRequestException("组件嵌套最多 30 层");
     for (const c of items) {
-      if (components.length >= 1000)
-        throw new BadRequestException("最多 1000 个组件");
+      if (components.length >= limits.maxComponents)
+        throw new BadRequestException(`最多 ${limits.maxComponents} 个组件`);
       const ref = c["bom-ref"] ?? null;
       if (ref && refs.has(ref))
         throw new BadRequestException("组件 bom-ref 重复，无法确定关系");

@@ -42,7 +42,7 @@ emit images docker --host unix:///var/run/docker.sock image ls --no-trunc --dige
 function collectionError(code, message) {
   return Object.assign(new Error(message), { code });
 }
-function execute(profile, script, signal) {
+export function execute(profile, script, signal, maxBytes = 8000000) {
   return new Promise((resolve, reject) => {
     const args = [
       "-F",
@@ -108,7 +108,7 @@ function execute(profile, script, signal) {
     child.stdin.on("error", () => {});
     child.stdout.on("data", (chunk) => {
       bytes += chunk.length;
-      if (bytes > 8000000)
+      if (bytes > maxBytes)
         finish(
           collectionError(
             "output_limit",
@@ -119,7 +119,7 @@ function execute(profile, script, signal) {
     });
     child.stderr.on("data", (chunk) => {
       bytes += chunk.length;
-      if (bytes > 8000000)
+      if (bytes > maxBytes)
         finish(collectionError("output_limit", "SSH输出超限"));
       else if (stderr.length < 8192) stderr += chunk.toString();
     });
@@ -135,7 +135,11 @@ function execute(profile, script, signal) {
           : /permission denied/i.test(stderr)
             ? "login_failed"
             : "connection_failed";
-        finish(collectionError(failureCode, reason));
+        finish(
+          Object.assign(collectionError(failureCode, reason), {
+            exitCode: code,
+          }),
+        );
       } else finish(undefined, Buffer.concat(out).toString("utf8"));
     });
     child.stdin.end(script);

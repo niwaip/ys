@@ -76,6 +76,7 @@ export type Assessment = {
     scope?: string;
     runtime?: import("./finding-context").RuntimeContext;
     provenance?: import("./collections").AssetVersionLink;
+    containerSource?: import("./container-runtime").ContainerSource;
   };
   createdAt: string;
   startedAt?: string;

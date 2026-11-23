@@ -1,3 +1,4 @@
+import { ContainerRuntimeSummary } from "../containers/ContainerRuntimeSummary";
 import { AssetLifecycleForm } from "../lifecycle-risk/AssetLifecycleForm";
 import "../lifecycle-risk/lifecycle-risk.css";
 import { AssetBaseline } from "../collections/AssetBaseline";
@@ -316,6 +317,14 @@ export function AssetsPage({
                             </button>
                             <button
                               className="secondary"
+                              onClick={() =>
+                                onNavigate?.("containers", asset.id)
+                              }
+                            >
+                              容器镜像
+                            </button>
+                            <button
+                              className="secondary"
                               onClick={() => setLifecycleAsset(asset.id)}
                             >
                               生命周期资料
@@ -408,6 +417,13 @@ export function AssetsPage({
                   ×
                 </button>
               </header>
+              <ContainerRuntimeSummary
+                customerId={customerId}
+                token={token}
+                onUnauthorized={onUnauthorized}
+                assetId={detailAsset.id}
+                onNavigate={onNavigate}
+              />
               <AssetBaseline
                 customerId={customerId}
                 token={token}

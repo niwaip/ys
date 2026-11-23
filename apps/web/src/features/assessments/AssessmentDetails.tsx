@@ -537,6 +537,36 @@ export function AssessmentDetails({
           )}
         </>
       )}
+      {job.input.containerSource && (
+        <details className="execution-details">
+          <summary>扫描来源证据</summary>
+          <p>
+            主机：{job.input.containerSource.assetId ?? "独立镜像资料"} ·{" "}
+            {job.input.containerSource.basis === "docker_image_observation"
+              ? "Docker镜像观测"
+              : "操作员声明"}
+          </p>
+          <p>
+            Docker ImageID：{job.input.containerSource.imageId ?? "未知"} ·
+            架构：{job.input.containerSource.architecture ?? "未知"}
+          </p>
+          <p>
+            生成工具：{job.input.containerSource.generator ?? "上传资料"} ·{" "}
+            {job.input.containerSource.generatedAt ?? "生成时间未知"}
+          </p>
+          <p>
+            目录快照：{job.input.containerSource.snapshotId ?? "未关联"} ·{" "}
+            {job.input.containerSource.snapshotHash ?? ""}
+          </p>
+          <p>原始产物 SHA-256：{job.input.containerSource.artifactHash}</p>
+          {job.input.containerSource.containers.map((c) => (
+            <p key={c.containerId}>
+              {c.name} · {c.state} · {c.containerId}
+            </p>
+          ))}
+          <p>{job.input.containerSource.coverage}</p>
+        </details>
+      )}
       <details className="execution-details">
         <summary>任务详情与执行证据</summary>
         <p>任务编号：{job.id}</p>

@@ -82,6 +82,7 @@ const submitSchema = z.union([
     .object({
       containerId: z.uuid(),
       versionId: z.uuid(),
+      containerSourceId: z.uuid().optional(),
       linkId: z.uuid().optional(),
       idempotencyKey: z.string().trim().min(1).max(200),
     })
@@ -209,6 +210,26 @@ export class AssessmentService {
             target.versionId,
           )
         : undefined;
+    let containerSource:
+      | import("../../../../packages/contracts/container-runtime").ContainerSource
+      | undefined;
+    if ("containerSourceId" in input && input.containerSourceId) {
+      const source = (
+        await this.db.query(
+          "SELECT details FROM container_sources WHERE customer_id=$1 AND id=$2 AND container_id=$3 AND version_id=$4",
+          [
+            customer,
+            input.containerSourceId,
+            "containerId" in input ? input.containerId : null,
+            input.versionId,
+          ],
+        )
+      ).rows[0];
+      if (!source) throw new NotFoundException("该客户版本下未找到镜像来源");
+      containerSource = source.details as typeof containerSource;
+      if (containerSource?.assetId)
+        await this.collections.assertTarget(customer, containerSource.assetId);
+    }
     const record: Assessment = {
       id: randomUUID(),
       customerId: customer,
@@ -216,6 +237,7 @@ export class AssessmentService {
       idempotencyKey: input.idempotencyKey,
       target,
       input: {
+        ...(containerSource ? { containerSource } : {}),
         importId: snapshot.importId,
         contentHash: material.contentHash,
         version: snapshot.version,
