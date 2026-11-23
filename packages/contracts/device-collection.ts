@@ -33,14 +33,12 @@ export const deviceFacts = z
   })
   .strict()
   .superRefine((v, ctx) => {
-    const restricted =
-      v.category === "vm"
-        ? ["manufacturer", "model", "firmware", "modules", "controller"]
-        : ["network", "power", "other"].includes(v.category)
-          ? ["cpu", "memory", "disks", "software", "controller"]
-          : v.category === "storage"
-            ? ["cpu", "memory", "disks", "software"]
-            : ["controller"];
+    const restricted = Object.keys(deviceFieldLabels).filter(
+      (field) =>
+        !deviceFields(v.category).includes(
+          field as keyof typeof deviceFieldLabels,
+        ),
+    );
     for (const field of restricted)
       if (v[field as keyof typeof v] != null)
         ctx.addIssue({
@@ -96,29 +94,4 @@ export function deviceFields(category: DeviceCategory) {
             ]
           : ["manufacturer", "model", "firmware", "modules", "supportUntil"];
   return all as (keyof typeof deviceFieldLabels)[];
-}
-export function categoryForAsset(
-  asset: { hardwareType?: string; attributes: Record<string, unknown> },
-  mappings: Record<string, DeviceCategory> = {},
-): DeviceCategory {
-  const attrs = asset.attributes;
-  if (
-    (attrs.netbox as { objectType?: string } | undefined)?.objectType ===
-    "virtual-machine"
-  )
-    return "vm";
-  const role = attrs.role as
-    { id?: number; slug?: string; name?: string } | undefined;
-  if (role?.id && mappings[String(role.id)]) return mappings[String(role.id)];
-  const value = `${role?.slug ?? ""} ${role?.name ?? ""}`.toLowerCase();
-  if (/switch|router|firewall|network|交换|路由|防火墙|网络/.test(value))
-    return "network";
-  if (/storage|san|nas|存储/.test(value)) return "storage";
-  if (/power|pdu|ups|电源/.test(value)) return "power";
-  if (/server|服务器/.test(value)) return "server";
-  return asset.hardwareType === "server"
-    ? "server"
-    : asset.hardwareType === "network"
-      ? "network"
-      : "other";
 }

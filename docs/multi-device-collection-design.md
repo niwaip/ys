@@ -1,6 +1,6 @@
 # 多类型设备资料采集：重新规划
 
-2026-11-23。状态：用户已“按建议”确认工单拆分及范围，进入to-tickets发布；首期6项，SNMP v3为后续阶段。首期实现及本地验收进行中，现有生产部署不变。
+2026-11-23。状态：用户已“按建议”确认工单拆分及范围，进入to-tickets发布；首期6项，SNMP v3为后续阶段。首期实现及本地验收已完成，现有生产部署不变。
 
 ## 用户要求
 
@@ -83,3 +83,13 @@ G. 新增入口：目标选择旁提供新增资产；NetBox模式创建Device/V
 测试边界沿用已确认的客户HTTP API与浏览器端对端，不测试私有方法。外部NetBox、SSH和Trivy使用隔离替身；页面与YS API、持久化运行真实代码。Windows脚本在本机提供下载和结果适配验证，当前macOS环境未实际执行Windows命令；生产NetBox目录权限问题仍需运维授予对应读取权限。此实现未修改生产令牌权限。
 
 专项命令：`PLAYWRIGHT_CHANNEL=chrome npx playwright test --config playwright.multi-device.config.ts`，验证NetBox分类、角色映射、新增Device/VM、403、失败幂等及采纳不写回主数据。Docker专项沿用`playwright.container-runtime.config.ts`。常规命令为`npm test`、`npm run build`和`PLAYWRIGHT_CHANNEL=chrome npx playwright test`。
+
+## 本地验收结果（2026-11-23）
+
+- API：31个测试文件、109项通过。
+- 常规浏览器端对端：34项通过，1项Pi环境专用测试跳过。
+- NetBox专项：3项通过，包括超过100项资产翻页时保留所选VM身份及类型锁定。
+- Docker专项：4项通过；类型检查、生产构建和差异空白检查通过。
+- Standards复审：已将资产分类推断移回前端功能模块，字段校验与表单共用适用性规则；无剩余具体问题。
+- Spec复审：已修复不适用设备重新进入连接采集、翻页丢失目标身份，并补充已有序列号不可通过缺失值绕过的回归；无剩余具体问题。
+- 审查固定基点为`65cbaa9c47b5fd40cc112c0604bba5429b97f6e4`，首期实现提交为`7a592f6`。本轮为本地实现，未部署生产；SNMP及实际Windows脚本执行仍遵循前述范围与环境限制。

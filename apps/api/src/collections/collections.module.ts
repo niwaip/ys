@@ -201,7 +201,8 @@ export class CollectionsService {
           "目标资产未登记序列号，Windows资料身份待确认；请先在资产主数据补充序列号",
         );
       if (
-        data.identity.serial &&
+        (data.identity.serial ||
+          data.extensions.inputFormat === "windows-bat/1") &&
         attrs.serial &&
         attrs.serial !== data.identity.serial
       )

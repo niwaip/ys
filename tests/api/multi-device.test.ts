@@ -284,6 +284,19 @@ test("统一上传Windows脚本结果，身份不明拒绝，采纳后才发布�
     .set(auth)
     .send({
       assetId: asset.id,
+      fileName: "bound-no-serial.json",
+      content: JSON.stringify({
+        ...data,
+        TargetAssetId: asset.id,
+        SerialNumber: null,
+      }),
+    })
+    .expect(409);
+  await http()
+    .post(`${base}/collections/upload`)
+    .set(auth)
+    .send({
+      assetId: asset.id,
       fileName: "missing.json",
       content: JSON.stringify({ ...data, SerialNumber: null }),
     })

@@ -63,22 +63,20 @@ test("新增Device与VM后自动选中，NetBox目录403与创建失败明确可
         .click();
       await page.getByLabel("目标平台").selectOption("windows");
       await page.getByLabel("我已确认资料属于所选主机").check();
-      await page
-        .getByLabel("采集JSON文件")
-        .setInputFiles({
-          name: "vm-windows.json",
-          mimeType: "application/json",
-          buffer: Buffer.from(
-            JSON.stringify({
-              Hostname: name,
-              TargetAssetId: targetId,
-              SerialNumber: null,
-              CollectorVersion: "1",
-              OS: "Windows Server 2022",
-              OSBuild: "20348",
-            }),
-          ),
-        });
+      await page.getByLabel("采集JSON文件").setInputFiles({
+        name: "vm-windows.json",
+        mimeType: "application/json",
+        buffer: Buffer.from(
+          JSON.stringify({
+            Hostname: name,
+            TargetAssetId: targetId,
+            SerialNumber: null,
+            CollectorVersion: "1",
+            OS: "Windows Server 2022",
+            OSBuild: "20348",
+          }),
+        ),
+      });
       await page
         .getByRole("button", { name: "保存基础快照", exact: true })
         .click();
@@ -118,4 +116,55 @@ test("新增Device与VM后自动选中，NetBox目录403与创建失败明确可
     (await (await request.get("http://127.0.0.1:3228/fixture/state")).json())
       .posts,
   ).toBe(before);
+});
+
+test("资产分页保留所选VM身份、目标选项及资料类型锁定", async ({
+  page,
+  request,
+}) => {
+  test.setTimeout(60000);
+  const headers = { Authorization: "Bearer browser-test-secret-token" };
+  for (let i = 0; i < 101; i++) {
+    const created = await request.post("/api/customers/acme/netbox/assets", {
+      headers,
+      data: {
+        idempotencyKey: `page-${i}`,
+        objectType: "device",
+        name: `page-${i}`,
+        deviceType: 20,
+        role: 10,
+        site: 50,
+      },
+    });
+    expect(created.ok()).toBe(true);
+  }
+  const vm = await (
+    await request.post("/api/customers/acme/netbox/assets", {
+      headers,
+      data: {
+        idempotencyKey: "paged-vm",
+        objectType: "virtual-machine",
+        name: "保留目标的VM",
+        site: 50,
+      },
+    })
+  ).json();
+  await login(page);
+  await page.getByLabel("目标资产", { exact: true }).selectOption(vm.assetId);
+  await expect(page.getByLabel("设备资料类型")).toHaveValue("vm");
+  await page.getByText(/更多主机 · 当前第/).click();
+  await page.getByRole("button", { name: "下一批主机", exact: true }).click();
+  await expect(page.getByText(/更多主机 · 当前第 2 批/)).toBeVisible();
+  await expect(
+    page
+      .getByLabel("目标资产", { exact: true })
+      .locator("option")
+      .filter({ hasText: /^page-0$/ }),
+  ).toHaveCount(1);
+  await expect(page.getByLabel("设备资料类型")).toBeDisabled();
+  await expect(
+    page.getByLabel("目标资产", { exact: true }).locator("option:checked"),
+  ).toHaveText("保留目标的VM");
+  await page.reload();
+  await expect(page.getByLabel("设备资料类型")).toHaveValue("vm");
 });

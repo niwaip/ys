@@ -1,8 +1,8 @@
 import { WindowsCollectionPreview } from "./WindowsCollectionPreview";
 import { NewCollectionAsset } from "./NewCollectionAsset";
+import { categoryForAsset } from "./device-category";
 import { DeviceFields } from "./DeviceFields";
 import {
-  categoryForAsset,
   deviceCategories,
   deviceFields,
   type DeviceCategory,
@@ -13,7 +13,7 @@ import "./collection-workbench.css";
 import { ConnectionEditor } from "./ConnectionEditor";
 import { VersionLinks } from "./VersionLinks";
 import { useEffect, useState, useRef, type FormEvent } from "react";
-import type { AssetPage } from "../../../../../packages/contracts";
+import type { Asset, AssetPage } from "../../../../../packages/contracts";
 import type { CollectionSnapshot } from "../../../../../packages/contracts/collections";
 import { api, ApiError } from "../../api";
 import type { FeatureProps } from "../../features";
@@ -60,6 +60,7 @@ export function CollectionsPage({
 }: FeatureProps) {
   const completedJobs = useRef(new Set<string>());
   const [assets, setAssets] = useState<AssetPage>();
+  const [targetAsset, setTargetAsset] = useState<Asset>();
   const [target, setTarget] = useState(assetId ?? "");
   const [tab, setTab] = useState("connect");
   const [profileId, setProfileId] = useState("");
@@ -218,6 +219,10 @@ export function CollectionsPage({
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (submitting.current || collecting) return;
+    if (!asset || (tab === "connect" && !linuxSupported)) {
+      setError("请先选择有效资产及适用的采集方式");
+      return;
+    }
     submitting.current = true;
     const submittedSelection = selection;
     setRaw(undefined);
@@ -363,7 +368,33 @@ export function CollectionsPage({
       if (requestedSelection === currentSelection.current) fail(e);
     }
   }
-  const asset = assets?.items.find((item) => item.id === target);
+  const listedAsset = assets?.items.find((item) => item.id === target);
+  const asset =
+    listedAsset ?? (targetAsset?.id === target ? targetAsset : undefined);
+  useEffect(() => {
+    if (listedAsset) {
+      setTargetAsset(listedAsset);
+      return;
+    }
+    if (!target) return;
+    const controller = new AbortController();
+    api<Asset>(
+      `/customers/${customerId}/assets/${target}`,
+      token,
+      {},
+      controller.signal,
+    )
+      .then((value) => {
+        if (!controller.signal.aborted) setTargetAsset(value);
+      })
+      .catch((e) => {
+        if (!controller.signal.aborted) {
+          setTargetAsset(undefined);
+          fail(e);
+        }
+      });
+    return () => controller.abort();
+  }, [target, listedAsset, customerId, token]);
   useEffect(() => {
     const controller = new AbortController();
     api<{ mappings: Record<string, DeviceCategory> }>(
@@ -528,7 +559,9 @@ export function CollectionsPage({
               aria-selected={scope === key}
               onClick={() => {
                 setScope(key);
-                setTab("connect");
+                setTab(
+                  linuxSupported ? "connect" : hostType ? "upload" : "manual",
+                );
                 setContent("");
                 setFileName("");
               }}
@@ -554,6 +587,9 @@ export function CollectionsPage({
                 onChange={(e) => setTarget(e.target.value)}
               >
                 <option value="">选择资产</option>
+                {asset && !listedAsset && (
+                  <option value={asset.id}>{asset.name}</option>
+                )}
                 {assets?.items.map((item) => (
                   <option key={item.id} value={item.id}>
                     {item.name}
@@ -1139,9 +1175,10 @@ export function CollectionsPage({
                   disabled={
                     busy ||
                     collecting ||
-                    !target ||
+                    !asset ||
                     (tab === "connect" &&
-                      (!profileId ||
+                      (!linuxSupported ||
+                        !profileId ||
                         (scope === "container-inventory" &&
                           !directoryAuthorized))) ||
                     (tab === "upload" && !content)
