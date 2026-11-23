@@ -75,6 +75,10 @@ const identity = (a: AnyAssessment) =>
           id: a.target.softwareId,
           inputId: a.target.versionId,
         };
+// Select only the normalized facts used by this read model. In particular,
+// never copy report artifacts or raw scanner output out of the job JSON.
+const dashboardAssessment =
+  "dashboard_details || jsonb_build_object('id',id,'status',status)";
 export class DashboardService {
   constructor(
     private db: Database,
@@ -142,6 +146,18 @@ export class DashboardService {
       })),
       truncated: a.rows.length > 1000,
     };
+  }
+  private async readAssessment(
+    customer: string,
+    id: string,
+  ): Promise<AnyAssessment> {
+    const result = await this.db.query(
+      `SELECT ${dashboardAssessment} AS details FROM vulnerability_jobs WHERE customer_id=$1 AND id=$2`,
+      [customer, id],
+    );
+    if (!result.rows.length)
+      throw new NotFoundException("该客户下未找到漏洞评估任务");
+    return result.rows[0].details as AnyAssessment;
   }
   async overview(customer: string) {
     const view = await this.view(customer, {
@@ -239,7 +255,7 @@ export class DashboardService {
       ),
       selected = new Map<string, AnyAssessment>();
     for (const id of input.assessmentRefs ?? []) {
-      const a = await this.assessments.get(customer, id),
+      const a = await this.readAssessment(customer, id),
         target = identity(a),
         key = `${target.kind}:${target.id}`;
       if (
@@ -284,7 +300,7 @@ export class DashboardService {
           row.selection = "software_current";
           row.inputId = current.versionId;
           if (current.assessmentId)
-            job = await this.assessments.get(customer, current.assessmentId);
+            job = await this.readAssessment(customer, current.assessmentId);
         }
       }
       if (!job && input.selectionMode === "current") {
@@ -305,7 +321,7 @@ export class DashboardService {
         }
         const candidate = (
           await this.db.query(
-            `SELECT details - 'execution' || jsonb_build_object('execution',(details->'execution') - 'rawReport') AS details FROM vulnerability_jobs WHERE customer_id=$1 AND COALESCE(details#>>'{target,softwareId}',details#>>'{target,containerId}',details#>>'{target,assetId}')=$2 AND ($3::text IS NULL OR COALESCE(details#>>'{target,versionId}',details#>>'{target,snapshotId}')=$3) ORDER BY created_at DESC,id DESC LIMIT 1`,
+            `SELECT ${dashboardAssessment} AS details FROM vulnerability_jobs WHERE customer_id=$1 AND target_object_id=$2 AND ($3::text IS NULL OR target_input_id=$3) ORDER BY created_at DESC,id DESC LIMIT 1`,
             [customer, object.id, row.inputId],
           )
         ).rows[0];
@@ -459,7 +475,7 @@ export class DashboardService {
         if (match && rowLifecycle) row.lifecycleAssessmentId = rowLifecycle.id;
       }
     }
-    const historyWhere = `customer_id=$1 AND COALESCE(details#>>'{target,softwareId}',details#>>'{target,containerId}',details#>>'{target,assetId}')=ANY($2::text[]) AND ($5::boolean OR COALESCE(details#>>'{target,versionId}',details#>>'{target,snapshotId}')=ANY($6::text[])) AND ($3::timestamptz IS NULL OR (details->>'createdAt')::timestamptz >= $3::timestamptz) AND ($4::timestamptz IS NULL OR (details->>'createdAt')::timestamptz <= $4::timestamptz)`;
+    const historyWhere = `customer_id=$1 AND target_object_id=ANY($2::text[]) AND ($5::boolean OR target_input_id=ANY($6::text[])) AND ($3::timestamptz IS NULL OR (details->>'createdAt')::timestamptz >= $3::timestamptz) AND ($4::timestamptz IS NULL OR (details->>'createdAt')::timestamptz <= $4::timestamptz)`;
     const historyParams = [
       customer,
       rows.map((r) => r.id),
@@ -469,7 +485,7 @@ export class DashboardService {
       rows.map((r) => r.inputId).filter(Boolean),
     ];
     const historical = await this.db.query(
-        `SELECT details - 'execution' || jsonb_build_object('toolVersion',details#>'{execution,toolVersion}') AS details FROM vulnerability_jobs WHERE ${historyWhere} ORDER BY created_at DESC,id LIMIT 200`,
+        `SELECT ${dashboardAssessment} AS details FROM vulnerability_jobs WHERE ${historyWhere} ORDER BY created_at DESC,id LIMIT 200`,
         historyParams,
       ),
       historyCount = await this.db.query(

@@ -151,6 +151,30 @@ CREATE TABLE windows_snapshots(id uuid PRIMARY KEY,customer_id text NOT NULL,ass
     version: 28,
     sql: `CREATE TABLE dashboard_scopes(id uuid PRIMARY KEY,customer_id text NOT NULL REFERENCES customers(id),content_gzip text NOT NULL,content_hash text NOT NULL,created_at timestamptz NOT NULL DEFAULT now()); CREATE INDEX dashboard_scopes_customer ON dashboard_scopes(customer_id,created_at DESC);`,
   },
+  {
+    version: 29,
+    sql: `CREATE FUNCTION ys_dashboard_assessment(job jsonb) RETURNS jsonb LANGUAGE sql IMMUTABLE AS $$
+      SELECT jsonb_build_object(
+        'id',job->'id','status',job->'status','target',job->'target',
+        'input',jsonb_build_object('contentHash',job#>'{input,contentHash}'),
+        'createdAt',job->'createdAt','error',job->'error',
+        'toolVersion',job#>'{execution,toolVersion}',
+        'execution',jsonb_build_object('toolVersion',job#>'{execution,toolVersion}'),
+        'result',CASE WHEN jsonb_typeof(job->'result')='object' THEN jsonb_build_object(
+          'coverage',job#>'{result,coverage}','database',job#>'{result,database}',
+          'findings',(SELECT COALESCE(jsonb_agg(jsonb_build_object(
+            'id',f->'id','vulnerabilityId',f->'vulnerabilityId','severity',f->'severity',
+            'applicability',f->'applicability','packageName',f->'packageName',
+            'installedVersion',f->'installedVersion','fixedVersion',f->'fixedVersion'
+          )),'[]'::jsonb) FROM jsonb_array_elements(COALESCE(job#>'{result,findings}','[]'::jsonb)) f)
+        ) ELSE NULL END
+      )
+      $$;
+      ALTER TABLE vulnerability_jobs ADD COLUMN target_object_id text GENERATED ALWAYS AS (COALESCE(details#>>'{target,softwareId}',details#>>'{target,containerId}',details#>>'{target,assetId}')) STORED;
+      ALTER TABLE vulnerability_jobs ADD COLUMN target_input_id text GENERATED ALWAYS AS (COALESCE(details#>>'{target,versionId}',details#>>'{target,snapshotId}')) STORED;
+      ALTER TABLE vulnerability_jobs ADD COLUMN dashboard_details jsonb GENERATED ALWAYS AS (ys_dashboard_assessment(details)) STORED;
+      CREATE INDEX vulnerability_jobs_dashboard_target ON vulnerability_jobs(customer_id,target_object_id,target_input_id,created_at DESC,id);`,
+  },
 ];
 export async function openDatabase(url: string): Promise<Database> {
   let raw: Queryable & { close(): Promise<void> };
