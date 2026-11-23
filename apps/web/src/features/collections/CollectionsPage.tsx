@@ -475,22 +475,29 @@ export function CollectionsPage({
               </select>
             </label>
             {assets && assets.total > 100 && (
-              <div className="pagination">
-                <button
-                  type="button"
-                  disabled={!assetOffset}
-                  onClick={() => setAssetOffset(Math.max(0, assetOffset - 100))}
-                >
-                  上一批主机
-                </button>
-                <button
-                  type="button"
-                  disabled={assetOffset + 100 >= assets.total}
-                  onClick={() => setAssetOffset(assetOffset + 100)}
-                >
-                  下一批主机
-                </button>
-              </div>
+              <details className="collect-host-pages">
+                <summary>
+                  更多主机 · 当前第 {Math.floor(assetOffset / 100) + 1} 批
+                </summary>
+                <div className="pagination">
+                  <button
+                    type="button"
+                    disabled={!assetOffset}
+                    onClick={() =>
+                      setAssetOffset(Math.max(0, assetOffset - 100))
+                    }
+                  >
+                    上一批主机
+                  </button>
+                  <button
+                    type="button"
+                    disabled={assetOffset + 100 >= assets.total}
+                    onClick={() => setAssetOffset(assetOffset + 100)}
+                  >
+                    下一批主机
+                  </button>
+                </div>
+              </details>
             )}
             {asset ? (
               <div className="collect-host">

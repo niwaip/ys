@@ -165,11 +165,16 @@ test("采集工作台首屏可见主操作，内容选择在目标上方且历�
   ).toBeLessThan((await target.boundingBox())!.y);
   await expect(
     setup.getByRole("button", { name: "开始基础采集 →", exact: true }),
-  ).toBeInViewport();
+  ).toBeInViewport({ ratio: 1 });
   const entry = page.getByRole("navigation", { name: "采集入口" });
   expect(
     Math.abs((await entry.boundingBox())!.x - (await setup.boundingBox())!.x),
   ).toBeLessThan(2);
+  for (const name of ["主机采集", "Windows 采集导入", "CSV 资料导入"]) {
+    await expect(entry.getByRole("tab", { name, exact: true })).toBeInViewport({
+      ratio: 1,
+    });
+  }
   await page.screenshot({
     path: "output/collection-workbench-desktop.png",
     fullPage: false,
