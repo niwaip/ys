@@ -1,5 +1,6 @@
 import { AssetBaseline } from "./AssetBaseline";
 import "./collections.css";
+import "./collection-workbench.css";
 import { ConnectionEditor } from "./ConnectionEditor";
 import { VersionLinks } from "./VersionLinks";
 import { useEffect, useState, useRef, type FormEvent } from "react";
@@ -381,19 +382,19 @@ export function CollectionsPage({
     ["queued", "running"].includes(job.status),
   ).length;
   return (
-    <div className="collection-page">
+    <div className="collection-page collection-console">
       <header className="collect-heading">
         <div>
           <span className="collect-kicker">资产与证据</span>
           <h1>资产采集</h1>
-          <p>先确定目标与执行位置，再分别取得主机基础资料或容器运行资料。</p>
+          <p>选择目标与采集内容，确认取得的资料后再更新资产基线。</p>
         </div>
         <div className="collect-live">
           <span />
-          Linux 主机 · 只读访问
+          Linux 采集 · 只读命令
         </div>
       </header>
-      <div className="collect-metrics">
+      <section className="collect-metrics" aria-label="采集概览">
         <div>
           <span>主机资产</span>
           <strong>{assets?.total ?? "—"}</strong>
@@ -406,14 +407,51 @@ export function CollectionsPage({
           <span>进行中的任务</span>
           <strong>{active}</strong>
         </div>
-      </div>
-      <section className="collect-card">
+      </section>
+      <section className="collect-card collect-setup" aria-label="采集配置">
         <div className="collect-card-heading">
           <div>
-            <h2>采集主机</h2>
-            <p>选择当前客户的资产及访问方式。</p>
+            <h2>采集配置</h2>
+            <p>选择采集内容、目标主机与资料接入方式。</p>
           </div>
-          <span className="collect-step">01 / 准备资料</span>
+          <span className="collect-step">配置 → 采集 → 确认</span>
+        </div>
+        <div
+          className="collect-task-tabs"
+          role="tablist"
+          aria-label="采集任务类型"
+        >
+          {[
+            ["basic", "主机基础资料", "操作系统、硬件、系统包及软件版本"],
+            [
+              "container-inventory",
+              "容器运行资料",
+              "Docker 引擎、镜像目录及容器实例",
+            ],
+          ].map(([key, label, description]) => (
+            <button
+              type="button"
+              role="tab"
+              aria-label={label}
+              disabled={busy}
+              key={key}
+              aria-selected={scope === key}
+              onClick={() => {
+                setScope(key);
+                setTab("connect");
+                setContent("");
+                setFileName("");
+              }}
+            >
+              <span className="collect-task-icon" aria-hidden="true">
+                {key === "basic" ? "▦" : "⬡"}
+              </span>
+              <span>
+                <strong>{label}</strong>
+                <small>{description}</small>
+              </span>
+            </button>
+          ))}
         </div>
         <div className="collect-target collect-shared-target">
           <div className="collect-identity">
@@ -456,15 +494,18 @@ export function CollectionsPage({
             )}
             {asset ? (
               <div className="collect-host">
-                <div className="collect-host-icon">▥</div>
-                <h3>{asset.name}</h3>
-                <p>{address || "未登记管理地址"}</p>
-                <span className="collect-pill">主机资产</span>
-                <details>
-                  <summary>资产详情</summary>
-                  <code>{asset.id}</code>
-                  <p>来源：{asset.source}</p>
-                </details>
+                <span className="collect-host-icon" aria-hidden="true">
+                  ▦
+                </span>
+                <div>
+                  <p>{address || "未登记管理地址"}</p>
+                  <details>
+                    <summary>资产详情</summary>
+                    <code>{asset.id}</code>
+                    <p>来源：{asset.source}</p>
+                  </details>
+                </div>
+                <span className="collect-pill">已选择主机</span>
               </div>
             ) : (
               <div className="collect-empty">
@@ -544,84 +585,55 @@ export function CollectionsPage({
             {selectedProfile && !capability && (
               <p className="collect-muted">尚未检查连接与采集能力。</p>
             )}
-            <p className="collect-muted">
-              本机执行指 YS
-              部署主机，不是浏览器所在电脑。连接由部署端登记并限定客户与资产。
-            </p>
-            {capability && (
-              <div
-                className="collect-capabilities"
-                role="region"
-                aria-label="采集能力检查"
-              >
-                <strong>
-                  {capability.hostname} · {capability.identity ?? "身份未取得"}
-                </strong>
-                <p>
-                  检查于 {new Date(capability.checkedAt).toLocaleString()} ·{" "}
-                  {capability.transport === "local"
-                    ? "YS 部署主机"
-                    : "SSH 目标主机"}
-                </p>
-                <dl>
-                  {[
-                    ["主机基础访问", capability.basic],
-                    ["Docker 目录访问", capability.docker],
-                    ["Trivy 镜像生成", capability.trivy],
-                  ].map(([label, check]) => (
-                    <div key={String(label)}>
-                      <dt>{String(label)}</dt>
-                      <dd>
-                        {
-                          capabilityLabels[
-                            (
-                              check as import("../../../../../packages/contracts/collections").CapabilityCheck
-                            ).status
-                          ]
-                        }
-                      </dd>
-                    </div>
-                  ))}
-                </dl>
-              </div>
-            )}
+            <details className="collect-access-help">
+              <summary>执行位置说明</summary>
+              <p className="collect-muted">
+                本机执行指 YS
+                部署主机，不是浏览器所在电脑。连接由部署端登记并限定客户与资产。
+              </p>
+            </details>
           </div>
         </div>
-        <div
-          className="collect-task-tabs"
-          role="tablist"
-          aria-label="采集任务类型"
-        >
-          {[
-            ["basic", "主机基础资料", "操作系统、硬件、系统包及软件版本"],
-            [
-              "container-inventory",
-              "容器运行资料",
-              "Docker 引擎、镜像目录及容器实例",
-            ],
-          ].map(([key, label, description]) => (
-            <button
-              type="button"
-              role="tab"
-              aria-label={label}
-              disabled={busy}
-              key={key}
-              aria-selected={scope === key}
-              onClick={() => {
-                setScope(key);
-                setTab("connect");
-                setContent("");
-                setFileName("");
-              }}
-            >
-              <strong>{label}</strong>
-              <small>{description}</small>
-            </button>
-          ))}
-        </div>
+        {capability && (
+          <div
+            className="collect-capabilities"
+            role="region"
+            aria-label="采集能力检查"
+          >
+            <strong>
+              {capability.hostname} · {capability.identity ?? "身份未取得"}
+            </strong>
+            <p>
+              检查于 {new Date(capability.checkedAt).toLocaleString()} ·{" "}
+              {capability.transport === "local"
+                ? "YS 部署主机"
+                : "SSH 目标主机"}
+            </p>
+            <dl>
+              {[
+                ["主机基础访问", capability.basic],
+                ["Docker 目录访问", capability.docker],
+                ["Trivy 镜像生成", capability.trivy],
+              ].map(([label, check]) => (
+                <div key={String(label)}>
+                  <dt>{String(label)}</dt>
+                  <dd>
+                    {
+                      capabilityLabels[
+                        (
+                          check as import("../../../../../packages/contracts/collections").CapabilityCheck
+                        ).status
+                      ]
+                    }
+                  </dd>
+                </div>
+              ))}
+            </dl>
+          </div>
+        )}
         <div className="collect-workspace collect-task-workspace">
           <form
-            className="collect-input"
+            className={`collect-input collect-mode-${tab}`}
             onSubmit={submit}
             key={`${tab}:${target}`}
           >
@@ -1022,7 +1034,7 @@ export function CollectionsPage({
           </div>
         </section>
       )}
-      <section className="collect-card collect-history">
+      <section className="collect-card collect-history" aria-label="采集历史">
         <div className="collect-history-toolbar">
           <h2>采集历史</h2>
           <label>

@@ -136,3 +136,62 @@ test("网页新建凭证并绑定所选主机，刷新后仅显示关联连接",
     ),
   ).toBe(true);
 });
+
+test("采集工作台首屏可见主操作，内容选择在目标上方且历史独立展示", async ({
+  page,
+  request,
+}) => {
+  const headers = { Authorization: "Bearer browser-test-secret-token" },
+    name = `collect-layout-${Date.now()}`;
+  const asset = await (
+    await request.post("/api/customers/acme/assets", {
+      headers,
+      data: { name, kind: "host" },
+    })
+  ).json();
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await page.goto("/#collections");
+  await page.getByLabel("操作员访问令牌").fill("browser-test-secret-token");
+  await page.getByRole("button", { name: "进入工作台" }).click();
+  await page.getByLabel("主机资产").selectOption(asset.id);
+  const setup = page.getByRole("region", { name: "采集配置", exact: true }),
+    history = page.getByRole("region", { name: "采集历史", exact: true });
+  await expect(setup).toBeVisible();
+  await expect(history).toBeVisible();
+  const content = setup.getByRole("tablist", { name: "采集任务类型" }),
+    target = setup.getByLabel("主机资产");
+  expect(
+    (await content.boundingBox())!.y + (await content.boundingBox())!.height,
+  ).toBeLessThan((await target.boundingBox())!.y);
+  await expect(
+    setup.getByRole("button", { name: "开始基础采集 →", exact: true }),
+  ).toBeInViewport();
+  const entry = page.getByRole("navigation", { name: "采集入口" });
+  expect(
+    Math.abs((await entry.boundingBox())!.x - (await setup.boundingBox())!.x),
+  ).toBeLessThan(2);
+  await page.screenshot({
+    path: "output/collection-workbench-desktop.png",
+    fullPage: false,
+  });
+  await setup.getByRole("tab", { name: "容器运行资料", exact: true }).click();
+  await expect(
+    setup.getByRole("tab", { name: "手动输入", exact: true }),
+  ).toHaveCount(0);
+  await setup.getByRole("tab", { name: "离线脚本", exact: true }).click();
+  await expect(
+    page.getByRole("button", { name: "下载容器目录采集脚本", exact: true }),
+  ).toBeVisible();
+  await page.setViewportSize({ width: 390, height: 844 });
+  expect(
+    await page.evaluate(
+      () => document.documentElement.scrollWidth <= innerWidth,
+    ),
+  ).toBe(true);
+  await page
+    .getByRole("tab", { name: "Windows 采集导入", exact: true })
+    .click();
+  await expect(
+    page.getByRole("heading", { name: "Windows 主机采集资料" }),
+  ).toBeVisible();
+});
