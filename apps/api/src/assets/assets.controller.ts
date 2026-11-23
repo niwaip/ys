@@ -1,3 +1,4 @@
+import { deviceCategory } from "../../../../packages/contracts/device-collection";
 import { lifecycleAssetSchema } from "../../../../packages/contracts/lifecycle-risk";
 import {
   BadRequestException,
@@ -14,6 +15,7 @@ import { type AuthorizedRequest } from "../auth/auth";
 import { AssetsService } from "./assets.service";
 const pagination = z
   .object({
+    category: deviceCategory.optional(),
     status: z.enum(["active", "deleted"]).default("active"),
     limit: z.coerce.number().int().min(1).max(100).default(50),
     offset: z.coerce.number().int().min(0).max(1000000).default(0),
@@ -40,6 +42,7 @@ export class AssetsController {
       page.data.limit,
       page.data.offset,
       page.data.status,
+      page.data.category,
     );
   }
   @Get("summary")

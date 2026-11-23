@@ -1,0 +1,57 @@
+{
+  "repository": "niwaip/ys",
+  "spec": {
+    "number": 47,
+    "url": "https://github.com/niwaip/ys/issues/47"
+  },
+  "tickets": [
+    {
+      "id": 6562510158,
+      "number": 48,
+      "url": "https://github.com/niwaip/ys/issues/48",
+      "blocked_by": []
+    },
+    {
+      "id": 6562512255,
+      "number": 49,
+      "url": "https://github.com/niwaip/ys/issues/49",
+      "blocked_by": [
+        48
+      ]
+    },
+    {
+      "id": 6562514879,
+      "number": 50,
+      "url": "https://github.com/niwaip/ys/issues/50",
+      "blocked_by": [
+        49
+      ]
+    },
+    {
+      "id": 6562517886,
+      "number": 51,
+      "url": "https://github.com/niwaip/ys/issues/51",
+      "blocked_by": [
+        50
+      ]
+    },
+    {
+      "id": 6562521468,
+      "number": 52,
+      "url": "https://github.com/niwaip/ys/issues/52",
+      "blocked_by": [
+        50
+      ]
+    },
+    {
+      "id": 6562523939,
+      "number": 53,
+      "url": "https://github.com/niwaip/ys/issues/53",
+      "blocked_by": [
+        49,
+        51,
+        52
+      ]
+    }
+  ]
+}

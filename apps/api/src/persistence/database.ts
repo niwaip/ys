@@ -184,6 +184,10 @@ CREATE TABLE windows_snapshots(id uuid PRIMARY KEY,customer_id text NOT NULL,ass
     sql: `CREATE TABLE collection_role_templates(customer_id text NOT NULL REFERENCES customers(id),role_id integer NOT NULL,category text NOT NULL,PRIMARY KEY(customer_id,role_id));
   CREATE TABLE collection_rejections(customer_id text NOT NULL,snapshot_id uuid NOT NULL,asset_id uuid NOT NULL,actor text NOT NULL,reason text NOT NULL,created_at timestamptz NOT NULL DEFAULT now(),PRIMARY KEY(customer_id,snapshot_id),FOREIGN KEY(customer_id,snapshot_id) REFERENCES collection_snapshots(customer_id,id),FOREIGN KEY(customer_id,asset_id) REFERENCES assets(customer_id,id));`,
   },
+  {
+    version: 32,
+    sql: `CREATE TABLE collection_configurations(customer_id text NOT NULL,asset_id uuid NOT NULL,details jsonb NOT NULL,PRIMARY KEY(customer_id,asset_id),FOREIGN KEY(customer_id,asset_id) REFERENCES assets(customer_id,id));CREATE TABLE collection_configuration_runs(id uuid PRIMARY KEY,customer_id text NOT NULL,asset_id uuid NOT NULL,idempotency_key text NOT NULL,input_hash text NOT NULL,details jsonb NOT NULL,created_at timestamptz NOT NULL DEFAULT now(),UNIQUE(customer_id,asset_id,idempotency_key),FOREIGN KEY(customer_id,asset_id) REFERENCES assets(customer_id,id));`,
+  },
 ];
 export async function openDatabase(url: string): Promise<Database> {
   let raw: Queryable & { close(): Promise<void> };

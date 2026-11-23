@@ -15,7 +15,7 @@ test("软件后台评估呈现发现、覆盖、过期库和证据，刷新后�
   await page.getByLabel("操作员访问令牌").fill("browser-test-secret-token");
   await page.getByRole("button", { name: "进入工作台" }).click();
   await page.locator("nav button").filter({ hasText: "资产台账" }).click();
-  await page.getByRole("button", { name: "软件 SBOM" }).click();
+  await page.goto("/#software");
   const name = `Assessment-${Date.now()}`;
   await page.getByLabel("软件名称").fill(name);
   await page.getByRole("button", { name: "建立软件对象" }).click();

@@ -37,6 +37,11 @@ const asset = (
     .auth("browser-test-secret-token", { type: "bearer" })
     .send({ name: "Docker测试主机", kind: "host" })
 ).body;
+await request(app.getHttpServer())
+  .patch(`/api/customers/acme/assets/${asset.id}/classification`)
+  .auth("browser-test-secret-token", { type: "bearer" })
+  .send({ hardwareType: "server" })
+  .expect(200);
 await app.close();
 app = await createApp({
   ...config,

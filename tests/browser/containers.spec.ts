@@ -6,7 +6,7 @@ test("镜像详情保留digest版本、组件和评估证据，刷新及客户�
   await page.getByLabel("操作员访问令牌").fill("browser-test-secret-token");
   await page.getByRole("button", { name: "进入工作台" }).click();
   await page.locator("nav button").filter({ hasText: "资产台账" }).click();
-  await page.getByRole("button", { name: "容器镜像" }).click();
+  await page.goto("/#containers");
   await page.getByRole("tab", { name: "手动镜像资料" }).click();
   const name = `Image-${Date.now()}`;
   await page.getByLabel("镜像名称", { exact: true }).fill(name);
@@ -91,7 +91,7 @@ test("镜像详情保留digest版本、组件和评估证据，刷新及客户�
     page.getByText("CVE-2099-CONTAINER", { exact: true }),
   ).toBeVisible();
   await page.reload();
-  await page.getByRole("button", { name: "容器镜像" }).click();
+  await page.goto("/#containers");
   await page.getByRole("tab", { name: "手动镜像资料" }).click();
   await page.getByRole("button", { name, exact: true }).click();
   await page

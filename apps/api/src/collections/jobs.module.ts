@@ -1,3 +1,7 @@
+import {
+  CollectionConfigurationController,
+  CollectionConfigurationService,
+} from "./configuration";
 import { hostname, userInfo } from "node:os";
 import { CollectionExperienceController } from "./experience";
 import { requireActiveAsset } from "../assets/asset-state";
@@ -317,11 +321,21 @@ export class CollectionJobsModule {
       imports: [CollectionsModule],
       controllers: [
         JobsController,
+        CollectionConfigurationController,
         CollectionAccessController,
         CollectionExperienceController,
       ],
       exports: [CollectionAccessService, CollectionJobsService],
       providers: [
+        {
+          provide: CollectionConfigurationService,
+          inject: [DATABASE, CollectionJobsService, CollectionsService],
+          useFactory: (
+            db: Database,
+            jobs: CollectionJobsService,
+            collections: CollectionsService,
+          ) => new CollectionConfigurationService(db, jobs, collections),
+        },
         {
           provide: CollectionAccessService,
           inject: [DATABASE],

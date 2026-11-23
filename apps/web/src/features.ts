@@ -1,3 +1,4 @@
+import { LegacyComponentMaterials } from "./features/collections/LegacyComponentMaterials";
 import { LegacyAssetImports } from "./features/imports/LegacyAssetImports";
 import { LifecycleRiskPage } from "./features/lifecycle-risk/LifecycleRiskPage";
 import {
@@ -19,12 +20,13 @@ import { AssessmentsPage } from "./features/assessments/AssessmentsPage";
 import { LifecyclePage } from "./features/lifecycle/LifecyclePage";
 import { SoftwarePage } from "./features/software/SoftwarePage";
 import { LegacyWindowsPage } from "./features/windows/WindowsPage";
-import type { ComponentType } from "react";
+import { createElement, type ComponentType } from "react";
 import { AssetsPage } from "./features/assets/AssetsPage";
 export type CollectionContext = {
   snapshotId?: string;
   profileId?: string;
   assetImport?: boolean;
+  configurationContent?: "basic" | "docker" | "software";
 };
 export type FeatureProps = {
   collectionContext?: CollectionContext;
@@ -132,6 +134,14 @@ const groups: Record<string, string> = {
 };
 const replacements: Record<string, Partial<Feature>> = {
   collections: { component: CollectionWorkspace },
+  software: {
+    component: (props) =>
+      createElement(LegacyComponentMaterials, { ...props, kind: "software" }),
+  },
+  containers: {
+    component: (props) =>
+      createElement(LegacyComponentMaterials, { ...props, kind: "container" }),
+  },
   lifecycle: { component: LifecycleEvaluation, label: "EOSL评估" },
 };
 const entries: Feature[] = [
@@ -145,6 +155,8 @@ const entries: Feature[] = [
     ...f,
     ...replacements[f.id],
     hidden: [
+      "software",
+      "containers",
       "windows",
       "imports",
       "windows-assessments",

@@ -415,10 +415,10 @@ export function AssetsPage({
                             <button
                               className="secondary"
                               onClick={() =>
-                                onNavigate?.("containers", asset.id)
+                                onNavigate?.("collections", asset.id)
                               }
                             >
-                              容器镜像
+                              操作系统与配置
                             </button>
                             <button
                               className="secondary"

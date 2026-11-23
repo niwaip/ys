@@ -25,6 +25,11 @@ export function App() {
     () => {
       const query = new URLSearchParams(location.hash.split("?")[1]);
       return {
+        configurationContent: ["basic", "docker", "software"].includes(
+          query.get("content") ?? "",
+        )
+          ? (query.get("content") as CollectionContext["configurationContent"])
+          : undefined,
         assetImport: query.get("import") === "csv",
         snapshotId: query.get("snapshot") ?? undefined,
         profileId: query.get("profile") ?? undefined,
@@ -40,6 +45,8 @@ export function App() {
     setAssetId(asset);
     setCollectionContext(context);
     const query = new URLSearchParams();
+    if (context.configurationContent)
+      query.set("content", context.configurationContent);
     if (context.assetImport) query.set("import", "csv");
     if (asset) query.set("asset", asset);
     if (context.snapshotId) query.set("snapshot", context.snapshotId);
@@ -50,6 +57,11 @@ export function App() {
     const change = () => {
       const query = new URLSearchParams(location.hash.split("?")[1]);
       setCollectionContext({
+        configurationContent: ["basic", "docker", "software"].includes(
+          query.get("content") ?? "",
+        )
+          ? (query.get("content") as CollectionContext["configurationContent"])
+          : undefined,
         assetImport: query.get("import") === "csv",
         snapshotId: query.get("snapshot") ?? undefined,
         profileId: query.get("profile") ?? undefined,

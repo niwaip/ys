@@ -10,6 +10,10 @@ import type {
 } from "../../../../packages/contracts";
 import type { Database } from "../persistence/database";
 const columns = `id, customer_id AS "customerId", name, kind, source, source_ref AS "sourceRef", attributes, import_id AS "importId", collected_at AS "collectedAt", created_at AS "createdAt", deleted_at AS "deletedAt", deleted_by AS "deletedBy", hardware_type AS "hardwareType"`;
+// Device role templates take precedence over role-name heuristics; native VM identity always wins.
+const roleName =
+  "lower(COALESCE(attributes#>>'{role,slug}','') || ' ' || COALESCE(attributes#>>'{role,name}',''))";
+const categoryExpression = `CASE WHEN attributes#>>'{netbox,objectType}'='virtual-machine' THEN 'vm' ELSE COALESCE((SELECT category FROM collection_role_templates t WHERE t.customer_id=assets.customer_id AND t.role_id::text=assets.attributes#>>'{role,id}'),CASE WHEN ${roleName} ~ 'switch|router|firewall|network|交换|路由|防火墙|网络' THEN 'network' WHEN ${roleName} ~ 'storage|san|nas|存储' THEN 'storage' WHEN ${roleName} ~ 'power|pdu|ups|电源' THEN 'power' WHEN ${roleName} ~ 'server|服务器' THEN 'server' WHEN hardware_type='server' THEN 'server' WHEN hardware_type='network' THEN 'network' ELSE 'other' END) END`;
 function serialize(row: Record<string, unknown>): Asset {
   return {
     ...row,
@@ -86,14 +90,15 @@ export class AssetsService {
     limit: number,
     offset: number,
     status = "active",
+    category?: string,
   ): Promise<AssetPage> {
     const result = await this.db.query(
-      `SELECT ${columns} FROM assets WHERE customer_id=$1 AND (deleted_at IS NOT NULL)=$4 ORDER BY created_at DESC,id LIMIT $2 OFFSET $3`,
-      [customerId, limit, offset, status === "deleted"],
+      `SELECT ${columns} FROM assets WHERE customer_id=$1 AND (deleted_at IS NOT NULL)=$4 AND ($5::text IS NULL OR (${categoryExpression})=$5) ORDER BY created_at DESC,id LIMIT $2 OFFSET $3`,
+      [customerId, limit, offset, status === "deleted", category ?? null],
     );
     const total = await this.db.query(
-      "SELECT count(*)::int AS total FROM assets WHERE customer_id=$1 AND (deleted_at IS NOT NULL)=$2",
-      [customerId, status === "deleted"],
+      `SELECT count(*)::int AS total FROM assets WHERE customer_id=$1 AND (deleted_at IS NOT NULL)=$2 AND ($3::text IS NULL OR (${categoryExpression})=$3)`,
+      [customerId, status === "deleted", category ?? null],
     );
     return {
       items: result.rows.map(serialize),

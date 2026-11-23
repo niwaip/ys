@@ -7,7 +7,7 @@ test("host image discovery, batch generation and scan, source evidence, manual/o
   await page.goto("/");
   await page.getByLabel("操作员访问令牌").fill("browser-test-secret-token");
   await page.getByRole("button", { name: "进入工作台" }).click();
-  await page.locator("nav button").filter({ hasText: "容器镜像" }).click();
+  await page.goto("/#containers");
   await page
     .getByLabel("容器所属主机")
     .selectOption({ label: "Docker测试主机" });
@@ -96,7 +96,7 @@ test("mobile container controls and persisted jobs remain readable", async ({
   await page.goto("/");
   await page.getByLabel("操作员访问令牌").fill("browser-test-secret-token");
   await page.getByRole("button", { name: "进入工作台" }).click();
-  await page.locator("nav button").filter({ hasText: "容器镜像" }).click();
+  await page.goto("/#containers");
   await expect(
     page.getByRole("heading", { name: "容器镜像", exact: true }),
   ).toBeVisible();
@@ -127,8 +127,8 @@ test("redesigned collection tasks, capability gaps, immutable directory handoff,
   await page.locator("nav button").filter({ hasText: "资产采集" }).click();
   await page.getByLabel("目标资产").selectOption({ label: "Docker测试主机" });
   await expect(
-    page.getByRole("tab", { name: "主机基础资料", exact: true }),
-  ).toHaveAttribute("aria-selected", "true");
+    page.getByRole("button", { name: "配置基础资料", exact: true }),
+  ).toHaveAttribute("aria-pressed", "true");
   await page
     .getByRole("button", { name: "开始基础采集 →", exact: true })
     .click();
@@ -141,7 +141,9 @@ test("redesigned collection tasks, capability gaps, immutable directory handoff,
   await expect(
     page.getByRole("region", { name: "采集结果", exact: true }),
   ).toBeVisible();
-  await page.getByRole("tab", { name: "容器运行资料", exact: true }).click();
+  await page
+    .getByRole("button", { name: "配置Docker容器", exact: true })
+    .click();
   await page.getByRole("button", { name: "检查采集能力" }).click();
   const checks = page.getByRole("region", { name: "采集能力检查" });
   await expect(checks).toContainText("reader");
@@ -187,17 +189,21 @@ test("redesigned collection tasks, capability gaps, immutable directory handoff,
   );
   await page.locator("nav button").filter({ hasText: "资产采集" }).click();
   await page.getByLabel("目标资产").selectOption({ label: "Docker测试主机" });
-  await page.getByRole("tab", { name: "容器运行资料", exact: true }).click();
+  await page
+    .getByRole("button", { name: "配置Docker容器", exact: true })
+    .click();
   await page.getByRole("tab", { name: "离线脚本", exact: true }).click();
   let waiting = page.waitForEvent("download");
   await page.getByRole("button", { name: "下载容器目录采集脚本" }).click();
   expect((await waiting).suggestedFilename()).toBe("ys-docker-inventory.mjs");
-  await page.getByRole("tab", { name: "主机基础资料", exact: true }).click();
+  await page.getByRole("button", { name: "配置基础资料", exact: true }).click();
   await page.getByRole("tab", { name: "离线脚本", exact: true }).click();
   waiting = page.waitForEvent("download");
   await page.getByRole("button", { name: "下载基础采集脚本" }).click();
   expect((await waiting).suggestedFilename()).toBe("ys-host-basic.mjs");
-  await page.getByRole("tab", { name: "容器运行资料", exact: true }).click();
+  await page
+    .getByRole("button", { name: "配置Docker容器", exact: true })
+    .click();
   await page.getByRole("tab", { name: "上传脚本结果" }).click();
   const content = JSON.stringify({
     schemaVersion: "ys-host/1",
@@ -265,7 +271,9 @@ test("collection action keeps submission, completion and errors visible beside t
   await page.getByRole("button", { name: "进入工作台" }).click();
   await page.locator("nav button").filter({ hasText: "资产采集" }).click();
   await page.getByLabel("目标资产").selectOption({ label: "Docker测试主机" });
-  await page.getByRole("tab", { name: "容器运行资料", exact: true }).click();
+  await page
+    .getByRole("button", { name: "配置Docker容器", exact: true })
+    .click();
   let release!: () => void;
   const gate = new Promise<void>((resolve) => {
     release = resolve;

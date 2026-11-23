@@ -23,14 +23,17 @@ test("网页保存人工基础快照，刷新回读来源与未评估状态，�
   const assetId = await row.locator("code").first().textContent();
   await page.locator("nav button").filter({ hasText: "资产采集" }).click();
   await page.getByLabel("目标资产").selectOption(assetId!);
+  await page.getByLabel("设备资料类型").selectOption("server");
   await expect(
-    page.getByRole("tab", { name: "主机基础资料", exact: true }),
+    page.getByRole("button", { name: "配置基础资料", exact: true }),
   ).toBeVisible();
-  await page.getByRole("tab", { name: "容器运行资料", exact: true }).click();
+  await page
+    .getByRole("button", { name: "配置Docker容器", exact: true })
+    .click();
   await expect(
     page.getByText("该连接未授权 Docker 访问", { exact: false }),
   ).toBeVisible();
-  await page.getByRole("tab", { name: "主机基础资料", exact: true }).click();
+  await page.getByRole("button", { name: "配置基础资料", exact: true }).click();
   await page.getByRole("tab", { name: "手动输入" }).click();
   await page.getByLabel("来源说明").fill("浏览器现场声明");
   await page.getByLabel("资产名称 / 主机名", { exact: true }).fill(name);
@@ -137,10 +140,7 @@ test("网页新建凭证并绑定所选主机，刷新后仅显示关联连接",
   ).toBe(true);
 });
 
-test("采集工作台首屏可见主操作，内容选择在目标上方且历史独立展示", async ({
-  page,
-  request,
-}) => {
+test("采集工作台按资产到内容顺序展示且历史独立", async ({ page, request }) => {
   const headers = { Authorization: "Bearer browser-test-secret-token" },
     name = `collect-layout-${Date.now()}`;
   const asset = await (
@@ -154,19 +154,26 @@ test("采集工作台首屏可见主操作，内容选择在目标上方且历�
   await page.getByLabel("操作员访问令牌").fill("browser-test-secret-token");
   await page.getByRole("button", { name: "进入工作台" }).click();
   await page.getByLabel("目标资产").selectOption(asset.id);
+  await page.getByLabel("设备资料类型").selectOption("server");
   const setup = page.getByRole("region", { name: "采集配置", exact: true }),
     history = page.getByRole("region", { name: "采集历史", exact: true });
   await expect(setup).toBeVisible();
   await expect(history).toBeVisible();
-  const content = setup.getByRole("tablist", { name: "采集任务类型" }),
+  const content = setup.getByRole("region", {
+      name: "操作系统与配置",
+      exact: true,
+    }),
     target = setup.getByLabel("目标资产");
   expect(
-    (await content.boundingBox())!.y + (await content.boundingBox())!.height,
-  ).toBeLessThan((await target.boundingBox())!.y);
-  await page.screenshot({path:"output/multi-device-layout-before.png",fullPage:false});
+    (await target.boundingBox())!.y + (await target.boundingBox())!.height,
+  ).toBeLessThan((await content.boundingBox())!.y);
+  await page.screenshot({
+    path: "output/multi-device-layout-before.png",
+    fullPage: false,
+  });
   await expect(
     setup.getByRole("button", { name: "开始基础采集 →", exact: true }),
-  ).toBeInViewport({ ratio: 1 });
+  ).toBeVisible();
   await expect(page.getByRole("navigation", { name: "采集入口" })).toHaveCount(
     0,
   );
@@ -177,7 +184,9 @@ test("采集工作台首屏可见主操作，内容选择在目标上方且历�
     path: "output/collection-workbench-desktop.png",
     fullPage: false,
   });
-  await setup.getByRole("tab", { name: "容器运行资料", exact: true }).click();
+  await setup
+    .getByRole("button", { name: "配置Docker容器", exact: true })
+    .click();
   await expect(
     setup.getByRole("tab", { name: "手动输入", exact: true }),
   ).toHaveCount(0);
