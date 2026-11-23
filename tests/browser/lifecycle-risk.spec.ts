@@ -79,6 +79,7 @@ test("configure lifecycle dates, preview rules, process risk and drill down from
   await page.getByLabel("处理备注").fill("等待维护窗口");
   await page.getByLabel("接受有效期").fill("2099-01-01");
   await page.getByRole("button", { name: "保存处理" }).click();
+  await expect(page.getByRole("status")).toContainText("处理记录已保存");
   await expect(page.getByRole("dialog")).toContainText("已接受风险");
   await page.getByRole("button", { name: "关闭详情" }).click();
   await page.locator("nav button").filter({ hasText: "客户风险概览" }).click();
