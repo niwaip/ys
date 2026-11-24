@@ -1,5 +1,7 @@
 import {
-  addMonths,
+  assetDateDeadline,
+  riskCategoryFor,
+  deadlineLevel,
   isRisk,
   ruleFor,
   riskLevel,
@@ -107,22 +109,16 @@ export class LifecycleWorkspaceService {
           status: "missing",
           basis: "主机缺少已确认的操作系统产品与版本",
         });
-      const riskCategory =
-        asset.category === "network"
-          ? "network"
-          : asset.category === "server"
-            ? "server"
-            : "unknown";
+      const riskCategory = riskCategoryFor(String(asset.category));
       for (const ref of support) {
         const type = ref.kind === "os" ? "os_support" : "device_support";
         const { rule } = ruleFor(config, type, riskCategory);
-        ref.riskLevel = !rule.enabled
-          ? "unassessed"
-          : ref.status === "conflict"
-            ? "conflict"
-            : ref.date
-              ? riskLevel(ref.date, today, rule)
-              : "missing";
+        ref.riskLevel = deadlineLevel(
+          ref.date,
+          today,
+          rule,
+          ref.status === "conflict",
+        );
       }
       const dateRisks: LifecycleWorkspaceItem["dateRisks"] = [];
       for (const type of ["warranty", "service_age"] as const) {
@@ -132,24 +128,12 @@ export class LifecycleWorkspaceService {
             : applicability.purchasedOn)
         )
           continue;
-        const dueDate =
-          type === "warranty"
-            ? (data.warrantyUntil ?? null)
-            : data.purchasedOn && config.serviceYears[riskCategory]
-              ? addMonths(
-                  data.purchasedOn,
-                  config.serviceYears[riskCategory]! * 12,
-                )
-              : null;
+        const dueDate = assetDateDeadline(type, data, config, riskCategory);
         const { rule } = ruleFor(config, type, riskCategory);
         dateRisks.push({
           type,
           dueDate,
-          level: !rule.enabled
-            ? "unassessed"
-            : dueDate
-              ? riskLevel(dueDate, today, rule)
-              : "missing",
+          level: deadlineLevel(dueDate, today, rule),
         });
       }
       const resolved = support.some(

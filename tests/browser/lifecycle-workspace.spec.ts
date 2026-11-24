@@ -47,7 +47,7 @@ test("生命周期工作台按设备筛选，专属日期确认保存与共同CS
   await page.getByLabel("填写状态", { exact: true }).selectOption("partial");
   await expect(row).toContainText("2020-01-02");
   await row.getByRole("button", { name: "填写设备期限" }).click();
-  await page.getByLabel("维保到期日期", { exact: true }).fill("2028-01-02");
+  await page.getByLabel("维保到期日期", { exact: true }).fill("2020-01-02");
   await page
     .getByRole("button", { name: "保存资产生命周期资料", exact: true })
     .click();
@@ -80,9 +80,10 @@ test("生命周期工作台按设备筛选，专属日期确认保存与共同CS
   await page.getByRole("button", { name: "刷新资料", exact: true }).click();
   await page.getByLabel("填写状态", { exact: true }).selectOption("complete");
   await expect(row).toContainText("2030-01-01");
+  await expect(row).toContainText("维保风险：致命");
   await page.reload();
   await page.getByLabel("搜索设备", { exact: true }).fill(name);
-  await expect(row).toContainText("2028-01-02");
+  await expect(row).toContainText("2020-01-02");
   await page.screenshot({
     path: "output/deployment/lifecycle-workspace-desktop.png",
     fullPage: true,
@@ -245,10 +246,11 @@ test("Ubuntu虚拟机关联共同资料、显式别名及扩展权益；来源�
       () => document.documentElement.scrollWidth <= innerWidth,
     ),
   ).toBe(true);
-  await page.screenshot({
-    path: "output/deployment/lifecycle-applicability-mobile.png",
-    fullPage: true,
-  });
+  await page
+    .locator(".lifecycle-workspace")
+    .screenshot({
+      path: "output/deployment/lifecycle-applicability-mobile.png",
+    });
   await page.getByLabel("搜索设备", { exact: true }).fill(`conflict-${stamp}`);
   const conflictRow = page
     .getByRole("row")

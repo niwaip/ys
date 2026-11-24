@@ -39,6 +39,7 @@ export type SupportReference = {
   supportTier?: "standard" | "extended";
   entitlement?: string;
   standardDate?: string | null;
+  standardStatus?: "matched" | "missing" | "conflict";
   stages?: {
     supportTier: string;
     date: string | null;

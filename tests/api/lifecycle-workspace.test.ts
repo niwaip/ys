@@ -611,3 +611,89 @@ test("默认标准支持，扩展期限必须登记权益依据；页面与风�
     ).body,
   ).toEqual(old);
 });
+
+test("扩展支持与标准支持分批导入时仍展示已结束的标准支持；标准多来源不猜测", async () => {
+  const asset = (
+    await http()
+      .post(`${base}/assets`)
+      .set(auth)
+      .send({
+        name: "split-tier-vm",
+        kind: "host",
+        attributes: {
+          netbox: { objectType: "virtual-machine" },
+          osProduct: "SplitOS",
+          osVersion: "1",
+        },
+      })
+      .expect(201)
+  ).body;
+  const header =
+    "source,sourceRef,product,version,eosStage,eosDate,eolStage,eolDate,category,phase,supportTier";
+  await http()
+    .post(`${base}/lifecycle/batches`)
+    .set(auth)
+    .send({
+      fileName: "standard.csv",
+      content:
+        header +
+        "\nVendor,standard,SplitOS,1,Sales,,Standard,2020-01-01,os,eol,standard",
+    })
+    .expect(201);
+  const extended = (
+    await http()
+      .post(`${base}/lifecycle/batches`)
+      .set(auth)
+      .send({
+        fileName: "extended.csv",
+        content:
+          header +
+          "\nVendor,extended,SplitOS,1,Sales,,Extended,2040-01-01,os,eol,extended",
+      })
+      .expect(201)
+  ).body;
+  await http()
+    .patch(`${base}/assets/${asset.id}/lifecycle`)
+    .set(auth)
+    .send({
+      os: {
+        batchId: extended.id,
+        product: "SplitOS",
+        version: "1",
+        phase: "eol",
+        supportTier: "extended",
+        entitlement: "订阅凭证",
+      },
+    })
+    .expect(200);
+  const get = async () =>
+    (
+      await http()
+        .get(`${base}/lifecycle/workspace?q=split-tier-vm`)
+        .set(auth)
+        .expect(200)
+    ).body.items[0].support[0];
+  expect(await get()).toMatchObject({
+    date: "2040-01-01",
+    standardDate: "2020-01-01",
+    standardStatus: "matched",
+  });
+  await http()
+    .post(`${base}/lifecycle/batches`)
+    .set(auth)
+    .send({
+      fileName: "other-standard.csv",
+      content:
+        header +
+        "\nVendor,other,SplitOS,1,Sales,,Standard,2021-01-01,os,eol,standard",
+    })
+    .expect(201);
+  expect(await get()).toMatchObject({
+    date: "2040-01-01",
+    standardDate: null,
+    standardStatus: "conflict",
+  });
+  expect(
+    (await get()).stages.filter((s: any) => s.supportTier === "standard"),
+  ).toHaveLength(2);
+});

@@ -1,4 +1,5 @@
 import type {
+  LifecycleAsset,
   RiskConfig,
   RiskType,
   RiskItem,
@@ -93,4 +94,38 @@ export function ruleFor(
     rule: override?.rule ?? config.defaultRule,
     source: override ? `${override.category} / ${type}` : "客户默认",
   };
+}
+
+export function riskCategoryFor(category: string): RiskItem["category"] {
+  return category === "server"
+    ? "server"
+    : category === "network"
+      ? "network"
+      : "unknown";
+}
+export function deadlineLevel(
+  dueDate: string | null | undefined,
+  today: string,
+  rule: RiskItem["rule"],
+  conflict = false,
+): RiskLevel {
+  return !rule.enabled
+    ? "unassessed"
+    : conflict
+      ? "conflict"
+      : dueDate
+        ? riskLevel(dueDate, today, rule)
+        : "missing";
+}
+export function assetDateDeadline(
+  type: "warranty" | "service_age",
+  data: Partial<LifecycleAsset>,
+  config: RiskConfig,
+  category: RiskItem["category"],
+) {
+  return type === "warranty"
+    ? (data.warrantyUntil ?? null)
+    : data.purchasedOn && config.serviceYears[category]
+      ? addMonths(data.purchasedOn, config.serviceYears[category]! * 12)
+      : null;
 }

@@ -272,14 +272,38 @@ export function LifecycleWorkspacePage(
                             <small>{deviceCategories[item.category]}</small>
                           </td>
                           <td>
-                            {item.applicability.purchasedOn
-                              ? (item.data.purchasedOn ?? "未填写")
-                              : "不适用"}
+                            {item.applicability.purchasedOn ? (
+                              <>
+                                {item.data.purchasedOn ?? "未填写"}
+                                {item.dateRisks
+                                  .filter((r) => r.type === "service_age")
+                                  .map((r) => (
+                                    <small key={r.type}>
+                                      使用年限到期：
+                                      {r.dueDate ?? "未配置 / 资料缺失"} ·{" "}
+                                      {levelLabels[r.level]}
+                                    </small>
+                                  ))}
+                              </>
+                            ) : (
+                              "不适用"
+                            )}
                           </td>
                           <td>
-                            {item.applicability.warrantyUntil
-                              ? (item.data.warrantyUntil ?? "未填写")
-                              : "不适用"}
+                            {item.applicability.warrantyUntil ? (
+                              <>
+                                {item.data.warrantyUntil ?? "未填写"}
+                                {item.dateRisks
+                                  .filter((r) => r.type === "warranty")
+                                  .map((r) => (
+                                    <small key={r.type}>
+                                      维保风险：{levelLabels[r.level]}
+                                    </small>
+                                  ))}
+                              </>
+                            ) : (
+                              "不适用"
+                            )}
                           </td>
                           <td>
                             {item.support.map((ref, i) => (
@@ -305,6 +329,15 @@ export function LifecycleWorkspacePage(
                                 {ref.standardDate &&
                                   ref.supportTier === "extended" && (
                                     <p>标准支持截止：{ref.standardDate}</p>
+                                  )}
+                                {ref.supportTier === "extended" &&
+                                  ref.standardStatus !== "matched" && (
+                                    <p>
+                                      标准支持：
+                                      {ref.standardStatus === "conflict"
+                                        ? "多来源待核对"
+                                        : "资料缺失"}
+                                    </p>
                                   )}
                                 <details className="lifecycle-reference">
                                   <summary>

@@ -93,8 +93,21 @@ export async function sharedSupport(db: Queryable, customer: string) {
     const candidates = allCandidates.filter(
       ({ row }) => (row.extensions.supportTier || "standard") === tier,
     );
-    const stages = allCandidates.map(({ row, batchId }) => {
-      const phase = target?.phase ?? (row.extensions.phase as "eos" | "eol");
+    const stageRows = rows.filter(
+      ({ row, batchId }) =>
+        canonical(kind, row.product).product === p &&
+        (row.version ?? "") === v &&
+        !canonical(kind, row.product).conflict &&
+        (row.extensions.category === kind ||
+          (kind === "device" && row.extensions.category === "hardware") ||
+          (!row.extensions.category && batchId === target?.batchId)) &&
+        (["eos", "eol"].includes(row.extensions.phase) ||
+          batchId === target?.batchId),
+    );
+    const stages = stageRows.map(({ row, batchId }) => {
+      const phase = ["eos", "eol"].includes(row.extensions.phase)
+        ? (row.extensions.phase as "eos" | "eol")
+        : target!.phase;
       return {
         supportTier: row.extensions.supportTier || "standard",
         date: row[phase].date,
@@ -111,6 +124,12 @@ export async function sharedSupport(db: Queryable, customer: string) {
       entitlement: target?.entitlement,
       stages,
       standardDate: standard.length === 1 ? standard[0].date : null,
+      standardStatus:
+        standard.length > 1
+          ? ("conflict" as const)
+          : standard.length && standard[0].date
+            ? ("matched" as const)
+            : ("missing" as const),
       kind,
       product: p,
       rawProduct: product,

@@ -39,7 +39,9 @@ import {
 } from "../../../../packages/contracts/lifecycle-risk";
 import {
   ruleFor,
-  addMonths,
+  assetDateDeadline,
+  riskCategoryFor,
+  deadlineLevel,
   isRisk,
   localDate,
   ranks,
@@ -91,12 +93,7 @@ export class LifecycleRiskService {
         sourceRef: typeof value.sourceRef === "string" ? value.sourceRef : "",
       };
       const automatic = shared.forAsset(String(asset.id), asset.attributes);
-      const category: RiskItem["category"] =
-        asset.category === "server"
-          ? "server"
-          : asset.category === "network"
-            ? "network"
-            : "unknown";
+      const category = riskCategoryFor(String(asset.category));
       const applicable = lifecycleApplicability(
         asset.category as DeviceCategory,
       );
@@ -139,23 +136,20 @@ export class LifecycleRiskService {
               });
           }
         } else if (type === "warranty" && data?.warrantyUntil) {
-          dueDate = data.warrantyUntil;
+          dueDate = assetDateDeadline("warranty", data, config, category);
           basis = "资产维保到期日期";
           evidence.push({
             source: "资产资料",
             sourceRef: data.sourceRef,
             stage: "维保到期",
-            rawDate: dueDate,
+            rawDate: data.warrantyUntil,
           });
         } else if (
           type === "service_age" &&
           data?.purchasedOn &&
           config.serviceYears[category]
         ) {
-          dueDate = addMonths(
-            data.purchasedOn,
-            config.serviceYears[category]! * 12,
-          );
+          dueDate = assetDateDeadline("service_age", data, config, category);
           basis = `购买日期 ${data.purchasedOn} + ${config.serviceYears[category]} 年`;
           evidence.push({
             source: "资产资料",
@@ -164,13 +158,7 @@ export class LifecycleRiskService {
             rawDate: data.purchasedOn,
           });
         }
-        const level = !rule.enabled
-          ? "unassessed"
-          : conflict
-            ? "conflict"
-            : dueDate
-              ? riskLevel(dueDate, today, rule)
-              : "missing";
+        const level = deadlineLevel(dueDate, today, rule, conflict);
         const saved = treatments.rows.find(
           (t) => t.asset_id === asset.id && t.risk_type === type,
         )?.details as
