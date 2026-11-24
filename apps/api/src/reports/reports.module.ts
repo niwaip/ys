@@ -1,6 +1,11 @@
+import { ReportTaskRunner } from "./task-runner";
 import { gzip } from "node:zlib";
 import { ReportCenterService, ReportCenterController } from "./center";
 import type { ReportCenterFacts } from "../../../../packages/contracts/report-center";
+import {
+  LifecycleRiskModule,
+  LifecycleRiskService,
+} from "../lifecycle-risk/lifecycle-risk.module";
 import { promisify } from "node:util";
 import type { Request, Response } from "express";
 import {
@@ -85,6 +90,8 @@ export class ReportsService {
     author: string,
     input: z.infer<typeof inputSchema>,
     center?: ReportCenterFacts,
+    presentation?: import("../../../../packages/contracts/report-presentation").ReportPresentation,
+    finalizingTask?: import("../../../../packages/contracts/report-center").ReportTask,
   ): Promise<Report> {
     const assessmentSnapshots = await Promise.all(
       input.assessmentRefs.map(
@@ -105,6 +112,19 @@ export class ReportsService {
         this.lifecycle.getAssessment(customer, id),
       ),
     );
+    if (center) {
+      for (const snapshot of lifecycleSnapshots)
+        snapshot.items = snapshot.items.filter((item) =>
+          item.kind === "host"
+            ? center.hosts.some((host) => host.assetId === item.assetId)
+            : center.objects?.some(
+                (object) =>
+                  object.kind === item.kind &&
+                  object.objectId === item.assetId &&
+                  object.versionId === item.versionId,
+              ),
+        );
+    }
     const scope = new Map<string, ReportScopeTarget>(),
       cveTargets = new Set<string>(),
       lifeTargets = new Set<string>();
@@ -385,17 +405,68 @@ export class ReportsService {
     };
     if (center) {
       for (const host of center.hosts) {
-        facts.scope.push({
-          kind: "host",
-          objectId: host.assetId,
-          name: host.name,
-          version: null,
-          versionId: host.snapshotId ?? undefined,
-        });
+        if (
+          !facts.scope.some(
+            (target) =>
+              target.objectId === host.assetId &&
+              ["host", "linux", "windows"].includes(target.kind),
+          )
+        )
+          facts.scope.push({
+            kind: "host",
+            objectId: host.assetId,
+            name: host.name,
+            version: null,
+            versionId: host.snapshotId ?? undefined,
+          });
         facts.coverageIssues.push(
           ...host.issues.map((issue) => `${host.name}：${issue}`),
         );
       }
+      for (const object of center.objects ?? []) {
+        if (
+          !facts.scope.some(
+            (target) =>
+              target.kind === object.kind &&
+              target.objectId === object.objectId &&
+              target.versionId === object.versionId,
+          )
+        )
+          facts.scope.push({
+            kind: object.kind,
+            objectId: object.objectId,
+            versionId: object.versionId,
+            name: object.name,
+            version: null,
+          });
+      }
+      const involved = new Set<string>(),
+        affected = new Set<string>();
+      for (const assessment of assessmentSnapshots) {
+        if (!assessment.result?.findings.length) continue;
+        const hosts = center.hosts
+          .filter((host) => host.assessmentRefs.includes(assessment.id))
+          .map((host) => host.assetId);
+        for (const id of hosts) {
+          involved.add(id);
+          if (
+            assessment.result.findings.some(
+              (finding) => finding.applicability === "affected",
+            )
+          )
+            affected.add(id);
+        }
+      }
+      const hasResults = assessmentSnapshots.some(
+        (assessment) => assessment.result,
+      );
+      facts.statistics.involvedHostCount = hasResults ? involved.size : null;
+      facts.statistics.confirmedAffectedHostCount = hasResults
+        ? affected.size
+        : null;
+      facts.statistics.uniqueVulnerabilityCount = hasResults
+        ? new Set(findings.map((finding) => finding.vulnerabilityId)).size
+        : null;
     }
     const reportId = randomUUID();
     const revision: ReportRevision = {
@@ -408,10 +479,45 @@ export class ReportsService {
       status: "draft",
       factHash: hashFacts(facts),
       facts,
-      narrative: defaultNarrative(facts),
+      narrative: {
+        ...defaultNarrative(facts),
+        ...(center
+          ? {
+              presentation: presentation ?? {
+                topic: "combined",
+                optionalChapters: ["summary", "overview", "recommendations"],
+              },
+            }
+          : {}),
+      },
       templateVersion: "fixed-report-v1",
     };
     await this.db.transaction(async (s) => {
+      if (center) {
+        const row = (
+          await s.query(
+            "SELECT details FROM report_tasks WHERE customer_id=$1 AND id=$2 FOR UPDATE",
+            [customer, center.taskId],
+          )
+        ).rows[0];
+        const task = row?.details as
+          | import("../../../../packages/contracts/report-center").ReportTask
+          | undefined;
+        if (
+          !task ||
+          task.reportId ||
+          (finalizingTask && task.status !== finalizingTask.status)
+        )
+          throw new ConflictException("报告任务状态已变化，请刷新");
+        task.reportId = reportId;
+        task.status = "completed";
+        task.hosts = center.hosts;
+        task.frozenScope = center;
+        await s.query(
+          "UPDATE report_tasks SET status='completed',details=$3::jsonb WHERE customer_id=$1 AND id=$2",
+          [customer, center.taskId, JSON.stringify(task)],
+        );
+      }
       await s.query(
         "INSERT INTO reports(id,customer_id,created_at,created_by) VALUES($1,$2,$3,$4)",
         [reportId, customer, now, author],
@@ -616,6 +722,7 @@ export class ReportsModule {
     return {
       module: ReportsModule,
       imports: [
+        LifecycleRiskModule,
         assessmentsModule,
         LifecycleModule,
         SoftwareModule,
@@ -632,10 +739,41 @@ export class ReportsModule {
       ],
       providers: [
         {
+          provide: ReportTaskRunner,
+          inject: [
+            DATABASE,
+            AssessmentService,
+            WindowsAssessmentService,
+            ReportsService,
+          ],
+          useFactory: (
+            db: Database,
+            assessments: AssessmentService,
+            windows: WindowsAssessmentService,
+            reports: ReportsService,
+          ) =>
+            new ReportTaskRunner(
+              db,
+              assessments,
+              windows,
+              reports,
+              options.operators ?? [],
+            ),
+        },
+        {
           provide: ReportCenterService,
-          inject: [DATABASE, ReportsService],
-          useFactory: (db: Database, reports: ReportsService) =>
-            new ReportCenterService(db, reports),
+          inject: [
+            DATABASE,
+            ReportsService,
+            LifecycleRiskService,
+            ReportTaskRunner,
+          ],
+          useFactory: (
+            db: Database,
+            reports: ReportsService,
+            lifecycle: LifecycleRiskService,
+            runner: ReportTaskRunner,
+          ) => new ReportCenterService(db, reports, lifecycle, runner),
         },
         {
           provide: ReportNarrationService,

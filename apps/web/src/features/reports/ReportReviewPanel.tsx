@@ -12,6 +12,10 @@ import type {
 } from "../../../../../packages/contracts/reports";
 import { api, ApiError } from "../../api";
 import type { FeatureProps } from "../../features";
+import {
+  ReportPresentationFields,
+  defaultPresentation,
+} from "./ReportPresentationFields";
 export function ReportReviewPanel({
   report,
   customerId,
@@ -107,6 +111,16 @@ export function ReportReviewPanel({
         <p className="error" role="alert">
           {error}
         </p>
+      )}
+      {report.revision.facts.center && (
+        <ReportPresentationFields
+          prefix="修订"
+          value={narrative.presentation ?? defaultPresentation}
+          disabled={busy}
+          onChange={(presentation) =>
+            setNarrative({ ...narrative, presentation })
+          }
+        />
       )}
       <label>
         版面密度

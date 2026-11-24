@@ -29,6 +29,9 @@ export type ReportFacts = {
     toolVersion: string | null;
   }[];
   statistics: {
+    involvedHostCount?: number | null;
+    confirmedAffectedHostCount?: number | null;
+    uniqueVulnerabilityCount?: number | null;
     findingInstances: number | null;
     confirmedAffectedCount?: number | null;
     applicabilityCounts?: Record<string, number>;
@@ -54,6 +57,7 @@ export type ReportBlock = {
   text?: string;
 };
 export type ReportNarrative = {
+  presentation?: import("./report-presentation").ReportPresentation;
   schemaVersion: "controlled-paragraphs-v1";
   blocks: ReportBlock[];
   density: "standard" | "compact";

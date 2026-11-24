@@ -1,6 +1,7 @@
 import { resolveNarration } from "../../../../packages/contracts/report-language";
 import { BadRequestException } from "@nestjs/common";
 import { z } from "zod";
+import { reportPresentation } from "../../../../packages/contracts/report-presentation";
 import { hashJson } from "../persistence/hash-json";
 export function hashFacts(facts: ReportFacts): string {
   return hashJson(facts);
@@ -46,6 +47,7 @@ export function validateNarrative(
   const parsed = z
     .object({
       schemaVersion: z.literal("controlled-paragraphs-v1"),
+      presentation: reportPresentation.optional(),
       density: z.enum(["standard", "compact"]),
       blocks: z
         .array(
@@ -66,7 +68,7 @@ export function validateNarrative(
             })
             .strict(),
         )
-        .max(45),
+        .max(Math.max(45, defaultNarrative(facts).blocks.length + 2)),
     })
     .strict()
     .safeParse(input);
@@ -104,25 +106,29 @@ export function validateNarrative(
   }
   return parsed.data;
 }
-export const escapeHtml = (value: unknown) =>
-  String(value ?? "未知").replace(
-    /[&<>"']/g,
-    (c) =>
-      ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[
-        c
-      ]!,
-  );
+import { escapeHtml } from "./html";
+export { escapeHtml } from "./html";
+import { renderCenterScope } from "./center-render";
 export function renderReport(revision: ReportRevision): string {
   if (hashFacts(revision.facts) !== revision.factHash)
     throw new BadRequestException("报告事实校验失败");
   const f = revision.facts;
   const narrative = validateNarrative(f, revision.narrative);
   const h = escapeHtml;
-  const centerIntro = f.center
-    ? `<section><h2>${f.statistics.findingInstances === null && !f.lifecycleSnapshots.length ? "执行与覆盖说明" : "服务器报告范围"}</h2><p>未复核标识以当前报告修订状态为准。${h(f.center.name)}；固定服务器 ${f.center.hosts.length} 台。</p><ul>${f.center.hosts.map((host) => `<li>${h(host.name)} · ${h(host.status)} · ${h(host.issues.join("；"))}</li>`).join("")}</ul></section>`
-    : "";
+  const presentation = narrative.presentation;
+  const centerIntro = renderCenterScope(f, presentation);
   const sections = narrative.blocks
     .map((block) => {
+      if (
+        presentation?.topic === "lifecycle" &&
+        block.templateId === "assessment"
+      )
+        return "";
+      if (
+        presentation?.topic === "vulnerability" &&
+        block.templateId === "lifecycle"
+      )
+        return "";
       if (block.templateId === "summary")
         return `<section><h2>事实摘要</h2><p>明确范围包含 ${f.scope.length} 个对象输入版本；结果条目 ${h(f.statistics.findingInstances)}；唯一CVE ${h(f.statistics.uniqueCveCount)}。未知、失败、弱匹配和覆盖缺口需结合下方明细解读，不能据摘要判断无风险。</p></section>`;
       if (block.templateId === "recommendations")
@@ -137,12 +143,14 @@ export function renderReport(revision: ReportRevision): string {
       }
       if (block.templateId === "lifecycle") {
         const a = f.lifecycleSnapshots.find((a) => a.id === block.factRef);
+        if (!a && f.center?.lifecycle)
+          return "<section><h2>产品版本匹配资料</h2><p>未选择独立产品版本匹配批次；资产期限风险见固定生命周期视图，不能以CVE或报告生成时间填补日期。</p></section>";
         if (!a)
           return "<section><h2>EOS/EOL 独立评估</h2><p>未选择生命周期评估，未评估；不能使用CVE结果或评估时间填补阶段日期。</p></section>";
         return `<section><h2>${block.wording === "concise" ? "生命周期结果" : "EOS/EOL 独立评估"}</h2><p>评估 ${h(a.id)}；批次 ${h(a.batchId)}；时间 ${h(a.evaluatedAt)}；规则 ${h(a.ruleVersion)}。</p>${a.items.map((item) => `<article><h3>${h(item.name)} / ${h(item.version)}</h3><p>产品 ${h(item.product)}；匹配 ${h(item.match)}；核实 ${h(item.verification)}；${h(item.basis)}。版本未知或弱匹配不能解释为已核实阶段状态。</p>${item.evidence.map((e) => `<p>来源 ${h(e.source)} / ${h(e.sourceRef)}，来源行 ${e.row}。EOS：${h(e.eos.name)}，日期 ${h(e.eos.date)}，日期状态 ${h(e.eos.dateStatus)}，原值 ${h(e.eos.rawDate)}，阶段 ${h(e.eos.status)}。EOL：${h(e.eol.name)}，日期 ${h(e.eol.date)}，日期状态 ${h(e.eol.dateStatus)}，原值 ${h(e.eol.rawDate)}，阶段 ${h(e.eol.status)}。${h(e.issues.join("；"))}</p>`).join("")}</article>`).join("")}</section>`;
       }
       if (block.templateId === "coverage")
-        return `<section><h2>覆盖缺口与未知</h2><ul>${f.coverageIssues.map((x) => `<li>${h(x)}</li>`).join("")}</ul><p>未评估、失败、未知、未匹配与完整覆盖下零发现各自独立。评估时间不能替代未知日期；CVE 结果不提供 EOS/EOL。来源日期未设置统一时效阈值，不自动断言资料为最新。</p></section>`;
+        return `<section><h2>覆盖缺口与未知</h2><ul>${f.coverageIssues.map((x) => `<li>${h(x)}</li>`).join("")}</ul><p>未评估、失败、未知、未匹配与完整覆盖下零发现各自独立。评估时间不能替代未知日期；CVE 结果不提供 EOS/EOL。来源时效依据报告中明确记录的检查时点和规则；未设置时不自动断言资料为最新。</p></section>`;
       return `<section><h2>来源证据</h2><ul>${f.sourceRefs.map((r) => `<li>${h(r.kind)}：评估 ${h(r.id)}；输入 ${h(r.inputId)}；SHA-256 ${h(r.contentHash)}；原始输出SHA-256 ${h(r.outputHash)}；规则 ${h(r.ruleVersion)}；接入时间 ${h(r.importedAt)}；来源采集时间 ${h(r.collectedAt)}；评估时间 ${h(r.evaluatedAt)}；工具 ${h(r.toolVersion)}</li>`).join("")}</ul><p>事实SHA-256 ${h(revision.factHash)}；模板 ${h(revision.templateVersion)}。</p></section>`;
     })
     .map((section, index) => {
@@ -155,5 +163,5 @@ export function renderReport(revision: ReportRevision): string {
         : section;
     })
     .join("");
-  return `<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${revision.status === "delivered" ? "已复核风险报告" : "风险事实报告草稿"}</title><style>body{font:16px/${narrative.density === "compact" ? "1.4" : "1.7"} system-ui;max-width:1100px;margin:40px auto;padding:0 24px;color:#172632}section{border-top:1px solid #ccd7df;padding:20px 0}p,li{overflow-wrap:anywhere}.draft{color:#8b4600;background:#fff3d6;padding:16px}</style></head><body><h1>客户风险事实报告</h1><p class="draft">${revision.status === "delivered" ? "正式交付 · 已内部复核" : revision.status === "approved" ? "已通过复核 · 尚未正式交付" : revision.status === "in_review" ? "待复核草稿 · 不代表正式交付" : "草稿 · 尚未内部复核，不代表正式交付"}</p><p>报告 ${h(revision.reportId)}；修订 ${h(revision.id)} / ${revision.number}；作者 ${h(revision.createdBy)}；状态 ${h(revision.status)}。</p>${revision.approvedAt ? `<p>复核人 ${h(revision.approvedBy)}；复核时间 ${h(revision.approvedAt)}；交付人 ${h(revision.deliveredBy)}；交付时间 ${h(revision.deliveredAt)}</p>` : ""}${centerIntro}${sections}</body></html>`;
+  return `<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${revision.status === "delivered" ? "已复核风险报告" : "风险事实报告草稿"}</title><style>body{font:16px/${narrative.density === "compact" ? "1.4" : "1.7"} system-ui;max-width:1100px;margin:40px auto;padding:0 24px;color:#172632}section{border-top:1px solid #ccd7df;padding:20px 0}p,li{overflow-wrap:anywhere}table{width:100%;border-collapse:collapse;font-size:13px}th,td{padding:8px;border:1px solid #ccd7df;text-align:left;overflow-wrap:anywhere}th{background:#f1f5f8}.draft{color:#8b4600;background:#fff3d6;padding:16px}</style></head><body><h1>客户风险事实报告</h1><p class="draft">${revision.status === "delivered" ? "正式交付 · 已内部复核" : revision.status === "approved" ? "已通过复核 · 尚未正式交付" : revision.status === "in_review" ? "待复核草稿 · 不代表正式交付" : "草稿 · 尚未内部复核，不代表正式交付"}</p><p>报告 ${h(revision.reportId)}；修订 ${h(revision.id)} / ${revision.number}；作者 ${h(revision.createdBy)}；状态 ${h(revision.status)}。</p>${revision.approvedAt ? `<p>复核人 ${h(revision.approvedBy)}；复核时间 ${h(revision.approvedAt)}；交付人 ${h(revision.deliveredBy)}；交付时间 ${h(revision.deliveredAt)}</p>` : ""}${centerIntro}${sections}</body></html>`;
 }

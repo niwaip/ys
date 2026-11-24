@@ -193,6 +193,22 @@ export function ReportsPage({
       {report && (
         <section className="asset-panel">
           <h2>事实草稿预览</h2>
+          {report.revision.status !== "delivered" && (
+            <button
+              onClick={() => {
+                const url = URL.createObjectURL(
+                  new Blob([html], { type: "text/html;charset=utf-8" }),
+                );
+                const anchor = document.createElement("a");
+                anchor.href = url;
+                anchor.download = "ys-unreviewed-report.html";
+                anchor.click();
+                setTimeout(() => URL.revokeObjectURL(url), 1000);
+              }}
+            >
+              下载草稿 HTML（未正式交付）
+            </button>
+          )}
           <p>
             报告 {report.id} · 修订 {report.revision.id} ·{" "}
             {report.revision.status} · SHA-256 {report.revision.factHash}

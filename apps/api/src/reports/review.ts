@@ -95,6 +95,8 @@ export class ReportReviewService {
         throw new ConflictException("报告已有新修订，请刷新后基于当前修订编辑");
       renderReport(base);
       const checked = validateNarrative(base.facts, narrative);
+      if (!checked.presentation && base.narrative.presentation)
+        checked.presentation = base.narrative.presentation;
       const next: ReportRevision = {
         id: randomUUID(),
         reportId,
