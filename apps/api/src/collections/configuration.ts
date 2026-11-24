@@ -157,10 +157,21 @@ export class CollectionConfigurationService {
         item.status = "failed";
         item.error = (e as Error).message;
       }
-      await this.db.query(
-        "UPDATE collection_configuration_runs SET details=$3::jsonb WHERE customer_id=$1 AND id=$2",
-        [customer, id, JSON.stringify(run)],
-      );
+      await this.db.transaction(async (db) => {
+        const current = (
+          await db.query(
+            "SELECT details FROM collection_configuration_runs WHERE customer_id=$1 AND id=$2 FOR UPDATE",
+            [customer, id],
+          )
+        ).rows[0].details as ConfigurationRun;
+        current.items = current.items.map((saved) =>
+          saved.content === item.content ? item : saved,
+        );
+        await db.query(
+          "UPDATE collection_configuration_runs SET details=$3::jsonb WHERE customer_id=$1 AND id=$2",
+          [customer, id, JSON.stringify(current)],
+        );
+      });
     }
     return this.read(customer, id);
   }
@@ -208,13 +219,21 @@ export class CollectionConfigurationService {
         throw new ConflictException("此分项已有固定结果，请发起新批次");
       const snapshot = (
         await db.query(
-          "SELECT asset_id,normalized FROM collection_snapshots WHERE customer_id=$1 AND id=$2",
+          "SELECT asset_id,normalized,entry FROM collection_snapshots WHERE customer_id=$1 AND id=$2",
           [customer, snapshotId],
         )
       ).rows[0];
       if (!snapshot) throw new NotFoundException("未找到资料版本");
       if (snapshot.asset_id !== run.assetId)
         throw new ConflictException("资料属于其他资产");
+      const method = run.configuration.items.find(
+        (i) => i.content === content,
+      )?.method;
+      if (
+        (method === "manual" && snapshot.entry !== "manual") ||
+        (method === "script" && snapshot.entry !== "upload")
+      )
+        throw new ConflictException("资料来源与此分项配置方式不符");
       const data = snapshot.normalized as HostCollection;
       const container = collectionScope(data) === "container-inventory";
       if ((content === "docker") !== container)

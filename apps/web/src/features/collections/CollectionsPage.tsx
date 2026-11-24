@@ -1,4 +1,7 @@
-import { AssetConfiguration } from "./AssetConfiguration";
+import {
+  AssetConfiguration,
+  type SubmittedObservation,
+} from "./AssetConfiguration";
 import { ConfigurationMaterials } from "./ConfigurationMaterials";
 import type { ConfigurationContent } from "../../../../../packages/contracts/collection-configuration";
 import { WindowsCollectionPreview } from "./WindowsCollectionPreview";
@@ -104,7 +107,10 @@ export function CollectionsPage({
   const [offset, setOffset] = useState(0);
   const [jobs, setJobs] = useState<Job[]>([]);
   const [selected, setSelected] = useState<CollectionSnapshot>();
+  const [submittedObservation, setSubmittedObservation] =
+    useState<SubmittedObservation>();
   const [raw, setRaw] = useState<string>();
+  const [scrollToResult, setScrollToResult] = useState(true);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
   const [busy, setBusy] = useState(false);
@@ -113,7 +119,7 @@ export function CollectionsPage({
   const [currentJob, setCurrentJob] = useState<Job>();
   const feedback = useRef<HTMLDivElement>(null);
   const submitting = useRef(false);
-  const selection = `${customerId}:${target}:${profileId}:${scope}:${category}:${platform}`;
+  const selection = `${customerId}:${target}:${profileId}:${scope}:${category}:${platform}:${activeContent}`;
   const currentSelection = useRef(selection);
   currentSelection.current = selection;
   const collecting =
@@ -133,7 +139,7 @@ export function CollectionsPage({
         block: "nearest",
         behavior: "smooth",
       });
-  }, [notice, error, currentJob?.id, busy]);
+  }, [notice, error, currentJob?.id, currentJob?.status, busy]);
   const [content, setContent] = useState("");
   const [fileName, setFileName] = useState("");
   const fileRevision = useRef(0);
@@ -242,6 +248,7 @@ export function CollectionsPage({
     }
     submitting.current = true;
     const submittedSelection = selection;
+    const submittedContent = activeContent;
     setRaw(undefined);
     setCurrentJob(undefined);
     setBusy(true);
@@ -303,7 +310,13 @@ export function CollectionsPage({
           }),
         });
         if (currentSelection.current !== submittedSelection) return;
+        setScrollToResult(true);
         setSelected(saved);
+        setSubmittedObservation({
+          snapshotId: saved.id,
+          content: submittedContent,
+          eventId: requestId(),
+        });
         setNotice("人工来源快照已保存，尚未评估");
       } else if (tab === "upload") {
         const saved = await api<CollectionSnapshot>(`${base}/upload`, token, {
@@ -311,7 +324,13 @@ export function CollectionsPage({
           body: JSON.stringify({ assetId: target, fileName, content, scope }),
         });
         if (currentSelection.current !== submittedSelection) return;
+        setScrollToResult(true);
         setSelected(saved);
+        setSubmittedObservation({
+          snapshotId: saved.id,
+          content: submittedContent,
+          eventId: requestId(),
+        });
         setNotice("原始资料与快照已保存，尚未评估");
       } else {
         const job = await api<Job>(`${base}/jobs`, token, {
@@ -344,17 +363,17 @@ export function CollectionsPage({
     }
   }
   useEffect(() => {
-    if (currentJob?.snapshotId) void showSnapshot(currentJob.snapshotId);
+    if (currentJob?.snapshotId) void showSnapshot(currentJob.snapshotId, false);
   }, [currentJob?.id, currentJob?.snapshotId]);
   const inlineResult = useRef<HTMLElement>(null);
   useEffect(() => {
-    if (selected)
+    if (selected && scrollToResult)
       inlineResult.current?.scrollIntoView({
         block: "start",
         behavior: "smooth",
       });
-  }, [selected?.id]);
-  async function showSnapshot(id: string) {
+  }, [selected, scrollToResult]);
+  async function showSnapshot(id: string, scroll = true) {
     try {
       const requestedSelection = currentSelection.current;
       const snapshot = await api<CollectionSnapshot>(
@@ -362,6 +381,7 @@ export function CollectionsPage({
         token,
       );
       if (requestedSelection !== currentSelection.current) return;
+      setScrollToResult(scroll);
       setSelected(snapshot);
       if (snapshot.scope === "container-inventory") setNotice("");
       setRaw(undefined);
@@ -795,7 +815,7 @@ export function CollectionsPage({
               category={category}
               platform={platform as "linux" | "windows"}
               active={activeContent}
-              observedSnapshotId={selected?.id}
+              submittedObservation={submittedObservation}
               onRestore={(value) => {
                 setCategory(value.category);
                 setPlatform(value.platform);
@@ -1571,6 +1591,7 @@ export function CollectionsPage({
                           <button
                             className="text-button"
                             onClick={() => {
+                              setScrollToResult(scroll);
                               setSelected(snapshot);
                               setRaw(undefined);
                             }}

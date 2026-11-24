@@ -12,6 +12,11 @@ import {
 } from "../../../../../packages/contracts/collection-configuration";
 import type { DeviceCategory } from "../../../../../packages/contracts/device-collection";
 import { AssetBaseline } from "./AssetBaseline";
+export type SubmittedObservation = {
+  snapshotId: string;
+  content: ConfigurationContent;
+  eventId: string;
+};
 const states: Record<string, string> = {
   submitting: "提交中",
   queued: "排队中",
@@ -27,7 +32,7 @@ export function AssetConfiguration({
   category,
   platform,
   active,
-  observedSnapshotId,
+  submittedObservation,
   onContent,
   onMethod,
   onRestore,
@@ -36,7 +41,7 @@ export function AssetConfiguration({
   category: DeviceCategory;
   platform: "linux" | "windows";
   active: ConfigurationContent;
-  observedSnapshotId?: string;
+  submittedObservation?: SubmittedObservation;
   onContent: (v: ConfigurationContent) => void;
   onMethod: (v: string) => void;
   onRestore: (v: CollectionConfiguration) => void;
@@ -103,8 +108,10 @@ export function AssetConfiguration({
             ...parsed.data,
             items: initial.items.map(
               (item) =>
-                parsed.data.items.find((v) => v.content === item.content) ??
-                item,
+                parsed.data.items.find((v) => v.content === item.content) ?? {
+                  ...item,
+                  enabled: false,
+                },
             ),
           });
           onRestore(parsed.data);
@@ -132,6 +139,10 @@ export function AssetConfiguration({
       c.abort();
     };
   }, [base, token, assetId]);
+  useEffect(() => {
+    if (awaiting.current && awaiting.current.content !== active)
+      awaiting.current = undefined;
+  }, [active]);
   useEffect(() => {
     const host = ["server", "vm"].includes(category);
     setConfig((c) => ({
@@ -178,8 +189,9 @@ export function AssetConfiguration({
     const pending = awaiting.current;
     if (
       !pending ||
-      !observedSnapshotId ||
-      pending.previous === observedSnapshotId
+      !submittedObservation ||
+      pending.previous === submittedObservation.eventId ||
+      pending.content !== submittedObservation.content
     )
       return;
     awaiting.current = undefined;
@@ -191,7 +203,7 @@ export function AssetConfiguration({
         method: "POST",
         body: JSON.stringify({
           content: pending.content,
-          snapshotId: observedSnapshotId,
+          snapshotId: submittedObservation.snapshotId,
         }),
       },
       c.signal,
@@ -203,7 +215,7 @@ export function AssetConfiguration({
         if (!c.signal.aborted) fail(e);
       });
     return () => c.abort();
-  }, [observedSnapshotId, base, token]);
+  }, [submittedObservation?.eventId, base, token]);
   const host = ["server", "vm"].includes(category);
   function update(
     content: ConfigurationContent,
@@ -539,7 +551,7 @@ export function AssetConfiguration({
                         awaiting.current = {
                           runId: run.id,
                           content: item.content,
-                          previous: observedSnapshotId,
+                          previous: submittedObservation?.eventId,
                         };
                         onContent(item.content);
                         onMethod(

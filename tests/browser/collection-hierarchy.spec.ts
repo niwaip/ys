@@ -223,3 +223,152 @@ test("软件按明确目录下载组件脚本，已有SBOM通过明确快照关�
     materials.getByRole("article").filter({ hasText: software.name }),
   ).toContainText("deployment manifest");
 });
+
+test("批次录入期间查看旧历史不绑定旧快照，只有本次成功提交才固定结果", async ({
+  page,
+  request,
+}) => {
+  const headers = { Authorization: "Bearer browser-test-secret-token" },
+    base = "/api/customers/acme";
+  const asset = await (
+    await request.post(base + "/assets", {
+      headers,
+      data: { name: `history-guard-${Date.now()}`, kind: "host" },
+    })
+  ).json();
+  await request.patch(`${base}/assets/${asset.id}/classification`, {
+    headers,
+    data: { hardwareType: "server" },
+  });
+  const old = await (
+    await request.post(base + "/collections/manual", {
+      headers,
+      data: {
+        assetId: asset.id,
+        note: "历史记录",
+        data: {
+          schemaVersion: "ys-host/1",
+          identity: { hostname: `old-${asset.name}` },
+          collectedAt: null,
+          sections: {
+            device: {
+              status: "acquired",
+              data: { category: "server", software: "Old 0.1" },
+            },
+          },
+        },
+      },
+    })
+  ).json();
+  await request.post(`${base}/collections/configurations/${asset.id}`, {
+    headers,
+    data: {
+      category: "server",
+      platform: "linux",
+      items: [
+        { content: "basic", method: "manual", enabled: false },
+        { content: "docker", method: "script", enabled: false },
+        { content: "software", method: "manual", enabled: true },
+      ],
+    },
+  });
+  await page.goto(`/#collections?asset=${asset.id}`);
+  await page.getByLabel("操作员访问令牌").fill("browser-test-secret-token");
+  await page.getByRole("button", { name: "进入工作台" }).click();
+  const config = page.getByRole("region", {
+    name: "操作系统与配置",
+    exact: true,
+  });
+  const creation = page.waitForResponse(
+    (r) =>
+      r.url().endsWith(`/configurations/${asset.id}/run`) &&
+      r.request().method() === "POST",
+  );
+  await config
+    .getByRole("button", { name: "执行选中采集项", exact: true })
+    .click();
+  const run = await (await creation).json();
+  await config
+    .getByRole("button", { name: "录入软件清单与组件", exact: true })
+    .click();
+  await page
+    .getByRole("row")
+    .filter({ hasText: `old-${asset.name}` })
+    .getByRole("button", { name: "查看资料 →", exact: true })
+    .click();
+  await expect(
+    page.getByRole("region", { name: "采集结果", exact: true }),
+  ).toBeVisible();
+  await page.waitForLoadState("networkidle");
+  await page.getByLabel("来源说明", { exact: true }).fill("本次新资料");
+  await page.getByLabel("软件及版本", { exact: true }).fill("New 2.0");
+  await page.getByRole("button", { name: "保存基础快照", exact: true }).click();
+  await expect(
+    config.getByText("软件清单与组件 · 采集完成", { exact: true }),
+  ).toBeVisible();
+  const saved = await (
+    await request.get(`${base}/collections/configuration-runs/${run.id}`, {
+      headers,
+    })
+  ).json();
+  expect(saved.items[0].snapshotId).not.toBe(old.id);
+  const section = await (
+    await request.get(
+      `${base}/collections/snapshots/${saved.items[0].snapshotId}/sections/device`,
+      { headers },
+    )
+  ).json();
+  expect(section.data.software).toBe("New 2.0");
+});
+
+test("恢复只含软件项的配置不会额外启用基础采集", async ({ page, request }) => {
+  const headers = { Authorization: "Bearer browser-test-secret-token" },
+    base = "/api/customers/acme";
+  const asset = await (
+    await request.post(base + "/assets", {
+      headers,
+      data: { name: `only-software-${Date.now()}`, kind: "host" },
+    })
+  ).json();
+  await request.patch(`${base}/assets/${asset.id}/classification`, {
+    headers,
+    data: { hardwareType: "server" },
+  });
+  await request.post(`${base}/collections/configurations/${asset.id}`, {
+    headers,
+    data: {
+      category: "server",
+      platform: "linux",
+      items: [{ content: "software", enabled: true, method: "manual" }],
+    },
+  });
+  await page.goto(`/#collections?asset=${asset.id}`);
+  await page.getByLabel("操作员访问令牌").fill("browser-test-secret-token");
+  await page.getByRole("button", { name: "进入工作台" }).click();
+  const config = page.getByRole("region", {
+    name: "操作系统与配置",
+    exact: true,
+  });
+  await expect(
+    config.getByRole("button", { name: "执行选中采集项", exact: true }),
+  ).toBeEnabled();
+  await expect(
+    config.getByLabel("选择基础资料", { exact: true }),
+  ).not.toBeChecked();
+  await expect(
+    config.getByLabel("选择软件清单与组件", { exact: true }),
+  ).toBeChecked();
+  const response = page.waitForResponse(
+    (r) =>
+      r.url().endsWith(`/configurations/${asset.id}/run`) &&
+      r.request().method() === "POST",
+  );
+  await config
+    .getByRole("button", { name: "执行选中采集项", exact: true })
+    .click();
+  expect(
+    (await (await response).json()).items.map(
+      (i: { content: string }) => i.content,
+    ),
+  ).toEqual(["software"]);
+});

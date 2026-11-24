@@ -27,6 +27,7 @@ test("网页保存人工基础快照，刷新回读来源与未评估状态，�
   await expect(
     page.getByRole("button", { name: "配置基础资料", exact: true }),
   ).toBeVisible();
+  await page.getByLabel("Docker容器采集方式").selectOption("automatic");
   await page
     .getByRole("button", { name: "配置Docker容器", exact: true })
     .click();
@@ -184,6 +185,7 @@ test("采集工作台按资产到内容顺序展示且历史独立", async ({ pa
     path: "output/collection-workbench-desktop.png",
     fullPage: false,
   });
+  await page.getByLabel("Docker容器采集方式").selectOption("automatic");
   await setup
     .getByRole("button", { name: "配置Docker容器", exact: true })
     .click();

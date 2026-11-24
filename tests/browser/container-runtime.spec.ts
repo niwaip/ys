@@ -141,6 +141,7 @@ test("redesigned collection tasks, capability gaps, immutable directory handoff,
   await expect(
     page.getByRole("region", { name: "采集结果", exact: true }),
   ).toBeVisible();
+  await page.getByLabel("Docker容器采集方式").selectOption("automatic");
   await page
     .getByRole("button", { name: "配置Docker容器", exact: true })
     .click();
@@ -189,6 +190,7 @@ test("redesigned collection tasks, capability gaps, immutable directory handoff,
   );
   await page.locator("nav button").filter({ hasText: "资产采集" }).click();
   await page.getByLabel("目标资产").selectOption({ label: "Docker测试主机" });
+  await page.getByLabel("Docker容器采集方式").selectOption("automatic");
   await page
     .getByRole("button", { name: "配置Docker容器", exact: true })
     .click();
@@ -201,6 +203,7 @@ test("redesigned collection tasks, capability gaps, immutable directory handoff,
   waiting = page.waitForEvent("download");
   await page.getByRole("button", { name: "下载基础采集脚本" }).click();
   expect((await waiting).suggestedFilename()).toBe("ys-host-basic.mjs");
+  await page.getByLabel("Docker容器采集方式").selectOption("automatic");
   await page
     .getByRole("button", { name: "配置Docker容器", exact: true })
     .click();
@@ -271,6 +274,7 @@ test("collection action keeps submission, completion and errors visible beside t
   await page.getByRole("button", { name: "进入工作台" }).click();
   await page.locator("nav button").filter({ hasText: "资产采集" }).click();
   await page.getByLabel("目标资产").selectOption({ label: "Docker测试主机" });
+  await page.getByLabel("Docker容器采集方式").selectOption("automatic");
   await page
     .getByRole("button", { name: "配置Docker容器", exact: true })
     .click();
