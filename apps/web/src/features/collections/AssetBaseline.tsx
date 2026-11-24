@@ -867,7 +867,7 @@ export function AssetBaseline({
     packages: ["packages"],
     docker: ["dockerClient", "dockerDaemon"],
     containers: compactView ? ["containers"] : ["containers", "images"],
-    images: ["images"],
+    ...(compactView ? { images: ["images"] } : {}),
     software: [],
   };
   const tabLabels = {
