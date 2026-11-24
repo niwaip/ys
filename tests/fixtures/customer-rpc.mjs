@@ -1,0 +1,3 @@
+import {readFile} from 'node:fs/promises';import {createInterface} from 'node:readline';
+const r=JSON.parse(await readFile(process.env.YS_AGENT_REQUEST_FILE,'utf8'));const out=o=>process.stdout.write(JSON.stringify(o)+'\n');
+createInterface({input:process.stdin}).on('line',line=>{const c=JSON.parse(line);out({type:'response',id:c.id,success:true});const name=r.message.includes('forbidden')?'bash':'ys_customer_assessment_read';out({type:'tool_execution_start',toolCallId:'read-1',toolName:name,args:{}});out({type:'tool_execution_end',toolCallId:'read-1',toolName:name,isError:false,result:{content:[{type:'text',text:JSON.stringify(r.facts)}]}});out({type:'agent_settled'});});

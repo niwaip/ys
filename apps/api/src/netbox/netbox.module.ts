@@ -1,0 +1,913 @@
+import { isDeepStrictEqual } from "node:util";
+import type { LifecycleAsset } from "../../../../packages/contracts/lifecycle-risk";
+import { requireActiveAsset } from "../assets/asset-state";
+import {
+  BadGatewayException,
+  BadRequestException,
+  ConflictException,
+  Controller,
+  Get,
+  Global,
+  ForbiddenException,
+  Inject,
+  Module,
+  NotFoundException,
+  Post,
+  Patch,
+  Req,
+  ServiceUnavailableException,
+  type DynamicModule,
+} from "@nestjs/common";
+import { createHash, randomUUID } from "node:crypto";
+import { z } from "zod";
+import type { AppConfig } from "../config";
+import { DATABASE, type Database } from "../persistence/database";
+import type { AuthorizedRequest } from "../auth/auth";
+async function boundedJson(response: Response) {
+  if (!response.body) throw new Error("empty response");
+  const reader = response.body.getReader();
+  const chunks: Uint8Array[] = [];
+  let size = 0;
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      size += value.length;
+      if (size > 5000000) {
+        await reader.cancel();
+        throw new Error("size");
+      }
+      chunks.push(value);
+    }
+    return JSON.parse(Buffer.concat(chunks).toString("utf8"));
+  } finally {
+    reader.releaseLock();
+  }
+}
+const objectType = z.enum(["device", "virtual-machine"]);
+const writeAsset = z
+  .object({
+    idempotencyKey: z.string().min(1).max(100),
+    objectType,
+    name: z.string().trim().min(1).max(200),
+    serial: z.string().max(200).optional(),
+    deviceType: z.number().int().positive().optional(),
+    role: z.number().int().positive().optional(),
+    site: z.number().int().positive().optional(),
+    cluster: z.number().int().positive().optional(),
+  })
+  .strict()
+  .superRefine((value, ctx) => {
+    if (
+      value.objectType === "device" &&
+      (!value.deviceType || !value.role || !value.site)
+    )
+      ctx.addIssue({
+        code: "custom",
+        message: "Device须填写deviceType、role、site",
+      });
+    if (value.objectType === "virtual-machine" && !value.site && !value.cluster)
+      ctx.addIssue({ code: "custom", message: "VM须填写site或cluster" });
+    if (
+      value.objectType === "virtual-machine" &&
+      (value.deviceType || value.role)
+    )
+      ctx.addIssue({ code: "custom", message: "VM不支持设备类型和设备角色" });
+    if (value.objectType === "device" && value.cluster)
+      ctx.addIssue({ code: "custom", message: "Device不支持cluster" });
+  });
+const nativeAsset = z.object({
+  custom_fields: z
+    .object({ ys_lifecycle: z.json().optional() })
+    .passthrough()
+    .optional(),
+  id: z.number().int().positive(),
+  name: z.string().min(1),
+  tenant: z.object({ id: z.number().int().positive() }).nullable(),
+  serial: z.string().optional(),
+  asset_tag: z.string().nullable().optional(),
+  platform: z
+    .object({ id: z.number(), name: z.string() })
+    .nullable()
+    .optional(),
+  role: z
+    .object({
+      id: z.number().int().positive(),
+      name: z.string(),
+      slug: z.string().optional(),
+    })
+    .nullable()
+    .optional(),
+  device_type: z
+    .object({
+      id: z.number().int().positive(),
+      model: z.string(),
+      manufacturer: z.object({ id: z.number(), name: z.string() }).optional(),
+    })
+    .nullable()
+    .optional(),
+  primary_ip4: z.object({ address: z.string() }).nullable().optional(),
+  primary_ip6: z.object({ address: z.string() }).nullable().optional(),
+});
+type NativeAsset = z.infer<typeof nativeAsset>;
+const paths = {
+  device: "dcim/devices/",
+  "virtual-machine": "virtualization/virtual-machines/",
+};
+const page = z.object({
+  count: z.number().int().nonnegative().max(100000),
+  next: z.string().nullable(),
+  results: z.array(nativeAsset),
+});
+export class NetBoxPrewriteError extends ConflictException {}
+export class NetBoxService {
+  constructor(
+    private readonly db: Database,
+    private readonly config?: AppConfig["netbox"],
+  ) {}
+  get enabled() {
+    return Boolean(this.config);
+  }
+  acceptsMapping(customerId: string, mapping: Record<string, unknown>) {
+    return (
+      mapping.instance === this.config?.baseUrl &&
+      Number(mapping.tenant_id) === this.config?.tenantIds[customerId]
+    );
+  }
+  status(customerId: string) {
+    return {
+      mode: this.enabled ? "netbox" : "legacy",
+      configured: this.enabled,
+      tenantId: this.config?.tenantIds[customerId] ?? null,
+    };
+  }
+  private tenant(customerId: string) {
+    const id = this.config?.tenantIds[customerId];
+    if (!this.config || !id)
+      throw new ServiceUnavailableException(
+        "该客户尚未配置NetBox Tenant；没有切换为本地写入",
+      );
+    return id;
+  }
+  private async read(path: string): Promise<unknown> {
+    const config = this.config!;
+    const url = new URL(path, config.baseUrl);
+    const base = new URL(config.baseUrl);
+    if (url.origin !== base.origin || !url.pathname.startsWith(base.pathname))
+      throw new BadGatewayException("NetBox分页地址超出配置范围");
+    try {
+      const response = await fetch(url, {
+        headers: {
+          Authorization: `Token ${config.token}`,
+          Accept: "application/json",
+        },
+        signal: AbortSignal.timeout(config.timeoutMs ?? 15000),
+        redirect: "error",
+      });
+      if (response.status === 403)
+        throw new ForbiddenException(
+          "NetBox目录读取权限不足（403），请为集成令牌配置所需对象的读取权限",
+        );
+      if (!response.ok) throw new Error("remote");
+      return await boundedJson(response);
+    } catch (error) {
+      if (error instanceof ForbiddenException) throw error;
+      throw new BadGatewayException(
+        "无法读取NetBox，请检查连接、权限与响应格式；本地缓存未视为最新",
+      );
+    }
+  }
+  private validate(raw: unknown, tenantId: number): NativeAsset {
+    const parsed = nativeAsset.safeParse(raw);
+    if (!parsed.success || parsed.data.tenant?.id !== tenantId)
+      throw new BadGatewayException("NetBox资产格式或Tenant归属不匹配");
+    return parsed.data;
+  }
+  private async all(type: z.infer<typeof objectType>, tenantId: number) {
+    let next: string | null =
+      `${paths[type]}?tenant_id=${tenantId}&limit=100&offset=0`;
+    const seen = new Set<string>();
+    const results: NativeAsset[] = [];
+    const ids = new Set<number>();
+    while (next) {
+      if (seen.has(next) || seen.size >= 1000)
+        throw new BadGatewayException("NetBox分页重复或超过100000项边界");
+      seen.add(next);
+      const parsed = page.safeParse(await this.read(next));
+      if (!parsed.success)
+        throw new BadGatewayException("NetBox列表格式不兼容");
+      for (const row of parsed.data.results) {
+        if (results.length >= 100000)
+          throw new BadGatewayException("NetBox资产超过100000项同步边界");
+        if (ids.has(row.id))
+          throw new BadGatewayException("NetBox分页含重复对象，请重试同步");
+        ids.add(row.id);
+        results.push(this.validate(row, tenantId));
+      }
+      next = parsed.data.next;
+      if (!next && results.length !== parsed.data.count)
+        throw new BadGatewayException("NetBox分页不完整；请重试同步");
+    }
+    return results;
+  }
+  private async cache(
+    session: Database | Parameters<Parameters<Database["transaction"]>[0]>[0],
+    customerId: string,
+    type: z.infer<typeof objectType>,
+    row: NativeAsset,
+    localId?: string,
+  ) {
+    const instance = this.config!.baseUrl;
+    const existing = await session.query(
+      "SELECT asset_id FROM netbox_assets WHERE instance=$1 AND object_type=$2 AND external_id=$3",
+      [instance, type, row.id],
+    );
+    const mapped = existing.rows[0]?.asset_id as string | undefined;
+    if (mapped && localId && mapped !== localId)
+      throw new ConflictException("该NetBox对象已映射其他资产，不能合并历史");
+    const id = mapped ?? localId ?? randomUUID();
+    const prior = await session.query(
+      "SELECT instance,object_type,external_id FROM netbox_assets WHERE asset_id=$1",
+      [id],
+    );
+    if (
+      prior.rows.length &&
+      (prior.rows[0].instance !== instance ||
+        prior.rows[0].object_type !== type ||
+        Number(prior.rows[0].external_id) !== row.id)
+    )
+      throw new ConflictException("历史资产已有其他NetBox映射，不能替换");
+    const owner = await session.query(
+      "SELECT customer_id FROM assets WHERE id=$1",
+      [id],
+    );
+    if (owner.rows.length && owner.rows[0].customer_id !== customerId)
+      throw new ConflictException(
+        "NetBox资产已有其他客户映射，请先解决Tenant变更",
+      );
+    const attributes = {
+      lifecycle: row.custom_fields?.ys_lifecycle ?? {},
+      netbox: {
+        objectType: type,
+        id: row.id,
+        tenantId: row.tenant!.id,
+        instance,
+        syncedAt: new Date().toISOString(),
+      },
+      serial: row.serial ?? null,
+      assetTag: row.asset_tag ?? null,
+      platform: row.platform ?? null,
+      role: row.role ?? null,
+      deviceType: row.device_type ?? null,
+      primaryIp4: row.primary_ip4?.address ?? null,
+      primaryIp6: row.primary_ip6?.address ?? null,
+    };
+    await session.query(
+      "INSERT INTO assets(id,customer_id,name,kind,source,source_ref,attributes) VALUES($1,$2,$3,'host','netbox',$4,$5::jsonb) ON CONFLICT(id) DO UPDATE SET name=EXCLUDED.name,source='netbox',attributes=EXCLUDED.attributes",
+      [
+        id,
+        customerId,
+        row.name,
+        `${type}:${row.id}`,
+        JSON.stringify(attributes),
+      ],
+    );
+    await session.query(
+      "INSERT INTO netbox_assets(customer_id,asset_id,instance,object_type,external_id,tenant_id,synced_at,active) VALUES($1,$2,$3,$4,$5,$6,now(),true) ON CONFLICT(asset_id) DO UPDATE SET synced_at=now(),active=true",
+      [customerId, id, instance, type, row.id, row.tenant!.id],
+    );
+    return { assetId: id, objectType: type, externalId: row.id };
+  }
+  async catalog(customer: string, type?: z.infer<typeof objectType>) {
+    this.tenant(customer);
+    const definitions = {
+      roles: "dcim/device-roles/",
+      deviceTypes: "dcim/device-types/",
+      sites: "dcim/sites/",
+      clusters: "virtualization/clusters/",
+    };
+    const result: Record<string, { id: number; name: string }[]> = {};
+    for (const [key, path] of Object.entries(definitions)) {
+      if (type === "device" && key === "clusters") continue;
+      if (type === "virtual-machine" && ["roles", "deviceTypes"].includes(key))
+        continue;
+      let next: string | null = path + "?limit=100";
+      const seen = new Set<string>();
+      const items: { id: number; name: string }[] = [];
+      while (next) {
+        const url = new URL(next, this.config!.baseUrl);
+        if (
+          url.pathname !== new URL(path, this.config!.baseUrl).pathname ||
+          seen.has(url.href) ||
+          seen.size >= 100
+        )
+          throw new BadGatewayException("NetBox目录分页无效或过大");
+        seen.add(url.href);
+        const parsed = z
+          .object({
+            count: z.number().int().nonnegative().max(10000),
+            next: z.string().nullable(),
+            results: z.array(
+              z.object({
+                id: z.number().int().positive(),
+                name: z.string().optional(),
+                model: z.string().optional(),
+              }),
+            ),
+          })
+          .safeParse(await this.read(next));
+        if (!parsed.success)
+          throw new BadGatewayException("NetBox目录响应格式无效");
+        for (const item of parsed.data.results) {
+          if (items.some((i) => i.id === item.id) || items.length >= 10000)
+            throw new BadGatewayException("NetBox目录包含重复项或过大");
+          const name = key === "deviceTypes" ? item.model : item.name;
+          if (!name) throw new BadGatewayException("NetBox目录缺少名称");
+          items.push({ id: item.id, name });
+        }
+        next = parsed.data.next;
+        if (!next && items.length !== parsed.data.count)
+          throw new BadGatewayException("NetBox目录分页不完整");
+      }
+      result[key] = items;
+    }
+    return result;
+  }
+  async sync(customerId: string) {
+    const tenantId = this.tenant(customerId);
+    // Fetch and validate both lists before changing any cached records.
+    const devices = await this.all("device", tenantId);
+    const vms = await this.all("virtual-machine", tenantId);
+    return this.db.transaction(async (session) => {
+      await session.query(
+        "UPDATE netbox_assets SET active=false WHERE customer_id=$1 AND instance=$2",
+        [customerId, this.config!.baseUrl],
+      );
+      const items = [];
+      for (const row of devices)
+        items.push(await this.cache(session, customerId, "device", row));
+      for (const row of vms)
+        items.push(
+          await this.cache(session, customerId, "virtual-machine", row),
+        );
+      return { items, total: items.length, syncedAt: new Date().toISOString() };
+    });
+  }
+  async create(
+    customerId: string,
+    input: z.infer<typeof writeAsset>,
+    update?: { assetId: string; externalId: number },
+  ) {
+    const tenantId = this.tenant(customerId);
+    const hash = createHash("sha256")
+      .update(
+        JSON.stringify({
+          instance: this.config!.baseUrl,
+          tenantId,
+          ...input,
+          update,
+        }),
+      )
+      .digest("hex");
+    const id = randomUUID();
+    const claim = await this.db.transaction(async (tx) => {
+      if (update) await requireActiveAsset(tx, customerId, update.assetId);
+      return tx.query(
+        "INSERT INTO netbox_operations(id,customer_id,idempotency_key,input_hash,status,input) VALUES($1,$2,$3,$4,'pending',$5::jsonb) ON CONFLICT(customer_id,idempotency_key) DO NOTHING RETURNING id",
+        [
+          id,
+          customerId,
+          input.idempotencyKey,
+          hash,
+          JSON.stringify({ ...input, ...(update ? { update } : {}) }),
+        ],
+      );
+    });
+    if (!claim.rows.length) {
+      const old = (
+        await this.db.query(
+          "SELECT input_hash,status,result FROM netbox_operations WHERE customer_id=$1 AND idempotency_key=$2",
+          [customerId, input.idempotencyKey],
+        )
+      ).rows[0];
+      if (old.input_hash !== hash)
+        throw new ConflictException("幂等键对应不同建档内容或NetBox配置");
+      if (old.status === "succeeded")
+        return { ...(old.result as object), replayed: true };
+      throw new ConflictException(
+        "NetBox写入未确认成功；请核对远端对象及操作记录，不自动重试创建",
+      );
+    }
+    try {
+      const body = {
+        name: input.name,
+        tenant: tenantId,
+        ...(update ? {} : { status: "active" }),
+        ...(input.serial !== undefined ? { serial: input.serial } : {}),
+        ...(input.deviceType ? { device_type: input.deviceType } : {}),
+        ...(input.role ? { role: input.role } : {}),
+        ...(input.site ? { site: input.site } : {}),
+        ...(input.cluster ? { cluster: input.cluster } : {}),
+      };
+      const response = await fetch(
+        new URL(
+          paths[input.objectType] + (update ? `${update.externalId}/` : ""),
+          this.config!.baseUrl,
+        ),
+        {
+          method: update ? "PATCH" : "POST",
+          headers: {
+            Authorization: `Token ${this.config!.token}`,
+            "Content-Type": "application/json",
+            Accept: "application/json",
+          },
+          body: JSON.stringify(body),
+          signal: AbortSignal.timeout(this.config!.timeoutMs ?? 15000),
+          redirect: "error",
+        },
+      );
+      if (!response.ok) throw new Error("remote");
+      const native = this.validate(await boundedJson(response), tenantId);
+      if (
+        (update && native.id !== update.externalId) ||
+        native.name !== input.name ||
+        (input.serial !== undefined && native.serial !== input.serial)
+      )
+        throw new Error("identity");
+      const result = await this.db.transaction(async (session) => {
+        const cached = await this.cache(
+          session,
+          customerId,
+          input.objectType,
+          native,
+          update?.assetId,
+        );
+        const result = { ...cached, operationId: id };
+        await session.query(
+          "UPDATE netbox_operations SET status='succeeded',result=$2::jsonb WHERE id=$1",
+          [id, JSON.stringify(result)],
+        );
+        return result;
+      });
+      return result;
+    } catch {
+      await this.db.query(
+        "UPDATE netbox_operations SET status='unknown' WHERE id=$1 AND status='pending'",
+        [id],
+      );
+      throw new BadGatewayException(
+        `NetBox写入未获确认，操作编号${id}；远端可能已写入，请核对后同步或显式映射，禁止自动重复写入`,
+      );
+    }
+  }
+  async update(
+    customerId: string,
+    assetId: string,
+    input: { idempotencyKey: string; name: string; serial?: string },
+    expected?: { name: string; serial?: string },
+  ) {
+    this.tenant(customerId);
+    const mapping = (
+      await this.db.query(
+        "SELECT object_type,external_id FROM netbox_assets WHERE customer_id=$1 AND asset_id=$2 AND instance=$3 AND active=true",
+        [customerId, assetId, this.config!.baseUrl],
+      )
+    ).rows[0];
+    if (!mapping) throw new NotFoundException("该客户下未找到当前NetBox映射");
+    await this.resolveReference(
+      customerId,
+      `${mapping.object_type}:${mapping.external_id}`,
+    );
+    if (expected) await this.verifyBaseline(customerId, assetId, expected);
+    return this.create(
+      customerId,
+      {
+        ...input,
+        objectType: mapping.object_type as z.infer<typeof objectType>,
+      },
+      { assetId, externalId: Number(mapping.external_id) },
+    );
+  }
+  async updateLifecycle(
+    customer: string,
+    id: string,
+    input: LifecycleAsset,
+    actor: string,
+    expected?: Record<string, unknown>,
+  ) {
+    const result = await this.db.transaction(async (session) => {
+      await session.query("SELECT id FROM customers WHERE id=$1 FOR UPDATE", [
+        customer,
+      ]);
+      await requireActiveAsset(session, customer, id);
+      const local = (
+        await session.query(
+          "SELECT attributes FROM assets WHERE customer_id=$1 AND id=$2",
+          [customer, id],
+        )
+      ).rows[0];
+      const mapping = (
+        await session.query(
+          "SELECT object_type,external_id FROM netbox_assets WHERE customer_id=$1 AND asset_id=$2 AND instance=$3 AND active=true",
+          [customer, id, this.config?.baseUrl],
+        )
+      ).rows[0];
+      if (!mapping)
+        throw new ConflictException("当前NetBox映射不可用，请先同步");
+      const path = `${paths[mapping.object_type as keyof typeof paths]}${mapping.external_id}/`;
+      const native = this.validate(
+        await this.read(path),
+        this.tenant(customer),
+      );
+      if (native.id !== Number(mapping.external_id))
+        throw new ConflictException("NetBox对象身份已变化");
+      const old = native.custom_fields?.ys_lifecycle ?? {};
+      if (!old || typeof old !== "object" || Array.isArray(old))
+        throw new ConflictException("NetBox生命周期字段不是JSON对象，请先核对");
+      const patch = Object.fromEntries(
+        Object.entries(input).filter(([, v]) => v !== "" && v !== undefined),
+      );
+      const cached =
+        (local.attributes as Record<string, unknown>).lifecycle ?? {};
+      const merged = { ...old, ...patch };
+      if (expected !== undefined && !isDeepStrictEqual(cached, expected))
+        throw new ConflictException("生命周期资料已变化，请刷新后重新填写");
+      if (
+        !isDeepStrictEqual(old, cached) &&
+        !Object.entries(patch).every(([key, value]) =>
+          isDeepStrictEqual((old as Record<string, unknown>)[key], value),
+        )
+      )
+        throw new ConflictException(
+          "NetBox生命周期资料已变化，请先同步后重新填写",
+        );
+      let checked: NativeAsset;
+      try {
+        if (!isDeepStrictEqual(old, merged)) {
+          const response = await fetch(new URL(path, this.config!.baseUrl), {
+            method: "PATCH",
+            headers: {
+              Authorization: `Token ${this.config!.token}`,
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify({
+              custom_fields: { ...native.custom_fields, ys_lifecycle: merged },
+            }),
+            signal: AbortSignal.timeout(this.config!.timeoutMs ?? 15000),
+            redirect: "error",
+          });
+          if (!response.ok) throw new Error(`NetBox写入返回${response.status}`);
+        }
+        checked = this.validate(await this.read(path), this.tenant(customer));
+        if (
+          checked.id !== native.id ||
+          !isDeepStrictEqual(checked.custom_fields?.ys_lifecycle, merged)
+        )
+          throw new Error("NetBox回读未确认");
+      } catch {
+        await session.query(
+          "INSERT INTO lifecycle_asset_history(id,customer_id,asset_id,actor,before_data,after_data,source,status) VALUES($1,$2,$3,$4,$5::jsonb,$6::jsonb,'netbox','unknown')",
+          [
+            randomUUID(),
+            customer,
+            id,
+            actor,
+            JSON.stringify(old),
+            JSON.stringify(merged),
+          ],
+        );
+        return { ok: false };
+      }
+      await this.cache(
+        session,
+        customer,
+        mapping.object_type as keyof typeof paths,
+        checked,
+        id,
+      );
+      await session.query(
+        "INSERT INTO lifecycle_asset_history(id,customer_id,asset_id,actor,before_data,after_data,source) VALUES($1,$2,$3,$4,$5::jsonb,$6::jsonb,'netbox')",
+        [
+          randomUUID(),
+          customer,
+          id,
+          actor,
+          JSON.stringify(old),
+          JSON.stringify(merged),
+        ],
+      );
+      return { ok: true };
+    });
+    if (!result.ok)
+      throw new BadGatewayException(
+        "NetBox写回或回读未获确认，本地资料未更新；远端可能已写入，请同步核对后重试",
+      );
+  }
+
+  async updateBaseline(
+    customerId: string,
+    assetId: string,
+    patch: { name?: string; serial?: string },
+    idempotencyKey: string,
+    expected: { name?: string; serial?: string },
+  ) {
+    let native: NativeAsset;
+    let mapping: { object_type: keyof typeof paths; external_id: number };
+    try {
+      const prepared = await this.baselineNative(customerId, assetId);
+      native = prepared.native;
+      mapping = prepared.mapping;
+      const nameDone = patch.name === undefined || native.name === patch.name;
+      const serialDone =
+        patch.serial === undefined || (native.serial ?? "") === patch.serial;
+      if (nameDone && serialDone) {
+        await this.verifyBaseline(customerId, assetId, patch);
+        return { unchanged: true };
+      }
+      if (
+        (!nameDone &&
+          expected.name !== undefined &&
+          native.name !== expected.name) ||
+        (!serialDone &&
+          expected.serial !== undefined &&
+          (native.serial ?? "") !== expected.serial)
+      )
+        throw new NetBoxPrewriteError(
+          "NetBox字段与采集时不同，本次未执行写回；请重新采集后确认",
+        );
+    } catch (e) {
+      if (e instanceof NetBoxPrewriteError) throw e;
+      throw new NetBoxPrewriteError(
+        "无法核对NetBox当前资料，本次未执行写回；请检查连接或权限后重试",
+      );
+    }
+    try {
+      return await this.create(
+        customerId,
+        {
+          idempotencyKey,
+          objectType: mapping.object_type,
+          name: patch.name ?? native.name,
+          ...(patch.serial !== undefined ? { serial: patch.serial } : {}),
+        },
+        { assetId, externalId: Number(mapping.external_id) },
+      );
+    } catch (error) {
+      if (error instanceof BadGatewayException) throw error;
+      throw new NetBoxPrewriteError(
+        "无法准备NetBox写回，本次未执行；请刷新后重试",
+      );
+    }
+  }
+
+  private async baselineNative(customerId: string, assetId: string) {
+    const mapping = (
+      await this.db.query(
+        "SELECT object_type,external_id FROM netbox_assets WHERE customer_id=$1 AND asset_id=$2 AND instance=$3 AND active=true",
+        [customerId, assetId, this.config?.baseUrl],
+      )
+    ).rows[0];
+    if (!mapping) throw new ConflictException("当前NetBox映射不可用");
+    const native = this.validate(
+      await this.read(
+        `${paths[mapping.object_type as keyof typeof paths]}${mapping.external_id}/`,
+      ),
+      this.tenant(customerId),
+    );
+    if (native.id !== Number(mapping.external_id))
+      throw new ConflictException("NetBox对象身份已变化");
+    return {
+      native,
+      mapping: mapping as {
+        object_type: keyof typeof paths;
+        external_id: number;
+      },
+    };
+  }
+  async verifyBaseline(
+    customerId: string,
+    assetId: string,
+    expected: { name?: string; serial?: string },
+  ) {
+    const mapping = (
+      await this.db.query(
+        "SELECT object_type,external_id FROM netbox_assets WHERE customer_id=$1 AND asset_id=$2 AND instance=$3 AND active=true",
+        [customerId, assetId, this.config?.baseUrl],
+      )
+    ).rows[0];
+    if (!mapping) throw new ConflictException("当前NetBox映射不可用");
+    const native = this.validate(
+      await this.read(
+        `${paths[mapping.object_type as keyof typeof paths]}${mapping.external_id}/`,
+      ),
+      this.tenant(customerId),
+    );
+    if (
+      native.id !== Number(mapping.external_id) ||
+      (expected.name !== undefined && native.name !== expected.name) ||
+      (expected.serial !== undefined && native.serial !== expected.serial)
+    )
+      throw new ConflictException("NetBox当前值与确认内容不一致，基线未更新");
+    await this.db.transaction((tx) =>
+      this.cache(
+        tx,
+        customerId,
+        mapping.object_type as keyof typeof paths,
+        native,
+        assetId,
+      ),
+    );
+  }
+  async operations(customerId: string) {
+    return {
+      items: (
+        await this.db.query(
+          'SELECT id,status,input,result,created_at AS "createdAt" FROM netbox_operations WHERE customer_id=$1 ORDER BY created_at DESC,id LIMIT 100',
+          [customerId],
+        )
+      ).rows,
+    };
+  }
+  async resolveReference(customerId: string, reference: string) {
+    const match = /^(device|virtual-machine):([1-9][0-9]*)$/.exec(reference);
+    if (!match)
+      throw new ConflictException(
+        "NetBox模式的CSV sourceRef须填写device:ID或virtual-machine:ID；请先建档同步",
+      );
+    const type = match[1] as z.infer<typeof objectType>;
+    const id = Number(match[2]);
+    const tenantId = this.tenant(customerId);
+    const row = this.validate(
+      await this.read(`${paths[type]}${id}/`),
+      tenantId,
+    );
+    if (row.id !== id) throw new BadGatewayException("NetBox详情身份不匹配");
+    const found = await this.db.query(
+      "SELECT asset_id FROM netbox_assets WHERE customer_id=$1 AND instance=$2 AND object_type=$3 AND external_id=$4 AND active=true",
+      [customerId, this.config!.baseUrl, type, id],
+    );
+    if (found.rows.length !== 1)
+      throw new ConflictException("该NetBox资产尚未同步或映射至当前客户");
+    await requireActiveAsset(
+      this.db,
+      customerId,
+      String(found.rows[0].asset_id),
+    );
+    return String(found.rows[0].asset_id);
+  }
+  async resolveSerial(customerId: string, serial: string | null) {
+    this.tenant(customerId);
+    if (!serial) return null;
+    const found = await this.db.query(
+      "SELECT n.asset_id,n.object_type,n.external_id FROM netbox_assets n JOIN assets a ON a.id=n.asset_id WHERE n.customer_id=$1 AND n.instance=$2 AND n.active=true AND a.attributes->>'serial'=$3",
+      [customerId, this.config!.baseUrl, serial],
+    );
+    if (found.rows.length !== 1) return null;
+    const row = found.rows[0];
+    const native = this.validate(
+      await this.read(
+        `${paths[row.object_type as keyof typeof paths]}${row.external_id}/`,
+      ),
+      this.tenant(customerId),
+    );
+    if (native.serial !== serial || native.id !== Number(row.external_id))
+      throw new ConflictException("NetBox序列号或对象身份已变更，请重新同步");
+    return String(row.asset_id);
+  }
+  async mappings(customerId: string) {
+    const result = await this.db.query(
+      'SELECT a.id AS "assetId",a.name,n.object_type AS "objectType",n.external_id AS "externalId",n.tenant_id AS "tenantId",n.synced_at AS "syncedAt",n.active FROM assets a LEFT JOIN netbox_assets n ON n.asset_id=a.id WHERE a.customer_id=$1 ORDER BY a.created_at DESC,a.id LIMIT 100',
+      [customerId],
+    );
+    return { items: result.rows };
+  }
+  async map(
+    customerId: string,
+    input: {
+      assetId: string;
+      objectType: z.infer<typeof objectType>;
+      externalId: number;
+    },
+  ) {
+    const tenantId = this.tenant(customerId);
+    const local = await this.db.query(
+      "SELECT id FROM assets WHERE customer_id=$1 AND id=$2",
+      [customerId, input.assetId],
+    );
+    if (!local.rows.length)
+      throw new NotFoundException("该客户下未找到历史资产");
+    const current = await this.db.query(
+      "SELECT instance,object_type,external_id FROM netbox_assets WHERE asset_id=$1",
+      [input.assetId],
+    );
+    if (
+      current.rows.length &&
+      (current.rows[0].instance !== this.config!.baseUrl ||
+        current.rows[0].object_type !== input.objectType ||
+        Number(current.rows[0].external_id) !== input.externalId)
+    )
+      throw new ConflictException("资产已有不同NetBox身份，不能替换历史映射");
+    const row = this.validate(
+      await this.read(`${paths[input.objectType]}${input.externalId}/`),
+      tenantId,
+    );
+    if (row.id !== input.externalId)
+      throw new BadGatewayException("NetBox详情身份不匹配");
+    return this.db.transaction((session) =>
+      this.cache(session, customerId, input.objectType, row, input.assetId),
+    );
+  }
+}
+@Controller("api/customers/:customerId/netbox")
+export class NetBoxController {
+  constructor(private readonly service: NetBoxService) {}
+  @Patch("assets/:assetId") update(req: AuthorizedRequest) {
+    const input = z
+      .object({
+        idempotencyKey: z.string().min(1).max(100),
+        name: z.string().trim().min(1).max(200),
+        serial: z.string().max(200).optional(),
+      })
+      .strict()
+      .safeParse(req.body);
+    if (!input.success || !z.uuid().safeParse(req.params.assetId).success)
+      throw new BadRequestException("资产修改输入无效");
+    return this.service.update(
+      req.params.customerId,
+      req.params.assetId,
+      input.data,
+    );
+  }
+  @Post("assets") create(req: AuthorizedRequest) {
+    const input = writeAsset.safeParse(req.body);
+    if (!input.success)
+      throw new BadRequestException(
+        "NetBox原生建档字段无效，请核对Device的类型、角色、站点或VM的站点/集群",
+      );
+    return this.service.create(req.params.customerId, input.data);
+  }
+  @Get("catalog") catalog(req: AuthorizedRequest) {
+    const q = z
+      .object({ objectType: objectType.optional() })
+      .strict()
+      .safeParse(req.query);
+    if (!q.success) throw new BadRequestException("目录对象类型无效");
+    return this.service.catalog(req.params.customerId, q.data.objectType);
+  }
+  @Get("operations") operations(req: AuthorizedRequest) {
+    return this.service.operations(req.params.customerId);
+  }
+  @Get("status") status(req: AuthorizedRequest) {
+    return this.service.status(req.params.customerId);
+  }
+  @Get("mappings") mappings(req: AuthorizedRequest) {
+    return this.service.mappings(req.params.customerId);
+  }
+  @Post("sync") sync(req: AuthorizedRequest) {
+    if (!z.object({}).strict().safeParse(req.body).success)
+      throw new BadRequestException("同步请求无效");
+    return this.service.sync(req.params.customerId);
+  }
+  @Post("mappings") map(req: AuthorizedRequest) {
+    const input = z
+      .object({
+        assetId: z.uuid(),
+        objectType,
+        externalId: z.number().int().positive(),
+      })
+      .strict()
+      .safeParse(req.body);
+    if (!input.success) throw new BadRequestException("映射输入无效");
+    return this.service.map(req.params.customerId, input.data);
+  }
+}
+for (const method of [
+  "catalog",
+  "status",
+  "mappings",
+  "sync",
+  "map",
+  "create",
+  "operations",
+  "update",
+] as const)
+  Req()(NetBoxController.prototype, method, 0);
+Inject(NetBoxService)(NetBoxController, undefined, 0);
+@Global()
+@Module({})
+export class NetBoxModule {
+  static register(config?: AppConfig["netbox"]): DynamicModule {
+    return {
+      module: NetBoxModule,
+      controllers: [NetBoxController],
+      providers: [
+        {
+          provide: NetBoxService,
+          inject: [DATABASE],
+          useFactory: (db: Database) => new NetBoxService(db, config),
+        },
+      ],
+      exports: [NetBoxService],
+    };
+  }
+}

@@ -1,0 +1,203 @@
+{
+  "repository": "niwaip/ys",
+  "reviewBase": "652acb6cf668f74393f014da67206353f68c7520",
+  "tickets": {
+    "01": {
+      "id": 6581528104,
+      "number": 66,
+      "html_url": "https://github.com/niwaip/ys/issues/66",
+      "blocked_by": [],
+      "parent_linked": true,
+      "blocking_linked": []
+    },
+    "02": {
+      "id": 6581529872,
+      "number": 67,
+      "html_url": "https://github.com/niwaip/ys/issues/67",
+      "blocked_by": [
+        "01"
+      ],
+      "parent_linked": true,
+      "blocking_linked": [
+        "01"
+      ]
+    },
+    "03": {
+      "id": 6581532432,
+      "number": 68,
+      "html_url": "https://github.com/niwaip/ys/issues/68",
+      "blocked_by": [
+        "02"
+      ],
+      "parent_linked": true,
+      "blocking_linked": [
+        "02"
+      ]
+    },
+    "04": {
+      "id": 6581535036,
+      "number": 69,
+      "html_url": "https://github.com/niwaip/ys/issues/69",
+      "blocked_by": [
+        "01"
+      ],
+      "parent_linked": true,
+      "blocking_linked": [
+        "01"
+      ]
+    },
+    "05": {
+      "id": 6581537224,
+      "number": 70,
+      "html_url": "https://github.com/niwaip/ys/issues/70",
+      "blocked_by": [
+        "04"
+      ],
+      "parent_linked": true,
+      "blocking_linked": [
+        "04"
+      ]
+    },
+    "06": {
+      "id": 6581539865,
+      "number": 71,
+      "html_url": "https://github.com/niwaip/ys/issues/71",
+      "blocked_by": [
+        "02"
+      ],
+      "parent_linked": true,
+      "blocking_linked": [
+        "02"
+      ]
+    },
+    "07": {
+      "id": 6581542836,
+      "number": 72,
+      "html_url": "https://github.com/niwaip/ys/issues/72",
+      "blocked_by": [
+        "06"
+      ],
+      "parent_linked": true,
+      "blocking_linked": [
+        "06"
+      ]
+    },
+    "08": {
+      "id": 6581545194,
+      "number": 73,
+      "html_url": "https://github.com/niwaip/ys/issues/73",
+      "blocked_by": [
+        "06"
+      ],
+      "parent_linked": true,
+      "blocking_linked": [
+        "06"
+      ]
+    },
+    "09": {
+      "id": 6581547852,
+      "number": 74,
+      "html_url": "https://github.com/niwaip/ys/issues/74",
+      "blocked_by": [
+        "03"
+      ],
+      "parent_linked": true,
+      "blocking_linked": [
+        "03"
+      ]
+    },
+    "10": {
+      "id": 6581551679,
+      "number": 75,
+      "html_url": "https://github.com/niwaip/ys/issues/75",
+      "blocked_by": [
+        "03"
+      ],
+      "parent_linked": true,
+      "blocking_linked": [
+        "03"
+      ]
+    },
+    "11": {
+      "id": 6581554383,
+      "number": 76,
+      "html_url": "https://github.com/niwaip/ys/issues/76",
+      "blocked_by": [
+        "04"
+      ],
+      "parent_linked": true,
+      "blocking_linked": [
+        "04"
+      ]
+    },
+    "12": {
+      "id": 6581557660,
+      "number": 77,
+      "html_url": "https://github.com/niwaip/ys/issues/77",
+      "blocked_by": [
+        "03",
+        "11"
+      ],
+      "parent_linked": true,
+      "blocking_linked": [
+        "03",
+        "11"
+      ]
+    },
+    "13": {
+      "id": 6581561320,
+      "number": 78,
+      "html_url": "https://github.com/niwaip/ys/issues/78",
+      "blocked_by": [
+        "03"
+      ],
+      "parent_linked": true,
+      "blocking_linked": [
+        "03"
+      ]
+    },
+    "14": {
+      "id": 6581563564,
+      "number": 79,
+      "html_url": "https://github.com/niwaip/ys/issues/79",
+      "blocked_by": [
+        "10",
+        "11"
+      ],
+      "parent_linked": true,
+      "blocking_linked": [
+        "10",
+        "11"
+      ]
+    },
+    "15": {
+      "id": 6581566126,
+      "number": 80,
+      "html_url": "https://github.com/niwaip/ys/issues/80",
+      "blocked_by": [
+        "05",
+        "07",
+        "08",
+        "09",
+        "12",
+        "13",
+        "14"
+      ],
+      "parent_linked": true,
+      "blocking_linked": [
+        "05",
+        "07",
+        "08",
+        "09",
+        "12",
+        "13",
+        "14"
+      ]
+    }
+  },
+  "spec": {
+    "id": 6581527002,
+    "number": 65,
+    "html_url": "https://github.com/niwaip/ys/issues/65"
+  }
+}

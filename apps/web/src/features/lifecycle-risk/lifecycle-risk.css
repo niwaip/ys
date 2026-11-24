@@ -1,0 +1,214 @@
+.lifecycle-risk {
+  max-width: 1480px;
+}
+.risk-cards {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 16px;
+  margin: 20px 0;
+}
+.risk-card {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 22px;
+  background: white;
+  border: 1px solid #dfe5ed;
+  border-top: 3px solid #7b8a9e;
+  border-radius: 10px;
+  text-align: left;
+  color: #26344b;
+}
+.risk-card strong {
+  font-size: 30px;
+}
+.risk-card small {
+  font-size: 13px;
+  font-weight: 400;
+  color: #66758b;
+}
+.risk-card.critical {
+  border-top-color: #c93745;
+}
+.risk-card.warning {
+  border-top-color: #db8a1b;
+}
+.risk-card.reminder {
+  border-top-color: #417cbb;
+}
+.risk-filters,
+.risk-form-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(175px, 1fr));
+  gap: 16px;
+  margin: 16px 0;
+}
+.risk-badge {
+  display: inline-block;
+  white-space: nowrap;
+  padding: 4px 9px;
+  border-radius: 5px;
+  background: #eef1f5;
+  color: #54627a;
+  font-size: 12px;
+  font-weight: 600;
+}
+.risk-badge.critical {
+  background: #fce9ec;
+  color: #a82a3d;
+}
+.risk-badge.warning {
+  background: #fff1d8;
+  color: #935d09;
+}
+.risk-badge.reminder {
+  background: #e8f1fb;
+  color: #2d659c;
+}
+.risk-badge.normal {
+  background: #e6f4ed;
+  color: #286344;
+}
+.risk-overlay {
+  position: fixed;
+  inset: 0;
+  background: #17233766;
+  z-index: 100;
+  display: flex;
+  justify-content: flex-end;
+}
+.risk-drawer {
+  background: #fff;
+  width: min(650px, 100%);
+  height: 100%;
+  overflow: auto;
+  padding: 28px;
+  box-shadow: -10px 0 40px #17233722;
+}
+.risk-drawer p {
+  overflow-wrap: anywhere;
+  line-height: 1.7;
+}
+.risk-drawer form label {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 12px 0;
+}
+.risk-preview {
+  padding: 18px;
+  margin-top: 20px;
+  background: #f1f6fc;
+  border: 1px solid #ccdced;
+  border-radius: 8px;
+}
+.lifecycle-risk fieldset {
+  border: 1px solid #e0e6ef;
+  border-radius: 8px;
+  padding: 16px;
+  margin: 16px 0;
+  min-width: 0;
+}
+.lifecycle-risk input[type="checkbox"] {
+  width: auto;
+}
+@media (max-width: 850px) {
+  .risk-cards {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .risk-form-grid,
+  .risk-filters {
+    grid-template-columns: 1fr;
+  }
+}
+.lifecycle-risk
+  button:not(.primary):not(.secondary):not(.text-button):not(.risk-card),
+.asset-lifecycle button:not(.primary) {
+  background: white;
+  border: 1px solid #d5ded7;
+  border-radius: 6px;
+  padding: 9px 14px;
+  color: #3d5147;
+}
+.risk-filters {
+  padding: 4px 20px 20px;
+}
+.risk-filters label,
+.risk-form-grid label,
+.asset-lifecycle label {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  font-size: 12px;
+  color: #4f6252;
+  min-width: 0;
+}
+.risk-filters input,
+.risk-form-grid input {
+  margin-top: 0;
+}
+.lifecycle-risk select,
+.asset-lifecycle select {
+  width: 100%;
+  border: 1px solid #d4ddce;
+  border-radius: 6px;
+  padding: 11px 12px;
+  background: #fcfdfb;
+  color: #25352b;
+}
+.asset-lifecycle fieldset {
+  border: 1px solid #e0e6ef;
+  border-radius: 8px;
+  padding: 16px;
+  margin: 16px 0;
+  min-width: 0;
+}
+.lifecycle-summary {
+  padding: 24px;
+  margin: 24px 0;
+}
+.lifecycle-summary .panel-heading {
+  padding: 0;
+  margin-bottom: 16px;
+  border: 0;
+}
+.dashboard .lifecycle-summary .risk-card {
+  padding: 20px;
+  margin: 0;
+  background: #fff;
+  color: #26344b;
+  border: 1px solid #dfe5ed;
+  border-top: 3px solid #7b8a9e;
+  border-radius: 10px;
+}
+.dashboard .lifecycle-summary .risk-card.critical {
+  border-top-color: #c93745;
+}
+.dashboard .lifecycle-summary .risk-card.warning {
+  border-top-color: #db8a1b;
+}
+.dashboard .lifecycle-summary .risk-card.reminder {
+  border-top-color: #417cbb;
+}
+.dashboard .lifecycle-summary .secondary {
+  background: #fff;
+  margin: 0;
+}
+.dashboard .lifecycle-summary .text-button {
+  background: transparent;
+  border: 0;
+  padding: 0;
+  margin: 0;
+  text-decoration: underline;
+}
+@media (max-width: 600px) {
+  .lifecycle-summary {
+    padding: 16px;
+  }
+  .lifecycle-summary .panel-heading {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 12px;
+  }
+}

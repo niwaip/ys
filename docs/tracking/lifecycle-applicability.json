@@ -1,0 +1,68 @@
+{
+  "repository": "niwaip/ys",
+  "spec": "docs/lifecycle-applicability-design.md",
+  "tickets": [
+    {
+      "id": 6579331953,
+      "number": 60,
+      "url": "https://github.com/niwaip/ys/issues/60",
+      "title": "按资产类型展示适用期限",
+      "blocked_by": [],
+      "linked": []
+    },
+    {
+      "id": 6579333315,
+      "number": 61,
+      "url": "https://github.com/niwaip/ys/issues/61",
+      "title": "展示NetBox登记平台与已确认OS",
+      "blocked_by": [
+        60
+      ],
+      "linked": [
+        60
+      ]
+    },
+    {
+      "id": 6579335842,
+      "number": 62,
+      "url": "https://github.com/niwaip/ys/issues/62",
+      "title": "关联和复用厂商生命周期资料",
+      "blocked_by": [
+        61
+      ],
+      "linked": [
+        61
+      ]
+    },
+    {
+      "id": 6579337851,
+      "number": 63,
+      "url": "https://github.com/niwaip/ys/issues/63",
+      "title": "区分标准支持与扩展支持",
+      "blocked_by": [
+        62
+      ],
+      "linked": [
+        62
+      ]
+    },
+    {
+      "id": 6579340378,
+      "number": 64,
+      "url": "https://github.com/niwaip/ys/issues/64",
+      "title": "优化工作台并完成端对端验收",
+      "blocked_by": [
+        60,
+        61,
+        62,
+        63
+      ],
+      "linked": [
+        60,
+        61,
+        62,
+        63
+      ]
+    }
+  ]
+}
