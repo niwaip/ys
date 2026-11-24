@@ -107,7 +107,7 @@ const legacyFeatures: Feature[] = [
     component: LifecyclePage,
   },
   { id: "software", label: "软件 SBOM", icon: "◇", component: SoftwarePage },
-  { id: "reports", label: "风险事实报告", icon: "▤", component: ReportsPage },
+  { id: "reports", label: "报告中心", icon: "▤", component: ReportsPage },
   {
     id: "assessments",
     label: "软件漏洞评估",

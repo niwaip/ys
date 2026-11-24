@@ -325,7 +325,11 @@ export class CollectionJobsModule {
         CollectionAccessController,
         CollectionExperienceController,
       ],
-      exports: [CollectionAccessService, CollectionJobsService],
+      exports: [
+        CollectionAccessService,
+        CollectionJobsService,
+        CollectionConfigurationService,
+      ],
       providers: [
         {
           provide: CollectionConfigurationService,

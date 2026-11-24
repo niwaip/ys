@@ -200,6 +200,10 @@ CREATE TABLE windows_snapshots(id uuid PRIMARY KEY,customer_id text NOT NULL,ass
     version: 35,
     sql: `CREATE TABLE report_tasks(id uuid PRIMARY KEY,customer_id text NOT NULL REFERENCES customers(id),idempotency_key text NOT NULL,input_hash text NOT NULL,actor_key text NOT NULL,status text NOT NULL,details jsonb NOT NULL,created_at timestamptz NOT NULL DEFAULT now(),UNIQUE(customer_id,idempotency_key)); CREATE INDEX report_tasks_customer ON report_tasks(customer_id,created_at DESC,id);`,
   },
+  {
+    version: 36,
+    sql: `CREATE TABLE report_exports(id uuid PRIMARY KEY,customer_id text NOT NULL REFERENCES customers(id),report_id uuid NOT NULL REFERENCES reports(id),revision_id uuid NOT NULL REFERENCES report_revisions(id),input_hash text NOT NULL,status text NOT NULL,details jsonb NOT NULL,created_at timestamptz NOT NULL DEFAULT now(),UNIQUE(customer_id,revision_id,input_hash)); CREATE INDEX report_exports_scope ON report_exports(customer_id,report_id,revision_id); CREATE TABLE report_export_files(export_id uuid NOT NULL REFERENCES report_exports(id),id uuid NOT NULL,content text NOT NULL,PRIMARY KEY(export_id,id));`,
+  },
 ];
 export async function openDatabase(url: string): Promise<Database> {
   let raw: Queryable & { close(): Promise<void> };

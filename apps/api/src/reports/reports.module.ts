@@ -1,3 +1,6 @@
+import { compareReports } from "./comparison";
+import { ReportPackageService, ReportPackageController } from "./packages";
+import { CollectionConfigurationService } from "../collections/configuration";
 import { ReportTaskRunner } from "./task-runner";
 import { gzip } from "node:zlib";
 import { ReportCenterService, ReportCenterController } from "./center";
@@ -116,7 +119,14 @@ export class ReportsService {
       for (const snapshot of lifecycleSnapshots)
         snapshot.items = snapshot.items.filter((item) =>
           item.kind === "host"
-            ? center.hosts.some((host) => host.assetId === item.assetId)
+            ? center.hosts.some(
+                (host) =>
+                  host.assetId === item.assetId &&
+                  String(host.attributes.product ?? "").trim() ===
+                    String(item.product ?? "").trim() &&
+                  String(host.attributes.version ?? "").trim() ===
+                    String(item.version ?? "").trim(),
+              )
             : center.objects?.some(
                 (object) =>
                   object.kind === item.kind &&
@@ -468,6 +478,8 @@ export class ReportsService {
         ? new Set(findings.map((finding) => finding.vulnerabilityId)).size
         : null;
     }
+    if (center && finalizingTask?.comparisonBase)
+      center.comparison = compareReports(facts, finalizingTask.comparisonBase);
     const reportId = randomUUID();
     const revision: ReportRevision = {
       id: randomUUID(),
@@ -565,7 +577,7 @@ export class ReportsService {
   async list(customer: string) {
     const rows = await this.db.query(
       `SELECT r.id,r.customer_id AS "customerId",r.created_at AS "createdAt",r.created_by AS "createdBy",
-       v.id AS "revisionId",v.number AS "revisionNumber",v.result->>'status' AS status,v.result->>'factHash' AS "factHash"
+       v.result#>>'{facts,center,name}' AS name,v.id AS "revisionId",v.number AS "revisionNumber",v.result->>'status' AS status,v.result->>'factHash' AS "factHash"
        FROM reports r JOIN LATERAL (SELECT id,number,result FROM report_revisions WHERE customer_id=r.customer_id AND report_id=r.id ORDER BY number DESC LIMIT 1) v ON true
        WHERE r.customer_id=$1 ORDER BY r.created_at DESC,r.id LIMIT 100`,
       [customer],
@@ -714,6 +726,7 @@ export class ReportsModule {
   static register(
     assessmentsModule: DynamicModule,
     options: {
+      collectionJobsModule?: DynamicModule;
       executor?: ReportNarrationExecutor;
       operators?: Operator[];
       timeoutMs?: number;
@@ -722,6 +735,7 @@ export class ReportsModule {
     return {
       module: ReportsModule,
       imports: [
+        ...(options.collectionJobsModule ? [options.collectionJobsModule] : []),
         LifecycleRiskModule,
         assessmentsModule,
         LifecycleModule,
@@ -732,6 +746,7 @@ export class ReportsModule {
         WindowsAssessmentsModule,
       ],
       controllers: [
+        ReportPackageController,
         ReportCenterController,
         ReportsController,
         ReportReviewController,
@@ -739,18 +754,37 @@ export class ReportsModule {
       ],
       providers: [
         {
+          provide: ReportPackageService,
+          inject: [
+            DATABASE,
+            ReportsService,
+            ReportReviewService,
+            AssessmentService,
+          ],
+          useFactory: (
+            db: Database,
+            reports: ReportsService,
+            review: ReportReviewService,
+            assessments: AssessmentService,
+          ) => new ReportPackageService(db, reports, review, assessments),
+        },
+        {
           provide: ReportTaskRunner,
           inject: [
             DATABASE,
             AssessmentService,
             WindowsAssessmentService,
             ReportsService,
+            CollectionConfigurationService,
+            ReportPackageService,
           ],
           useFactory: (
             db: Database,
             assessments: AssessmentService,
             windows: WindowsAssessmentService,
             reports: ReportsService,
+            configurations: CollectionConfigurationService,
+            packages: ReportPackageService,
           ) =>
             new ReportTaskRunner(
               db,
@@ -758,6 +792,8 @@ export class ReportsModule {
               windows,
               reports,
               options.operators ?? [],
+              configurations,
+              packages,
             ),
         },
         {

@@ -1,6 +1,6 @@
 import { afterEach, expect, test } from "vitest";
 import request from "supertest";
-import { mkdtemp, rm, readFile } from "node:fs/promises";
+import { mkdtemp, rm, readFile, mkdir, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createApp } from "../../apps/api/src/app";
@@ -52,6 +52,7 @@ async function linuxSnapshot(
   assetId: string,
   name: string,
   version: string,
+  confirm = true,
 ) {
   const data = {
     schemaVersion: "ys-host/1",
@@ -95,6 +96,7 @@ async function linuxSnapshot(
       .send({ assetId, note: "report fixture", data })
       .expect(201)
   ).body;
+  if (!confirm) return snapshot;
   const baseline = (
     await http
       .get(`/api/customers/a/assets/${assetId}/baseline`)
@@ -1025,4 +1027,531 @@ test("新评估任务持久绑定固定输入，失败保留缺口且只重试�
     .set(auth)
     .send({ itemIds: [complete.items[0].id] })
     .expect(409);
+});
+
+test("报告重新采集复用配置，上传绑定同一目标并等待既有资料确认", async () => {
+  directory = await mkdtemp(join(tmpdir(), "ys-report-collect-"));
+  app = await createApp(
+    { ...config, databaseUrl: `pglite://${directory}` },
+    [],
+    {
+      trivyExecutor: {
+        execute: async () => {
+          throw new Error("fixture failure");
+        },
+      },
+    },
+  );
+  const http = request(app.getHttpServer());
+  const { asset } = await linuxHost(http, "collect-host");
+  await http
+    .post(`/api/customers/a/collections/configurations/${asset.id}`)
+    .set(auth)
+    .send({
+      category: "server",
+      platform: "linux",
+      items: [{ content: "basic", enabled: true, method: "manual" }],
+    })
+    .expect(201);
+  const task = (
+    await http
+      .post("/api/customers/a/report-center/tasks")
+      .set(auth)
+      .send({
+        name: "重新采集报告",
+        scope: { kind: "selected", assetIds: [asset.id] },
+        mode: "collect",
+        idempotencyKey: "collect",
+      })
+      .expect(202)
+  ).body;
+  const url = `/api/customers/a/report-center/tasks/${task.id}`;
+  await expect
+    .poll(async () => {
+      const body = (await http.get(url).set(auth)).body;
+      return body.status === "waiting" ? "waiting" : JSON.stringify(body.items);
+    })
+    .toBe("waiting");
+  const waiting = (await http.get(url).set(auth)).body;
+  expect(waiting.items[0].status).toBe("waiting_upload");
+  const runId = waiting.items[0].collectionRunId;
+  const snapshot = await linuxSnapshot(
+    http,
+    asset.id,
+    "collect-host",
+    "2",
+    false,
+  );
+  await http
+    .post(`/api/customers/a/collections/configuration-runs/${runId}/result`)
+    .set(auth)
+    .send({ content: "basic", snapshotId: snapshot.id })
+    .expect(201);
+  await http.post(`${url}/resume`).set(auth).send({}).expect(201);
+  await expect
+    .poll(async () => (await http.get(url).set(auth)).body.items[0].status)
+    .toBe("waiting_confirmation");
+  const baseline = (
+    await http.get(`/api/customers/a/assets/${asset.id}/baseline`).set(auth)
+  ).body;
+  await http
+    .post(`/api/customers/a/assets/${asset.id}/baseline/confirm`)
+    .set(auth)
+    .send({
+      snapshotId: snapshot.id,
+      expectedBaselineId: baseline.current.id,
+      idempotencyKey: "collect-adopt",
+      sections: ["os", "packages"],
+      writeMasterData: false,
+    })
+    .expect(201);
+  await http.post(`${url}/resume`).set(auth).send({}).expect(201);
+  await expect
+    .poll(async () => (await http.get(url).set(auth)).body.status)
+    .toBe("needs_attention");
+  const failed = (await http.get(url).set(auth)).body;
+  expect(failed.items[0].snapshotId).toBe(snapshot.id);
+  expect(failed.items[0].collectionRunId).toBe(runId);
+  await http.post(`${url}/finish`).set(auth).send({}).expect(201);
+});
+
+test("报告包固定修订并持久保存完整 XLSX 与 HTML，正式文件不能绕过交付", async () => {
+  directory = await mkdtemp(join(tmpdir(), "ys-report-package-"));
+  app = await createApp({ ...config, databaseUrl: `pglite://${directory}` });
+  const http = request(app.getHttpServer());
+  const { asset } = await linuxHost(http, "package-host");
+  const task = (
+    await http
+      .post("/api/customers/a/report-center/tasks")
+      .set(auth)
+      .send({
+        name: "报告包",
+        scope: { kind: "selected", assetIds: [asset.id] },
+        mode: "existing",
+        idempotencyKey: "package",
+      })
+      .expect(202)
+  ).body;
+  const report = (
+    await http.get(`/api/customers/a/reports/${task.reportId}`).set(auth)
+  ).body;
+  const base = `/api/customers/a/reports/${report.id}/revisions/${report.revision.id}/packages`;
+  await http.post(base).set(auth).send({ audience: "official" }).expect(409);
+  const bundle = (
+    await http.post(base).set(auth).send({ audience: "draft" }).expect(202)
+  ).body;
+  await expect
+    .poll(
+      async () =>
+        (await http.get(`${base}/${bundle.id}`).set(auth)).body.status,
+      { timeout: 20000 },
+    )
+    .toMatch(/complete|partial/);
+  const ready = (await http.get(`${base}/${bundle.id}`).set(auth).expect(200))
+    .body;
+  expect(ready.files.map((f: { format: string }) => f.format).sort()).toEqual([
+    "html",
+    "pdf",
+    "xlsx",
+  ]);
+  expect(
+    ready.files.find((f: { format: string }) => f.format === "xlsx").status,
+  ).toBe("ready");
+  expect(
+    ready.files.find((f: { format: string }) => f.format === "html").status,
+  ).toBe("ready");
+  if (process.env.REPORT_PDF_CHANNEL)
+    expect(
+      ready.files.find((f: { format: string }) => f.format === "pdf").status,
+    ).toBe("ready");
+  const xlsxFile = ready.files.find(
+    (f: { format: string }) => f.format === "xlsx",
+  );
+  const download = await http
+    .get(`${base}/${bundle.id}/files/${xlsxFile.id}`)
+    .set(auth)
+    .buffer(true)
+    .parse((res, done) => {
+      const chunks: Buffer[] = [];
+      res.on("data", (chunk) => chunks.push(chunk));
+      res.on("end", () => done(null, Buffer.concat(chunks)));
+    })
+    .expect(200);
+  const ExcelJS = (await import("exceljs")).default;
+  const book = new ExcelJS.Workbook();
+  await book.xlsx.load(download.body);
+  expect(book.getWorksheet("说明")!.getCell("B3").value).toBe("草稿 · 未复核");
+  expect(book.getWorksheet("服务器")!.getCell("B2").value).toBe("package-host");
+  expect(book.getWorksheet("漏洞明细")!.rowCount).toBe(1);
+  await http
+    .get(
+      `/api/customers/b/reports/${report.id}/revisions/${report.revision.id}/packages/${bundle.id}`,
+    )
+    .set(auth)
+    .expect(404);
+  const archive = await http
+    .get(`${base}/${bundle.id}/download?partial=true`)
+    .set(auth)
+    .buffer(true)
+    .parse((res, done) => {
+      const chunks: Buffer[] = [];
+      res.on("data", (chunk) => chunks.push(chunk));
+      res.on("end", () => done(null, Buffer.concat(chunks)));
+    })
+    .expect(200);
+  const { unzipSync, strFromU8 } = await import("fflate");
+  const files = unzipSync(archive.body);
+  const manifest = JSON.parse(strFromU8(files["manifest.json"]));
+  expect(manifest.revisionId).toBe(report.revision.id);
+  expect(manifest.factHash).toBe(report.revision.factHash);
+  expect(
+    manifest.files.find((f: { format: string }) => f.format === "xlsx").sha256,
+  ).toBe(xlsxFile.sha256);
+});
+
+test("显式比较冻结历史修订，范围缩减保留说明且不宣称修复", async () => {
+  directory = await mkdtemp(join(tmpdir(), "ys-report-compare-"));
+  app = await createApp({ ...config, databaseUrl: `pglite://${directory}` });
+  const http = request(app.getHttpServer());
+  const first = await linuxHost(http, "compare-first"),
+    second = await linuxHost(http, "compare-second");
+  const create = async (ids: string[], key: string, extra = {}) =>
+    (
+      await http
+        .post("/api/customers/a/report-center/tasks")
+        .set(auth)
+        .send({
+          name: key,
+          scope: { kind: "selected", assetIds: ids },
+          mode: "existing",
+          idempotencyKey: key,
+          ...extra,
+        })
+        .expect(202)
+    ).body;
+  const before = await create([first.asset.id, second.asset.id], "before");
+  const after = await create([first.asset.id], "after", {
+    comparisonReportId: before.reportId,
+    sourceReportId: before.reportId,
+  });
+  const report = (
+    await http.get(`/api/customers/a/reports/${after.reportId}`).set(auth)
+  ).body;
+  expect(report.revision.facts.center.sourceReport.reportId).toBe(
+    before.reportId,
+  );
+  expect(report.revision.facts.center.comparison.removedHostIds).toEqual([
+    second.asset.id,
+  ]);
+  expect(report.revision.facts.center.comparison.notObserved).toEqual([]);
+  const html = (
+    await http
+      .get(`/api/customers/a/reports/${after.reportId}/preview`)
+      .set(auth)
+  ).text;
+  expect(html).toContain("历史对比");
+  expect(html).toContain("未再观察到不等于已修复");
+  await http
+    .post("/api/customers/b/report-center/tasks")
+    .set(auth)
+    .send({
+      name: "cross",
+      scope: { kind: "selected", assetIds: [first.asset.id] },
+      mode: "existing",
+      comparisonReportId: before.reportId,
+      idempotencyKey: "cross",
+    })
+    .expect(404);
+});
+
+test(
+  "两万条发现完整导出、证据原字节与单台分报告使用同一修订",
+  { timeout: 60000 },
+  async () => {
+    directory = await mkdtemp(join(tmpdir(), "ys-report-large-"));
+    const raw = JSON.stringify({
+      SchemaVersion: 2,
+      Metadata: { OS: { Family: "ubuntu", Name: "24.04" } },
+      Results: [
+        {
+          Target: "ubuntu",
+          Class: "os-pkgs",
+          Type: "ubuntu",
+          Packages: [{ Name: "libssl3", Version: "1", Arch: "amd64" }],
+          Vulnerabilities: Array.from({ length: 20000 }, (_, i) => ({
+            VulnerabilityID: `CVE-2026-${String(10000 + i)}`,
+            PkgName: "libssl3",
+            InstalledVersion: "1",
+            Severity: i % 2 ? "HIGH" : "LOW",
+            FixedVersion: "1.1",
+            PrimaryURL: "https://example.invalid/advisory",
+          })),
+        },
+      ],
+    });
+    app = await createApp(
+      { ...config, databaseUrl: `pglite://${directory}` },
+      [],
+      {
+        trivyExecutor: {
+          execute: async () => ({
+            status: "succeeded",
+            toolVersion: "fixture",
+            argv: ["fixture"],
+            startedAt: new Date().toISOString(),
+            finishedAt: new Date().toISOString(),
+            exitCode: 0,
+            signal: null,
+            stderr: "",
+            databaseBefore: null,
+            databaseAfter: null,
+            rawReport: raw,
+          }),
+        },
+      },
+    );
+    const http = request(app.getHttpServer());
+    const { asset, snapshot } = await linuxHost(http, "=1+1");
+    const job = (
+      await http
+        .post("/api/customers/a/assessments")
+        .set(auth)
+        .send({
+          assetId: asset.id,
+          snapshotId: snapshot.id,
+          idempotencyKey: "large",
+        })
+        .expect(202)
+    ).body;
+    await expect
+      .poll(
+        async () =>
+          (
+            await http
+              .get(`/api/customers/a/assessments/${job.id}?findingsOffset=0`)
+              .set(auth)
+          ).body.status,
+        { timeout: 10000 },
+      )
+      .toBe("succeeded");
+    const task = (
+      await http
+        .post("/api/customers/a/report-center/tasks")
+        .set(auth)
+        .send({
+          name: "大规模报告",
+          scope: { kind: "selected", assetIds: [asset.id] },
+          mode: "existing",
+          idempotencyKey: "large-report",
+        })
+        .expect(202)
+    ).body;
+    const report = (
+      await http.get(`/api/customers/a/reports/${task.reportId}`).set(auth)
+    ).body;
+    expect(report.revision.facts.statistics.findingInstances).toBe(20000);
+    const base = `/api/customers/a/reports/${report.id}/revisions/${report.revision.id}/packages`;
+    const bundle = (
+      await http
+        .post(base)
+        .set(auth)
+        .send({
+          audience: "draft",
+          perHostIds: [asset.id],
+          evidenceAssessmentIds: [job.id],
+        })
+        .expect(202)
+    ).body;
+    await expect
+      .poll(
+        async () =>
+          (await http.get(`${base}/${bundle.id}`).set(auth)).body.status,
+        { timeout: 45000 },
+      )
+      .toMatch(/complete|partial/);
+    const ready = (await http.get(`${base}/${bundle.id}`).set(auth)).body;
+    const get = async (id: string) =>
+      (
+        await http
+          .get(`${base}/${bundle.id}/files/${id}`)
+          .set(auth)
+          .buffer(true)
+          .parse((res, done) => {
+            const chunks: Buffer[] = [];
+            res.on("data", (chunk) => chunks.push(chunk));
+            res.on("end", () => done(null, Buffer.concat(chunks)));
+          })
+          .expect(200)
+      ).body as Buffer;
+    const excelFile = ready.files.find(
+      (f: { format: string }) => f.format === "xlsx",
+    );
+    const bytes = await get(excelFile.id);
+    const ExcelJS = (await import("exceljs")).default;
+    const book = new ExcelJS.Workbook();
+    await book.xlsx.load(bytes as never);
+    expect(book.getWorksheet("漏洞明细")!.rowCount).toBe(20001);
+    expect(book.getWorksheet("漏洞明细")!.getCell("C20001").value).toBe(
+      "CVE-2026-29999",
+    );
+    expect(book.getWorksheet("服务器")!.getCell("B2").value).toBe("=1+1");
+    expect(book.getWorksheet("整改建议")!.rowCount).toBe(20001);
+    const evidence = ready.files.find(
+      (f: { format: string }) => f.format === "evidence",
+    );
+    expect(evidence.status).toBe("ready");
+    expect((await get(evidence.id)).toString("utf8")).toBe(raw);
+    if (process.env.REPORT_PDF_CHANNEL) {
+      expect(ready.status).toBe("complete");
+      const pdfFile = ready.files.find(
+        (f: { format: string; hostId?: string }) =>
+          f.format === "pdf" && !f.hostId,
+      );
+      const pdfBytes = await get(pdfFile.id);
+      expect(pdfBytes.subarray(0, 4).toString()).toBe("%PDF");
+      if (process.env.REPORT_QA_OUTPUT) {
+        await mkdir(process.env.REPORT_QA_OUTPUT, { recursive: true });
+        await writeFile(
+          join(process.env.REPORT_QA_OUTPUT, "large-summary.pdf"),
+          pdfBytes,
+        );
+        await writeFile(
+          join(process.env.REPORT_QA_OUTPUT, "large.xlsx"),
+          bytes,
+        );
+      }
+    }
+  },
+);
+
+test("取消停止后续服务器派发，执行中项不作为已固定扫描结果", async () => {
+  directory = await mkdtemp(join(tmpdir(), "ys-report-cancel-"));
+  let calls = 0;
+  app = await createApp(
+    { ...config, databaseUrl: `pglite://${directory}` },
+    [],
+    {
+      trivyExecutor: {
+        execute: async (_input, signal) => {
+          calls++;
+          await new Promise<void>((_, reject) =>
+            signal.addEventListener(
+              "abort",
+              () => reject(new Error("fixture aborted")),
+              { once: true },
+            ),
+          );
+          throw new Error("unreachable");
+        },
+      },
+    },
+  );
+  const http = request(app.getHttpServer());
+  const a = await linuxHost(http, "cancel-a"),
+    b = await linuxHost(http, "cancel-b");
+  const input = {
+    name: "取消任务",
+    scope: { kind: "selected", assetIds: [a.asset.id, b.asset.id] },
+    mode: "assess",
+    idempotencyKey: "cancel",
+  };
+  const check = (
+    await http
+      .post("/api/customers/a/report-center/preflight")
+      .set(auth)
+      .send(input)
+      .expect(201)
+  ).body;
+  expect(check.total).toBe(2);
+  expect(calls).toBe(0);
+  const task = (
+    await http
+      .post("/api/customers/a/report-center/tasks")
+      .set(auth)
+      .send(input)
+      .expect(202)
+  ).body;
+  const url = `/api/customers/a/report-center/tasks/${task.id}`;
+  await expect
+    .poll(
+      async () => (await http.get(url).set(auth)).body.items[0].assessmentId,
+    )
+    .toBeTruthy();
+  await http.post(`${url}/cancel`).set(auth).send({}).expect(201);
+  await expect
+    .poll(
+      async () => (await http.post(`${url}/finish`).set(auth).send({})).status,
+    )
+    .toBe(201);
+  expect(calls).toBe(1);
+  const done = (await http.get(url).set(auth)).body;
+  const report = (
+    await http.get(`/api/customers/a/reports/${done.reportId}`).set(auth)
+  ).body;
+  expect(report.revision.facts.center.hosts).toHaveLength(2);
+  expect(report.revision.facts.assessmentSnapshots).toHaveLength(0);
+  expect(report.revision.facts.statistics.findingInstances).toBeNull();
+});
+
+test("服务重启保留任务且不自动重放扫描，显式重试才提交新评估", async () => {
+  directory = await mkdtemp(join(tmpdir(), "ys-report-restart-"));
+  let calls = 0;
+  const options = { ...config, databaseUrl: `pglite://${directory}` };
+  app = await createApp(options, [], {
+    trivyExecutor: {
+      execute: async (_input, signal) => {
+        calls++;
+        await new Promise<void>((_, reject) =>
+          signal.addEventListener(
+            "abort",
+            () => reject(new Error("fixture aborted")),
+            { once: true },
+          ),
+        );
+        throw new Error("unreachable");
+      },
+    },
+  });
+  let http = request(app.getHttpServer());
+  const { asset } = await linuxHost(http, "restart-host");
+  const task = (
+    await http
+      .post("/api/customers/a/report-center/tasks")
+      .set(auth)
+      .send({
+        name: "重启任务",
+        scope: { kind: "selected", assetIds: [asset.id] },
+        mode: "assess",
+        idempotencyKey: "restart",
+      })
+      .expect(202)
+  ).body;
+  const url = `/api/customers/a/report-center/tasks/${task.id}`;
+  await expect
+    .poll(
+      async () => (await http.get(url).set(auth)).body.items[0].assessmentId,
+    )
+    .toBeTruthy();
+  await app.close();
+  app = await createApp(options, [], {
+    trivyExecutor: {
+      execute: async () => {
+        calls++;
+        throw new Error("fixture retry");
+      },
+    },
+  });
+  http = request(app.getHttpServer());
+  const reopened = (await http.get(url).set(auth).expect(200)).body;
+  expect(reopened.status).toBe("interrupted");
+  expect(calls).toBe(1);
+  await http
+    .post(`${url}/retry`)
+    .set(auth)
+    .send({ itemIds: [reopened.items[0].id] })
+    .expect(201);
+  await expect
+    .poll(async () => (await http.get(url).set(auth)).body.status)
+    .toBe("needs_attention");
+  expect(calls).toBe(2);
 });

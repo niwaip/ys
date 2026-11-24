@@ -1,3 +1,8 @@
+import { requestId } from "../../request-id";
+import type {
+  ReportSummary,
+  Report,
+} from "../../../../../packages/contracts/reports";
 import { useEffect, useRef, useState } from "react";
 import { api, ApiError } from "../../api";
 import type { FeatureProps } from "../../features";
@@ -16,7 +21,13 @@ export function ReportCenterPanel({
   token,
   onUnauthorized,
   onOpen,
-}: FeatureProps & { onOpen: (id: string) => Promise<void> }) {
+  history = [],
+  sourceReport,
+}: FeatureProps & {
+  onOpen: (id: string) => Promise<void>;
+  history?: ReportSummary[];
+  sourceReport?: Report;
+}) {
   const [hosts, setHosts] = useState<HostOption[]>([]),
     [selected, setSelected] = useState(""),
     [name, setName] = useState("服务器风险报告"),
@@ -27,6 +38,25 @@ export function ReportCenterPanel({
     [choices, setChoices] = useState<
       { id: string; status: string; versionId: string; createdAt: string }[]
     >([]);
+  const [step, setStep] = useState(1),
+    [preflight, setPreflight] = useState<{
+      checkedAt: string;
+      hosts: ReportTask["hosts"];
+      total: number;
+      available: number;
+    }>();
+  const [comparisonReportId, setComparison] = useState(""),
+    [useSource, setUseSource] = useState(false);
+  const [output, setOutput] = useState<NonNullable<ReportTaskInput["output"]>>({
+    pdfMode: "summary",
+    perHost: false,
+    evidence: false,
+  });
+  const submission = useRef<{ fingerprint: string; key: string } | undefined>(
+    undefined,
+  );
+  const [windowsRuleImportId, setWindowsRule] = useState("");
+  const [rules, setRules] = useState<{ id: string; fileName: string }[]>([]);
   const [mode, setMode] = useState<ReportTaskInput["mode"]>("existing");
   const [presentation, setPresentation] = useState(defaultPresentation);
   const controller = useRef(new AbortController());
@@ -46,6 +76,15 @@ export function ReportCenterPanel({
   }
   useEffect(() => {
     controller.current = new AbortController();
+    setHosts([]);
+    setTasks([]);
+    setSelected("");
+    setMultiIds([]);
+    setComparison("");
+    setUseSource(false);
+    setPreflight(undefined);
+    setStep(1);
+    submission.current = undefined;
     async function load() {
       const results = await Promise.all(
         ["server", "vm"].map(async (category) => {
@@ -64,6 +103,13 @@ export function ReportCenterPanel({
         }),
       );
       setHosts(results.flat());
+      setRules(
+        (
+          await call<{ items: typeof rules }>(
+            `/customers/${customerId}/windows/rules`,
+          )
+        ).items,
+      );
       await refresh();
     }
     load().catch(fail);
@@ -95,7 +141,7 @@ export function ReportCenterPanel({
   }, [hasActive, customerId, token]);
   async function taskAction(
     task: ReportTask,
-    action: "retry" | "cancel" | "finish",
+    action: "retry" | "cancel" | "finish" | "resume",
   ) {
     setBusy(true);
     try {
@@ -122,32 +168,69 @@ export function ReportCenterPanel({
       setBusy(false);
     }
   }
+  function input(): ReportTaskInput {
+    const config = {
+      name,
+      scope:
+        scopeMode === "tenant"
+          ? { kind: "tenant" as const }
+          : {
+              kind: "selected" as const,
+              assetIds: scopeMode === "multiple" ? multiIds : [selected],
+            },
+      mode,
+      presentation,
+      freshnessDays,
+      overrides:
+        choice && scopeMode === "single" && mode === "existing"
+          ? [{ objectId: selected, assessmentId: choice }]
+          : [],
+      output,
+      ...(comparisonReportId ? { comparisonReportId } : {}),
+      ...(useSource && sourceReport ? { sourceReportId: sourceReport.id } : {}),
+      ...(windowsRuleImportId ? { windowsRuleImportId } : {}),
+    };
+    const fingerprint = JSON.stringify(config);
+    if (submission.current?.fingerprint !== fingerprint)
+      submission.current = { fingerprint, key: requestId() };
+    return { ...config, idempotencyKey: submission.current!.key };
+  }
+  const validScope =
+    !!name.trim() &&
+    (scopeMode === "tenant" ||
+      (scopeMode === "single" ? !!selected : multiIds.length > 0)) &&
+    Number.isInteger(freshnessDays) &&
+    freshnessDays >= 1 &&
+    freshnessDays <= 3650;
+  async function next() {
+    if (step === 2) {
+      setBusy(true);
+      setError("");
+      try {
+        setPreflight(
+          await call(`${base}/preflight`, {
+            method: "POST",
+            body: JSON.stringify(input()),
+          }),
+        );
+        setStep(3);
+      } catch (e) {
+        fail(e);
+      } finally {
+        setBusy(false);
+      }
+    } else setStep(step + 1);
+  }
   async function create() {
     setBusy(true);
     setError("");
     try {
       const task = await call<ReportTask>(`${base}/tasks`, {
         method: "POST",
-        body: JSON.stringify({
-          name,
-          scope:
-            scopeMode === "tenant"
-              ? { kind: "tenant" }
-              : {
-                  kind: "selected",
-                  assetIds: scopeMode === "multiple" ? multiIds : [selected],
-                },
-          mode,
-          presentation,
-          freshnessDays,
-          overrides:
-            choice && scopeMode === "single"
-              ? [{ objectId: selected, assessmentId: choice }]
-              : [],
-          idempotencyKey: crypto.randomUUID(),
-        }),
+        body: JSON.stringify(input()),
       });
       await refresh();
+      submission.current = undefined;
       if (task.reportId) await onOpen(task.reportId);
     } catch (e) {
       fail(e);
@@ -161,142 +244,287 @@ export function ReportCenterPanel({
       <p>
         选择服务器，核对已有评估；未取得结果的范围仍保留，不能解释为零风险。
       </p>
-      <label className="block">
-        报告名称
-        <input
-          value={name}
-          onChange={(e) => setName(e.target.value)}
-          maxLength={160}
-        />
-      </label>
-      <label className="block">
-        报告范围
-        <select
-          aria-label="报告范围"
-          value={scopeMode}
-          onChange={(e) => setScopeMode(e.target.value)}
-        >
-          <option value="single">单台服务器</option>
-          <option value="multiple">选中多台服务器</option>
-          <option value="tenant">租户全部服务器</option>
-        </select>
-      </label>
-      <label className="block">
-        新鲜度提醒天数
-        <input
-          aria-label="新鲜度提醒天数"
-          type="number"
-          min={1}
-          max={3650}
-          value={freshnessDays}
-          onChange={(e) => setFreshnessDays(Number(e.target.value))}
-        />
-      </label>
-      {scopeMode === "single" && (
+      <ol aria-label="报告生成步骤">
+        {["范围与名称", "结果来源", "覆盖检查", "章节与附件", "确认生成"].map(
+          (label, index) => (
+            <li
+              key={label}
+              aria-current={step === index + 1 ? "step" : undefined}
+            >
+              {index + 1}. {label}
+            </li>
+          ),
+        )}
+      </ol>
+      <div hidden={step !== 1}>
         <label className="block">
-          报告服务器
+          报告名称
+          <input
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            maxLength={160}
+          />
+        </label>
+        <label className="block">
+          报告范围
           <select
-            aria-label="报告服务器"
-            value={selected}
-            onChange={(e) => setSelected(e.target.value)}
+            aria-label="报告范围"
+            value={scopeMode}
+            onChange={(e) => setScopeMode(e.target.value)}
           >
-            <option value="">请选择服务器</option>
-            {hosts.map((host) => (
-              <option key={host.id} value={host.id}>
-                {host.name}
+            <option value="single">单台服务器</option>
+            <option value="multiple">选中多台服务器</option>
+            <option value="tenant">租户全部服务器</option>
+          </select>
+        </label>
+        <label className="block">
+          新鲜度提醒天数
+          <input
+            aria-label="新鲜度提醒天数"
+            type="number"
+            min={1}
+            max={3650}
+            value={freshnessDays}
+            onChange={(e) => setFreshnessDays(Number(e.target.value))}
+          />
+        </label>
+        {scopeMode === "single" && (
+          <label className="block">
+            报告服务器
+            <select
+              aria-label="报告服务器"
+              value={selected}
+              onChange={(e) => setSelected(e.target.value)}
+            >
+              <option value="">请选择服务器</option>
+              {hosts.map((host) => (
+                <option key={host.id} value={host.id}>
+                  {host.name}
+                </option>
+              ))}
+            </select>
+          </label>
+        )}
+        {scopeMode === "multiple" && (
+          <label className="block">
+            报告服务器（多选）
+            <select
+              aria-label="报告服务器（多选）"
+              multiple
+              size={6}
+              value={multiIds}
+              onChange={(e) =>
+                setMultiIds(
+                  Array.from(e.currentTarget.selectedOptions).map(
+                    (option) => option.value,
+                  ),
+                )
+              }
+            >
+              {hosts.map((host) => (
+                <option key={host.id} value={host.id}>
+                  {host.name}
+                </option>
+              ))}
+            </select>
+          </label>
+        )}
+        {scopeMode === "tenant" && (
+          <p>
+            将固定当前租户全部在管物理服务器和虚拟机；没有评估结果的主机仍保留在报告中。
+          </p>
+        )}
+      </div>
+      <div hidden={step !== 2}>
+        {selected && scopeMode === "single" && mode === "existing" && (
+          <label className="block">
+            报告评估批次
+            <select
+              aria-label="报告评估批次"
+              value={choice}
+              onChange={(e) => setChoice(e.target.value)}
+            >
+              <option value="">自动匹配当前资料版本</option>
+              {choices.map((item) => (
+                <option
+                  key={item.id}
+                  value={item.id}
+                  disabled={
+                    item.status === "queued" || item.status === "running"
+                  }
+                >
+                  {new Date(item.createdAt).toLocaleString()} · {item.status} ·
+                  版本 {item.versionId.slice(0, 8)}
+                </option>
+              ))}
+            </select>
+          </label>
+        )}
+        <label>
+          结果来源
+          <select
+            aria-label="报告结果来源"
+            value={mode}
+            onChange={(e) => setMode(e.target.value as ReportTaskInput["mode"])}
+          >
+            <option value="existing">使用已有扫描结果</option>
+            <option value="assess">基于已确认资料重新评估</option>
+            <option value="collect">重新采集、确认后评估</option>
+            <option value="incremental">仅补扫缺失或过期评估</option>
+          </select>
+        </label>
+        {mode !== "existing" && (
+          <p>
+            使用固定的已确认资料；不隐式重新采集。未接入的平台或不完整资料会保留缺口；任务在后台执行，可刷新后查看。
+          </p>
+        )}
+        {mode !== "existing" && (
+          <label>
+            Windows 离线规则
+            <select
+              aria-label="Windows 离线规则"
+              value={windowsRuleImportId}
+              onChange={(e) => setWindowsRule(e.target.value)}
+            >
+              <option value="">未选择（Windows 会披露缺口）</option>
+              {rules.map((rule) => (
+                <option key={rule.id} value={rule.id}>
+                  {rule.fileName}
+                </option>
+              ))}
+            </select>
+          </label>
+        )}
+      </div>
+      <div hidden={step !== 3}>
+        <h3>范围与覆盖预检</h3>
+        {preflight && (
+          <>
+            <p>
+              当前预检 {preflight.total} 台，可用结果 {preflight.available}{" "}
+              台，待补资料或未评估 {preflight.total - preflight.available}{" "}
+              台。预检时间 {new Date(preflight.checkedAt).toLocaleString()}
+              ；任务创建时固定实际范围。
+            </p>
+            <ul>
+              {preflight.hosts.map((host) => (
+                <li key={host.assetId}>
+                  {host.name} ·{" "}
+                  {host.status === "available" ? "有可用结果" : "未评估"} · 采集
+                  {host.freshness.collection} / 评估{host.freshness.assessment}{" "}
+                  {host.issues.join("；")}
+                </li>
+              ))}
+            </ul>
+          </>
+        )}
+      </div>
+      <div hidden={step !== 4}>
+        <ReportPresentationFields
+          value={presentation}
+          onChange={setPresentation}
+          disabled={busy}
+        />
+        <label>
+          历史比较基准
+          <select
+            aria-label="历史比较基准"
+            value={comparisonReportId}
+            onChange={(e) => setComparison(e.target.value)}
+          >
+            <option value="">不启用历史比较</option>
+            {history.map((report) => (
+              <option key={report.id} value={report.id}>
+                {report.name ?? "历史报告"} ·{" "}
+                {new Date(report.createdAt).toLocaleString()}
               </option>
             ))}
           </select>
         </label>
-      )}
-      {scopeMode === "multiple" && (
-        <label className="block">
-          报告服务器（多选）
+        {sourceReport && (
+          <label>
+            <input
+              type="checkbox"
+              checked={useSource}
+              onChange={(e) => setUseSource(e.target.checked)}
+            />
+            关联当前查看的报告作为来源
+          </label>
+        )}
+        <label>
+          PDF 明细模式
           <select
-            aria-label="报告服务器（多选）"
-            multiple
-            size={6}
-            value={multiIds}
+            aria-label="新报告 PDF 明细模式"
+            value={output.pdfMode}
             onChange={(e) =>
-              setMultiIds(
-                Array.from(e.currentTarget.selectedOptions).map(
-                  (option) => option.value,
-                ),
-              )
+              setOutput({
+                ...output,
+                pdfMode: e.target.value as "summary" | "full",
+              })
             }
           >
-            {hosts.map((host) => (
-              <option key={host.id} value={host.id}>
-                {host.name}
-              </option>
-            ))}
+            <option value="summary">摘要（每评估前 20 条）</option>
+            <option value="full">完整漏洞明细</option>
           </select>
         </label>
-      )}
-      {scopeMode === "tenant" && (
+        <label>
+          <input
+            type="checkbox"
+            checked={output.perHost}
+            onChange={(e) =>
+              setOutput({ ...output, perHost: e.target.checked })
+            }
+          />
+          附逐台服务器 PDF
+        </label>
+        <label>
+          <input
+            type="checkbox"
+            checked={output.evidence}
+            onChange={(e) =>
+              setOutput({ ...output, evidence: e.target.checked })
+            }
+          />
+          附原始扫描证据
+        </label>
         <p>
-          将固定当前租户全部在管物理服务器和虚拟机；没有评估结果的主机仍保留在报告中。
+          默认生成 PDF、离线 HTML、完整 XLSX
+          和清单；所选附件失败会标为包不完整，可以单独重试或调整附件选择重新生成。
         </p>
-      )}
-      {selected && scopeMode === "single" && (
-        <label className="block">
-          报告评估批次
-          <select
-            aria-label="报告评估批次"
-            value={choice}
-            onChange={(e) => setChoice(e.target.value)}
-          >
-            <option value="">自动匹配当前资料版本</option>
-            {choices.map((item) => (
-              <option
-                key={item.id}
-                value={item.id}
-                disabled={item.status === "queued" || item.status === "running"}
-              >
-                {new Date(item.createdAt).toLocaleString()} · {item.status} ·
-                版本 {item.versionId.slice(0, 8)}
-              </option>
-            ))}
-          </select>
-        </label>
-      )}
-      <label>
-        结果来源
-        <select
-          aria-label="报告结果来源"
-          value={mode}
-          onChange={(e) => setMode(e.target.value as ReportTaskInput["mode"])}
+      </div>
+      <div hidden={step !== 5}>
+        <h3>确认生成</h3>
+        <p>
+          {name} ·{" "}
+          {scopeMode === "tenant"
+            ? "租户全部服务器"
+            : scopeMode === "single"
+              ? "单台服务器"
+              : `${multiIds.length} 台服务器`}{" "}
+          · {mode === "existing" ? "已有结果" : "后台扫描任务"} ·{" "}
+          {output.pdfMode === "summary" ? "摘要 PDF" : "完整 PDF"}
+          、HTML、XLSX；草稿需内部复核后正式交付。
+        </p>
+        <button
+          className="primary"
+          disabled={busy || !validScope || !preflight}
+          onClick={create}
         >
-          <option value="existing">使用已有扫描结果</option>
-          <option value="assess">基于已确认资料重新评估</option>
-          <option value="incremental">仅补扫缺失或过期评估</option>
-        </select>
-      </label>
-      {mode !== "existing" && (
-        <p>
-          使用固定的已确认资料；不隐式重新采集。未接入的平台或不完整资料会保留缺口；任务在后台执行，可刷新后查看。
-        </p>
-      )}
-      <ReportPresentationFields
-        value={presentation}
-        onChange={setPresentation}
-        disabled={busy}
-      />
-      <button
-        className="primary"
-        disabled={
-          busy ||
-          (scopeMode === "single" && !selected) ||
-          (scopeMode === "multiple" && !multiIds.length) ||
-          !name.trim() ||
-          !Number.isInteger(freshnessDays) ||
-          freshnessDays < 1 ||
-          freshnessDays > 3650
-        }
-        onClick={create}
-      >
-        {mode === "existing" ? "使用已有结果生成报告" : "提交扫描报告任务"}
-      </button>
+          {mode === "existing" ? "使用已有结果生成报告" : "提交扫描报告任务"}
+        </button>
+      </div>
+      <p>
+        {step > 1 && (
+          <button disabled={busy} onClick={() => setStep(step - 1)}>
+            上一步
+          </button>
+        )}{" "}
+        {step < 5 && (
+          <button disabled={busy || !validScope} onClick={next}>
+            下一步
+          </button>
+        )}
+      </p>
       {error && (
         <p className="error" role="alert">
           {error}
@@ -319,6 +547,11 @@ export function ReportCenterPanel({
               </button>
             )}
           </p>
+          {task.status === "waiting" && (
+            <button disabled={busy} onClick={() => taskAction(task, "resume")}>
+              已上传或确认，继续任务
+            </button>
+          )}
           {task.error && <p role="status">{task.error}</p>}
           {task.items && (
             <details>
@@ -335,17 +568,22 @@ export function ReportCenterPanel({
                 {task.items.map((item) => (
                   <li key={item.id}>
                     {item.name} · {item.kind} · {item.status} · 输入{" "}
-                    {item.snapshotId ?? "未知"} · {item.error}
+                    {item.snapshotId ?? "未知"} · {item.error}{" "}
+                    {item.collectionRunId && `采集批次 ${item.collectionRunId}`}
                   </li>
                 ))}
               </ul>
             </details>
           )}
-          {!task.reportId && ["queued", "running"].includes(task.status) && (
-            <button disabled={busy} onClick={() => taskAction(task, "cancel")}>
-              取消后续执行
-            </button>
-          )}
+          {!task.reportId &&
+            ["queued", "running", "waiting"].includes(task.status) && (
+              <button
+                disabled={busy}
+                onClick={() => taskAction(task, "cancel")}
+              >
+                取消后续执行
+              </button>
+            )}
           {!task.reportId &&
             ["needs_attention", "interrupted", "failed"].includes(
               task.status,
@@ -355,9 +593,13 @@ export function ReportCenterPanel({
               </button>
             )}
           {!task.reportId &&
-            ["needs_attention", "interrupted", "failed", "cancelled"].includes(
-              task.status,
-            ) && (
+            [
+              "needs_attention",
+              "interrupted",
+              "failed",
+              "cancelled",
+              "waiting",
+            ].includes(task.status) && (
               <button
                 disabled={busy}
                 onClick={() => taskAction(task, "finish")}

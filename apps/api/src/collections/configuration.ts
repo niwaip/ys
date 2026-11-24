@@ -13,6 +13,7 @@ import {
   Post,
   Req,
 } from "@nestjs/common";
+import { hashJson } from "../persistence/hash-json";
 import { randomUUID, createHash } from "node:crypto";
 import { z } from "zod";
 import {
@@ -99,7 +100,7 @@ export class CollectionConfigurationService {
     const hash = createHash("sha256")
       .update(JSON.stringify(config))
       .digest("hex");
-    if (expected && JSON.stringify(expected) !== JSON.stringify(config))
+    if (expected && hashJson(expected) !== hashJson(config))
       throw new ConflictException("配置已被修改，请刷新核对后重试");
     const id = randomUUID();
     const reservation = await this.db.transaction(async (db) => {

@@ -1,3 +1,4 @@
+import { ReportPackagePanel } from "./ReportPackagePanel";
 import { AssessmentDetails } from "../assessments/AssessmentDetails";
 import { ReportCenterPanel } from "./ReportCenterPanel";
 import type { Assessment } from "../../../../../packages/contracts/assessments";
@@ -50,6 +51,19 @@ export function ReportsPage({
   useEffect(() => {
     controller.current = new AbortController();
     refresh().catch(fail);
+    const query = new URLSearchParams(location.hash.split("?")[1]);
+    const reportId = query.get("report"),
+      revisionId = query.get("revision");
+    if (reportId && /^[0-9a-f-]{36}$/i.test(reportId))
+      call<Report>(`${base}/reports/${reportId}`)
+        .then(async (selected) => {
+          if (revisionId && /^[0-9a-f-]{36}$/i.test(revisionId))
+            selected.revision = await call(
+              `${base}/reports/${reportId}/revisions/${revisionId}`,
+            );
+          await preview(selected);
+        })
+        .catch(fail);
     return () => controller.current.abort();
   }, [customerId, token]);
   async function run(work: () => Promise<void>) {
@@ -74,6 +88,11 @@ export function ReportsPage({
     if (!response.ok) throw new ApiError("报告预览失败", response.status);
     setHtml(await response.text());
     setReport(selected);
+    const query = new URLSearchParams({
+      report: selected.id,
+      revision: selected.revision.id,
+    });
+    window.history.replaceState(null, "", `#reports?${query}`);
     setEvidence(undefined);
     setLinuxEvidence(undefined);
   }
@@ -84,11 +103,13 @@ export function ReportsPage({
       <div className="page-heading">
         <div>
           <div className="eyebrow">FACT REPORT</div>
-          <h1>风险事实报告</h1>
-          <p>选择明确评估版本生成固定模板草稿，事实与证据不会随新扫描改变。</p>
+          <h1>报告中心</h1>
+          <p>按服务器范围使用已有结果或发起扫描，生成固定报告和交付包。</p>
         </div>
       </div>
       <ReportCenterPanel
+        history={history}
+        sourceReport={report}
         customerId={customerId}
         token={token}
         onUnauthorized={onUnauthorized}
@@ -97,7 +118,8 @@ export function ReportsPage({
           await refresh();
         }}
       />
-      <section className="asset-panel">
+      <details className="asset-panel">
+        <summary>旧版评估引用入口（兼容历史使用方式）</summary>
         <h2>选择报告依据</h2>
         <p>
           合计1–20个引用；同一对象输入版本每类只可选一次评估。这里只列最近100次。缺失、失败或未知范围保持披露，草稿尚未内部复核。
@@ -165,7 +187,7 @@ export function ReportsPage({
         >
           生成事实草稿
         </button>
-      </section>
+      </details>
       {error && (
         <p className="error" role="alert">
           {error}
@@ -184,7 +206,7 @@ export function ReportsPage({
                 )
               }
             >
-              {r.id}
+              {r.name ?? r.id}
             </button>{" "}
             · 修订 {r.revisionNumber} · {r.status} · {r.createdAt}
           </p>
@@ -214,6 +236,12 @@ export function ReportsPage({
             {report.revision.status} · SHA-256 {report.revision.factHash}
           </p>
           <p>仅受控段落与保护事实；正式交付需通过内部复核并绑定明确修订。</p>
+          <ReportPackagePanel
+            report={report}
+            customerId={customerId}
+            token={token}
+            onUnauthorized={onUnauthorized}
+          />
           <ReportNarrationPanel
             report={report}
             customerId={customerId}

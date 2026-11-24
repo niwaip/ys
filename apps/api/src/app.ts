@@ -107,6 +107,14 @@ export async function createApp(
         "INSERT INTO customers (id,name) VALUES ($1,$2) ON CONFLICT (id) DO UPDATE SET name=EXCLUDED.name",
         [customer.id, customer.name],
       );
+    // Report-owned external work requires explicit retry after restart, including
+    // submissions reserved before their worker had begun executing.
+    await database.query(
+      `UPDATE vulnerability_jobs SET status='interrupted',details=details || '{"error":"报告任务因服务重启中断，需明确重试"}'::jsonb WHERE idempotency_key LIKE 'report:%' AND status IN ('queued','running')`,
+    );
+    await database.query(
+      `UPDATE collection_jobs SET status='interrupted',details=details || '{"status":"interrupted","error":"报告采集因服务重启中断，未自动重连"}'::jsonb WHERE status IN ('queued','running') AND id IN (SELECT (part->>'jobId')::uuid FROM collection_configuration_runs r CROSS JOIN LATERAL jsonb_array_elements(r.details->'items') part WHERE r.id IN (SELECT (item->>'collectionRunId')::uuid FROM report_tasks t CROSS JOIN LATERAL jsonb_array_elements(COALESCE(t.details->'items','[]'::jsonb)) item WHERE item->>'collectionRunId' IS NOT NULL) AND part->>'jobId' IS NOT NULL)`,
+    );
     const assessments = AssessmentsModule.register(
       runtime.trivyExecutor ?? new ProcessTrivyExecutor(config.trivy),
     );
@@ -164,6 +172,7 @@ export async function createApp(
           }),
           assessments,
           ReportsModule.register(assessments, {
+            collectionJobsModule: collectionJobs,
             executor:
               runtime.reportNarrationExecutor ??
               configuredReportNarrator(config.pi),

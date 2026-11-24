@@ -1,3 +1,4 @@
+import { freshness } from "./freshness";
 import { ConflictException, NotFoundException } from "@nestjs/common";
 import type { AssetVersionLink } from "../../../../packages/contracts/collections";
 import type { ContainerSource } from "../../../../packages/contracts/container-runtime";
@@ -21,6 +22,8 @@ export async function linkedScope(
   customer: string,
   hosts: ReportHost[],
   overrides: ReportTaskInput["overrides"],
+  checkedAt: string,
+  freshnessDays: number,
 ): Promise<ReportLinkedObject[]> {
   const hostIds = hosts.map((host) => host.assetId);
   const links: Link[] = (
@@ -122,7 +125,7 @@ export async function linkedScope(
     );
     const job = (
       await db.query(
-        `SELECT id,status,target_input_id,details->>'error' AS error FROM vulnerability_jobs WHERE customer_id=$1 AND target_object_id=$2 AND details#>>'{target,kind}'=$3 AND ($4::uuid IS NULL OR id=$4) AND ($4::uuid IS NOT NULL OR (target_input_id=$5 AND status='succeeded')) ORDER BY created_at DESC,id DESC LIMIT 1`,
+        `SELECT id,status,target_input_id,details->>'finishedAt' AS finished,details->>'error' AS error FROM vulnerability_jobs WHERE customer_id=$1 AND target_object_id=$2 AND details#>>'{target,kind}'=$3 AND ($4::uuid IS NULL OR id=$4) AND ($4::uuid IS NOT NULL OR (target_input_id=$5 AND status='succeeded')) ORDER BY created_at DESC,id DESC LIMIT 1`,
         [
           customer,
           object.objectId,
@@ -144,6 +147,30 @@ export async function linkedScope(
       object.assessmentId = String(job.id);
       object.status = job.status === "succeeded" ? "available" : "unassessed";
     }
+    const versionTable =
+      object.kind === "software" ? "software_versions" : "container_versions";
+    const metadata = (
+      await db.query(
+        `SELECT details->>'collectedAt' AS collected FROM ${versionTable} WHERE customer_id=$1 AND id=$2`,
+        [customer, object.versionId],
+      )
+    ).rows[0];
+    object.collectedAt =
+      typeof metadata?.collected === "string" ? metadata.collected : null;
+    object.assessedAt = typeof job?.finished === "string" ? job.finished : null;
+    object.freshness = {
+      collection: freshness(object.collectedAt, checkedAt, freshnessDays),
+      assessment:
+        job?.status === "succeeded"
+          ? freshness(object.assessedAt, checkedAt, freshnessDays)
+          : "missing",
+    };
+    if (object.freshness.collection === "stale")
+      object.issues.push(
+        `关联资料超过 ${freshnessDays} 天，重新评估不会刷新采集日期`,
+      );
+    if (object.freshness.assessment === "stale")
+      object.issues.push(`关联版本漏洞评估超过 ${freshnessDays} 天`);
     if (!job || job.status !== "succeeded")
       object.issues.push("未取得明确关联版本的可用漏洞结果，不代表零风险");
     const recent = (

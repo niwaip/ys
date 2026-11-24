@@ -44,7 +44,10 @@ test("select lifecycle facts, preview protected draft, inspect evidence and swit
   await page.getByLabel("操作员访问令牌").fill("browser-test-secret-token");
   await page.getByRole("button", { name: "进入工作台" }).click();
   await page.locator("nav button").filter({ hasText: "资产台账" }).click();
-  await page.getByRole("button", { name: "风险事实报告" }).click();
+  await page.getByRole("button", { name: "报告中心" }).click();
+  await page
+    .getByText("旧版评估引用入口（兼容历史使用方式）", { exact: true })
+    .click();
   await page.getByLabel(new RegExp(assessment.id)).check();
   await page.getByRole("button", { name: "生成事实草稿" }).click();
   await expect(
@@ -62,7 +65,7 @@ test("select lifecycle facts, preview protected draft, inspect evidence and swit
     .click();
   await expect(page.getByText("原始评估依据", { exact: true })).toBeVisible();
   await page.reload();
-  await page.getByRole("button", { name: "风险事实报告" }).click();
+  await page.getByRole("button", { name: "报告中心" }).click();
   await expect(page.getByRole("heading", { name: "报告历史" })).toBeVisible();
   await page.getByLabel("当前客户").selectOption("river");
   await expect(page.getByLabel(new RegExp(assessment.id))).toHaveCount(0);

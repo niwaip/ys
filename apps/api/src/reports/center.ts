@@ -26,19 +26,7 @@ import { ReportTaskRunner } from "./task-runner";
 import { linkedScope } from "./linked-scope";
 import type { LifecycleRiskService } from "../lifecycle-risk/lifecycle-risk.module";
 
-function freshness(
-  date: string | null,
-  at: string,
-  days: number,
-): "fresh" | "stale" | "unknown" {
-  if (!date) return "unknown";
-  const age = Date.parse(at) - Date.parse(date);
-  return !Number.isFinite(age) || age < 0
-    ? "unknown"
-    : age > days * 86400000
-      ? "stale"
-      : "fresh";
-}
+import { freshness } from "./freshness";
 
 export class ReportCenterService {
   constructor(
@@ -65,6 +53,109 @@ export class ReportCenterService {
         throw new ConflictException("幂等键已用于其他报告配置");
       return previous.details as ReportTask;
     }
+    const { hosts, assetIds, objects, lifecycle } = await this.resolve(
+      customer,
+      input,
+      checkedAt,
+    );
+    const task: ReportTask = {
+      id: randomUUID(),
+      customerId: customer,
+      name: input.name,
+      createdAt: checkedAt,
+      createdBy: operator.name,
+      status: "queued",
+      hosts,
+      input,
+    };
+    task.frozenScope = {
+      name: task.name,
+      taskId: task.id,
+      hosts,
+      checkedAt: task.createdAt,
+      freshnessDays: input.freshnessDays,
+      objects,
+      lifecycle,
+    };
+    if (input.sourceReportId) {
+      const source = await this.reports.get(customer, input.sourceReportId);
+      task.frozenScope.sourceReport = {
+        reportId: source.id,
+        revisionId: source.revision.id,
+        factHash: source.revision.factHash,
+      };
+    }
+    if (input.comparisonReportId) {
+      const baseline = await this.reports.get(
+        customer,
+        input.comparisonReportId,
+      );
+      task.comparisonBase = {
+        reportId: baseline.id,
+        revisionId: baseline.revision.id,
+        factHash: baseline.revision.factHash,
+        hostIds:
+          baseline.revision.facts.center?.hosts.map((h) => h.assetId) ?? [],
+        facts: {
+          scope: baseline.revision.facts.scope,
+          assessmentSnapshots: baseline.revision.facts.assessmentSnapshots,
+        },
+      };
+    }
+    if (input.mode !== "existing") await this.runner.plan(task);
+    const saved = await this.db.transaction(async (tx) => {
+      for (const id of assetIds) await requireActiveAsset(tx, customer, id);
+      const inserted = await tx.query(
+        "INSERT INTO report_tasks(id,customer_id,idempotency_key,input_hash,actor_key,status,details) VALUES($1,$2,$3,$4,$5,$6,$7::jsonb) ON CONFLICT(customer_id,idempotency_key) DO NOTHING RETURNING details",
+        [
+          task.id,
+          customer,
+          input.idempotencyKey,
+          inputHash,
+          createHash("sha256").update(operator.token).digest("hex"),
+          task.status,
+          JSON.stringify(task),
+        ],
+      );
+      if (inserted.rows.length) return task;
+      const old = (
+        await tx.query(
+          "SELECT details,input_hash FROM report_tasks WHERE customer_id=$1 AND idempotency_key=$2",
+          [customer, input.idempotencyKey],
+        )
+      ).rows[0];
+      if (old.input_hash !== inputHash)
+        throw new ConflictException("幂等键已用于其他报告配置");
+      return old.details as ReportTask;
+    });
+    if (saved.id !== task.id) return saved;
+    if (input.mode !== "existing") {
+      this.runner.start(customer, task.id);
+      return task;
+    }
+    const report = await this.reports.create(
+      customer,
+      operator.name,
+      {
+        assessmentRefs: [...new Set(hosts.flatMap((h) => h.assessmentRefs))],
+        lifecycleRefs: [
+          ...new Set(hosts.flatMap((host) => host.lifecycleRefs)),
+        ],
+      },
+      task.frozenScope,
+      input.presentation,
+      task,
+    );
+    task.reportId = report.id;
+    task.status = "completed";
+    await this.runner.package(task);
+    return task;
+  }
+  private async resolve(
+    customer: string,
+    input: ReportTask["input"],
+    checkedAt: string,
+  ) {
     const hosts: ReportHost[] = [];
     const assetIds =
       input.scope.kind === "selected"
@@ -244,6 +335,8 @@ export class ReportCenterService {
       customer,
       hosts,
       input.overrides,
+      checkedAt,
+      input.freshnessDays,
     );
     const allowed = new Set([
       ...assetIds,
@@ -278,81 +371,22 @@ export class ReportCenterService {
       config: view.config,
       items: view.items.filter((item) => assetIds.includes(item.assetId)),
     };
-    const task: ReportTask = {
-      id: randomUUID(),
-      customerId: customer,
-      name: input.name,
-      createdAt: checkedAt,
-      createdBy: operator.name,
-      status: "queued",
-      hosts,
-      input,
+    return { hosts, assetIds, objects, lifecycle };
+  }
+  async preflight(customer: string, value: unknown) {
+    const parsed = reportTaskInput.safeParse(value);
+    if (!parsed.success)
+      throw new BadRequestException("请选择明确服务器范围和报告配置");
+    const checkedAt = new Date().toISOString();
+    const resolved = await this.resolve(customer, parsed.data, checkedAt);
+    return {
+      checkedAt,
+      hosts: resolved.hosts,
+      objects: resolved.objects,
+      available: resolved.hosts.filter((host) => host.status === "available")
+        .length,
+      total: resolved.hosts.length,
     };
-    task.frozenScope = {
-      name: task.name,
-      taskId: task.id,
-      hosts,
-      checkedAt: task.createdAt,
-      freshnessDays: input.freshnessDays,
-      objects,
-      lifecycle,
-    };
-    if (input.mode !== "existing") this.runner.plan(task);
-    const saved = await this.db.transaction(async (tx) => {
-      for (const id of assetIds) await requireActiveAsset(tx, customer, id);
-      const inserted = await tx.query(
-        "INSERT INTO report_tasks(id,customer_id,idempotency_key,input_hash,actor_key,status,details) VALUES($1,$2,$3,$4,$5,$6,$7::jsonb) ON CONFLICT(customer_id,idempotency_key) DO NOTHING RETURNING details",
-        [
-          task.id,
-          customer,
-          input.idempotencyKey,
-          inputHash,
-          createHash("sha256").update(operator.token).digest("hex"),
-          task.status,
-          JSON.stringify(task),
-        ],
-      );
-      if (inserted.rows.length) return task;
-      const old = (
-        await tx.query(
-          "SELECT details,input_hash FROM report_tasks WHERE customer_id=$1 AND idempotency_key=$2",
-          [customer, input.idempotencyKey],
-        )
-      ).rows[0];
-      if (old.input_hash !== inputHash)
-        throw new ConflictException("幂等键已用于其他报告配置");
-      return old.details as ReportTask;
-    });
-    if (saved.id !== task.id) return saved;
-    if (input.mode !== "existing") {
-      this.runner.start(customer, task.id);
-      return task;
-    }
-    const report = await this.reports.create(
-      customer,
-      operator.name,
-      {
-        assessmentRefs: [...new Set(hosts.flatMap((h) => h.assessmentRefs))],
-        lifecycleRefs: [
-          ...new Set(hosts.flatMap((host) => host.lifecycleRefs)),
-        ],
-      },
-      {
-        name: task.name,
-        taskId: task.id,
-        hosts,
-        checkedAt: task.createdAt,
-        freshnessDays: input.freshnessDays,
-        objects,
-        lifecycle,
-      },
-      input.presentation,
-      task,
-    );
-    task.reportId = report.id;
-    task.status = "completed";
-
-    return task;
   }
   async get(customer: string, id: string) {
     if (!z.uuid().safeParse(id).success)
@@ -384,7 +418,7 @@ export class ReportCenterService {
     customer: string,
     id: string,
     body: unknown,
-    action: "cancel" | "finish",
+    action: "cancel" | "finish" | "resume",
   ) {
     if (
       !z.uuid().safeParse(id).success ||
@@ -418,7 +452,7 @@ export class ReportCenterService {
     return {
       items: (
         await this.db.query(
-          "SELECT details FROM report_tasks WHERE customer_id=$1 ORDER BY created_at DESC,id DESC LIMIT 100",
+          "SELECT details - 'frozenScope' - 'comparisonBase' AS details FROM report_tasks WHERE customer_id=$1 ORDER BY created_at DESC,id DESC LIMIT 100",
           [customer],
         )
       ).rows.map((r) => r.details as ReportTask),
@@ -428,6 +462,9 @@ export class ReportCenterService {
 @Controller("api/customers/:customerId/report-center")
 export class ReportCenterController {
   constructor(private readonly service: ReportCenterService) {}
+  @Post("preflight") preflight(req: AuthorizedRequest) {
+    return this.service.preflight(req.params.customerId, req.body);
+  }
   @Post("tasks") @HttpCode(202) create(req: AuthorizedRequest) {
     return this.service.create(req.params.customerId, req.operator, req.body);
   }
@@ -436,6 +473,14 @@ export class ReportCenterController {
       req.params.customerId,
       req.params.taskId,
       req.body,
+    );
+  }
+  @Post("tasks/:taskId/resume") resume(req: AuthorizedRequest) {
+    return this.service.action(
+      req.params.customerId,
+      req.params.taskId,
+      req.body,
+      "resume",
     );
   }
   @Post("tasks/:taskId/cancel") cancel(req: AuthorizedRequest) {
@@ -466,10 +511,12 @@ export class ReportCenterController {
 }
 for (const method of [
   "create",
+  "preflight",
   "list",
   "get",
   "choices",
   "retry",
+  "resume",
   "cancel",
   "finish",
 ] as const)

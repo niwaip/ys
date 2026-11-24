@@ -16,9 +16,19 @@ export const reportTaskInput = z
         .strict(),
       z.object({ kind: z.literal("tenant") }).strict(),
     ]),
-    mode: z.enum(["existing", "assess", "incremental"]),
+    mode: z.enum(["existing", "assess", "incremental", "collect"]),
     windowsRuleImportId: z.uuid().optional(),
+    sourceReportId: z.uuid().optional(),
+    comparisonReportId: z.uuid().optional(),
     presentation: reportPresentation.optional(),
+    output: z
+      .object({
+        pdfMode: z.enum(["summary", "full"]).default("summary"),
+        perHost: z.boolean().default(false),
+        evidence: z.boolean().default(false),
+      })
+      .strict()
+      .optional(),
     freshnessDays: z.number().int().min(1).max(3650).default(7),
     overrides: z
       .array(
@@ -59,6 +69,8 @@ export type ReportHost = {
   issues: string[];
 };
 export type ReportCenterFacts = {
+  sourceReport?: { reportId: string; revisionId: string; factHash: string };
+  comparison?: import("./report-comparison").ReportComparison;
   name: string;
   taskId: string;
   hosts: ReportHost[];
@@ -82,6 +94,9 @@ export type ReportBinding = {
   digest?: string | null;
 };
 export type ReportLinkedObject = {
+  collectedAt?: string | null;
+  assessedAt?: string | null;
+  freshness?: ReportHost["freshness"];
   key: string;
   kind: "software" | "container";
   objectId: string;
@@ -103,6 +118,7 @@ export type ReportTask = {
   status:
     | "queued"
     | "running"
+    | "waiting"
     | "needs_attention"
     | "interrupted"
     | "cancelled"
@@ -110,10 +126,12 @@ export type ReportTask = {
     | "failed";
   items?: ReportTaskItem[];
   frozenScope?: ReportCenterFacts;
+  comparisonBase?: import("./report-comparison").ComparisonBase;
   cancelledAt?: string;
   hosts: ReportHost[];
   input: ReportTaskInput;
   reportId?: string;
+  packageId?: string;
   error?: string;
 };
 
@@ -127,6 +145,8 @@ export type ReportTaskItem = {
   assessmentId?: string;
   status:
     | "pending"
+    | "waiting_upload"
+    | "waiting_confirmation"
     | "running"
     | "succeeded"
     | "failed"
@@ -137,4 +157,6 @@ export type ReportTaskItem = {
   attempt: number;
   error?: string;
   previousAssessmentIds?: string[];
+  collectionRunId?: string;
+  collectionConfiguration?: import("./collection-configuration").CollectionConfiguration;
 };
