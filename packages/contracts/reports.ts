@@ -9,6 +9,7 @@ export type ReportScopeTarget = {
   sourceIdentity?: Record<string, unknown>;
 };
 export type ReportFacts = {
+  center?: import("./report-center").ReportCenterFacts;
   schemaVersion: "report-facts-v1";
   customerId: string;
   generatedAt: string;
@@ -78,6 +79,7 @@ export type ReportRevision = {
   templateVersion: "fixed-report-v1";
 };
 export type Report = {
+  name?: string;
   id: string;
   customerId: string;
   createdAt: string;

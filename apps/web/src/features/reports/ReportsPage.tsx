@@ -1,4 +1,5 @@
 import { AssessmentDetails } from "../assessments/AssessmentDetails";
+import { ReportCenterPanel } from "./ReportCenterPanel";
 import type { Assessment } from "../../../../../packages/contracts/assessments";
 import { ReportNarrationPanel } from "./ReportNarrationPanel";
 import { ReportReviewPanel } from "./ReportReviewPanel";
@@ -87,6 +88,15 @@ export function ReportsPage({
           <p>选择明确评估版本生成固定模板草稿，事实与证据不会随新扫描改变。</p>
         </div>
       </div>
+      <ReportCenterPanel
+        customerId={customerId}
+        token={token}
+        onUnauthorized={onUnauthorized}
+        onOpen={async (id) => {
+          await preview(await call<Report>(`${base}/reports/${id}`));
+          await refresh();
+        }}
+      />
       <section className="asset-panel">
         <h2>选择报告依据</h2>
         <p>

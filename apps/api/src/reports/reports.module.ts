@@ -1,4 +1,6 @@
 import { gzip } from "node:zlib";
+import { ReportCenterService, ReportCenterController } from "./center";
+import type { ReportCenterFacts } from "../../../../packages/contracts/report-center";
 import { promisify } from "node:util";
 import type { Request, Response } from "express";
 import {
@@ -82,6 +84,7 @@ export class ReportsService {
     customer: string,
     author: string,
     input: z.infer<typeof inputSchema>,
+    center?: ReportCenterFacts,
   ): Promise<Report> {
     const assessmentSnapshots = await Promise.all(
       input.assessmentRefs.map(
@@ -339,6 +342,7 @@ export class ReportsService {
       });
     }
     const facts: ReportFacts = {
+      ...(center ? { center } : {}),
       schemaVersion: "report-facts-v1",
       customerId: customer,
       generatedAt: now,
@@ -379,6 +383,20 @@ export class ReportsService {
       },
       coverageIssues,
     };
+    if (center) {
+      for (const host of center.hosts) {
+        facts.scope.push({
+          kind: "host",
+          objectId: host.assetId,
+          name: host.name,
+          version: null,
+          versionId: host.snapshotId ?? undefined,
+        });
+        facts.coverageIssues.push(
+          ...host.issues.map((issue) => `${host.name}：${issue}`),
+        );
+      }
+    }
     const reportId = randomUUID();
     const revision: ReportRevision = {
       id: randomUUID(),
@@ -404,6 +422,7 @@ export class ReportsService {
       );
     });
     return {
+      ...(center ? { name: center.name } : {}),
       id: reportId,
       customerId: customer,
       createdAt: now,
@@ -431,6 +450,9 @@ export class ReportsService {
     if (!r.rows.length) throw new NotFoundException("该客户下未找到报告");
     return {
       ...r.rows[0],
+      ...((r.rows[0].revision as ReportRevision).facts.center
+        ? { name: (r.rows[0].revision as ReportRevision).facts.center!.name }
+        : {}),
       createdAt: new Date(r.rows[0].createdAt as string).toISOString(),
     } as Report;
   }
@@ -603,11 +625,18 @@ export class ReportsModule {
         WindowsAssessmentsModule,
       ],
       controllers: [
+        ReportCenterController,
         ReportsController,
         ReportReviewController,
         ReportNarrationController,
       ],
       providers: [
+        {
+          provide: ReportCenterService,
+          inject: [DATABASE, ReportsService],
+          useFactory: (db: Database, reports: ReportsService) =>
+            new ReportCenterService(db, reports),
+        },
         {
           provide: ReportNarrationService,
           inject: [DATABASE, ReportsService, ReportReviewService],
