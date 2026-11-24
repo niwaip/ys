@@ -1,3 +1,6 @@
+import { categoryExpression } from "../assets/assets.service";
+import { lifecycleApplicability } from "../../../../packages/contracts/lifecycle-workspace";
+import type { DeviceCategory } from "../../../../packages/contracts/device-collection";
 import { sharedSupport } from "../lifecycle/shared-support";
 import {
   BadRequestException,
@@ -25,7 +28,6 @@ import type { AuthorizedRequest } from "../auth/auth";
 import {
   defaultRiskConfig,
   dateSchema,
-  supportBindingSchema,
   riskConfigSchema,
   riskTypes,
   treatmentSchema,
@@ -36,6 +38,7 @@ import {
   type Treatment,
 } from "../../../../packages/contracts/lifecycle-risk";
 import {
+  ruleFor,
   addMonths,
   isRisk,
   localDate,
@@ -65,7 +68,7 @@ export class LifecycleRiskService {
     const now = new Date(),
       today = localDate(now, config.timeZone);
     const assets = await tx.query(
-      "SELECT id,name,hardware_type,attributes FROM assets a WHERE customer_id=$1 AND deleted_at IS NULL AND (source<>'netbox' OR EXISTS (SELECT 1 FROM netbox_assets n WHERE n.customer_id=a.customer_id AND n.asset_id=a.id AND n.active)) ORDER BY id",
+      `SELECT id,name,hardware_type,attributes,(${categoryExpression}) AS category FROM assets WHERE customer_id=$1 AND deleted_at IS NULL AND (source<>'netbox' OR EXISTS (SELECT 1 FROM netbox_assets n WHERE n.customer_id=assets.customer_id AND n.asset_id=assets.id AND n.active)) ORDER BY id`,
       [customer],
     );
     const treatments = await tx.query(
@@ -74,126 +77,67 @@ export class LifecycleRiskService {
     );
     const shared = await sharedSupport(tx, customer);
     const items: RiskItem[] = [];
-    const batches = new Map<
-      string,
-      Awaited<ReturnType<LifecycleService["getBatch"]>>
-    >();
     for (const asset of assets.rows) {
       const raw = (asset.attributes as Record<string, unknown>).lifecycle;
       const value =
         raw && typeof raw === "object" && !Array.isArray(raw)
           ? (raw as Record<string, unknown>)
           : {};
-      const os = supportBindingSchema.safeParse(value.os),
-        device = supportBindingSchema.safeParse(value.device),
-        purchased = dateSchema.safeParse(value.purchasedOn),
+      const purchased = dateSchema.safeParse(value.purchasedOn),
         warranty = dateSchema.safeParse(value.warrantyUntil);
       const data = {
-        os: os.success ? os.data : undefined,
-        device: device.success ? device.data : undefined,
         purchasedOn: purchased.success ? purchased.data : undefined,
         warrantyUntil: warranty.success ? warranty.data : undefined,
         sourceRef: typeof value.sourceRef === "string" ? value.sourceRef : "",
       };
       const automatic = shared.forAsset(String(asset.id), asset.attributes);
-      for (const kind of ["os", "device"] as const) {
-        if (!data[kind]) {
-          const ref = automatic.find((r) =>
-            kind === "device"
-              ? ["device", "hardware"].includes(r.kind)
-              : r.kind === kind,
-          );
-          if (ref?.status === "matched" && ref.batchId && ref.phase)
-            data[kind] = {
-              batchId: ref.batchId,
-              product: ref.product,
-              version: ref.version,
-              phase: ref.phase,
-            };
-        }
-      }
-      const category = asset.hardware_type as RiskItem["category"];
+      const category: RiskItem["category"] =
+        asset.category === "server"
+          ? "server"
+          : asset.category === "network"
+            ? "network"
+            : "unknown";
+      const applicable = lifecycleApplicability(
+        asset.category as DeviceCategory,
+      );
       for (const type of riskTypes) {
-        const override =
-          config.overrides.find(
-            (o) => o.type === type && o.category === category,
-          ) ??
-          config.overrides.find((o) => o.type === type && o.category === "all");
-        const rule = override?.rule ?? config.defaultRule;
+        if (
+          !(type === "os_support"
+            ? applicable.os
+            : type === "device_support"
+              ? applicable.device
+              : type === "warranty"
+                ? applicable.warrantyUntil
+                : applicable.purchasedOn)
+        )
+          continue;
+        const { rule, source: ruleSource } = ruleFor(config, type, category);
         let dueDate: string | null = null,
           basis = "缺少日期或明确的产品支持资料",
           conflict = false;
         const evidence: RiskItem["evidence"] = [];
         if (type === "os_support" || type === "device_support") {
           const ref = automatic.find((r) =>
-            type === "device_support"
-              ? ["device", "hardware"].includes(r.kind)
-              : r.kind === "os",
+            type === "os_support"
+              ? r.kind === "os"
+              : ["device", "hardware"].includes(r.kind),
           );
-          if (
-            ref?.status === "conflict" &&
-            !data[type === "os_support" ? "os" : "device"]
-          ) {
-            conflict = true;
+          if (ref) {
+            conflict = ref.status === "conflict";
             basis = ref.basis;
+            dueDate = ref.status === "matched" ? (ref.date ?? null) : null;
+            if (ref.supportTier === "extended" && ref.standardDate)
+              basis += `；标准支持截止 ${ref.standardDate}`;
+            if (ref.batchId)
+              evidence.push({
+                source: ref.source ?? "",
+                sourceRef: ref.sourceRef ?? "",
+                stage: ref.stage ?? "",
+                rawDate: ref.rawDate ?? ref.date ?? "",
+                batchId: ref.batchId,
+                row: ref.row,
+              });
           }
-        }
-        const binding =
-          type === "os_support"
-            ? data?.os
-            : type === "device_support"
-              ? data?.device
-              : undefined;
-        if (binding) {
-          if (!batches.has(binding.batchId)) {
-            try {
-              batches.set(
-                binding.batchId,
-                await this.lifecycle.getBatch(customer, binding.batchId, tx),
-              );
-            } catch (error) {
-              if (!(error instanceof NotFoundException)) throw error;
-            }
-          }
-          const batch = batches.get(binding.batchId);
-          // Keep the workspace resolver's exact source row, including typed
-          // category and phase, instead of reintroducing unrelated CSV rows.
-          const resolved = automatic.find((r) =>
-            type === "device_support"
-              ? ["device", "hardware"].includes(r.kind)
-              : r.kind === "os",
-          );
-          const matched = (batch?.rows ?? []).filter(
-            (r) =>
-              r.product === binding.product &&
-              (r.version ?? "") === binding.version &&
-              (!r.extensions.phase || r.extensions.phase === binding.phase) &&
-              (!r.extensions.category ||
-                (type === "os_support"
-                  ? r.extensions.category === "os"
-                  : ["device", "hardware"].includes(r.extensions.category))) &&
-              (resolved?.status !== "matched" || r.row === resolved.row) &&
-              (type !== "os_support" || !!binding.version),
-          );
-          for (const row of matched) {
-            const phase = row[binding.phase];
-            evidence.push({
-              source: row.source,
-              sourceRef: row.sourceRef,
-              stage: phase.name,
-              rawDate: phase.rawDate,
-              batchId: binding.batchId,
-              row: row.row,
-            });
-          }
-          const dates = new Set(matched.map((r) => r[binding.phase].date));
-          const stages = new Set(matched.map((r) => r[binding.phase].name));
-          conflict = dates.size > 1 || stages.size > 1;
-          dueDate =
-            !conflict && matched.length ? matched[0][binding.phase].date : null;
-          basis = matched.length
-            ? `${binding.product} ${binding.version} · 明确选择 ${binding.phase.toUpperCase()} 阶段，字面匹配`
-            : `${binding.product} ${binding.version} · 无可核实的产品版本及阶段资料，请核对来源`;
         } else if (type === "warranty" && data?.warrantyUntil) {
           dueDate = data.warrantyUntil;
           basis = "资产维保到期日期";
@@ -267,7 +211,7 @@ export class LifecycleRiskService {
             : null,
           basis,
           rule,
-          ruleSource: override ? `${override.category} / ${type}` : "客户默认",
+          ruleSource,
           evidence,
           treatment,
           history,

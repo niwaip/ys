@@ -1,3 +1,4 @@
+import { levelLabels } from "../../../../../packages/contracts/lifecycle-risk";
 import { useEffect, useState, type ReactNode } from "react";
 import { api, ApiError } from "../../api";
 import type { FeatureProps } from "../../features";
@@ -109,6 +110,16 @@ export function LifecycleWorkspacePage(
           </button>
         ))}
       </section>
+      <section className="lifecycle-metrics" aria-label="当前期限风险概要">
+        <p>
+          当前期限风险 <strong>{data?.summary.riskAssets ?? "—"}</strong>{" "}
+          台需关注
+        </p>
+        <p>
+          已到期 <strong>{data?.summary.expiredAssets ?? "—"}</strong>{" "}
+          台；未知资料另计
+        </p>
+      </section>
       <div
         className="lifecycle-view-tabs"
         role="tablist"
@@ -147,7 +158,7 @@ export function LifecycleWorkspacePage(
               className="secondary"
               onClick={() => {
                 const csv =
-                  "source,sourceRef,product,version,eosStage,eosDate,eolStage,eolDate,category,phase\n厂商公告,公告地址或编号,产品或型号,明确版本,销售终止,,支持终止,,device,eol\n";
+                  "source,sourceRef,product,version,eosStage,eosDate,eolStage,eolDate,category,phase,supportTier\n厂商公告,公告地址或编号,产品或型号,明确版本,销售终止,,支持终止,,device,eol,standard\n";
                 const url = URL.createObjectURL(
                   new Blob(["\ufeff" + csv], {
                     type: "text/csv;charset=utf-8",
@@ -165,7 +176,8 @@ export function LifecycleWorkspacePage(
           </div>
           <p className="lifecycle-help">
             category：os / software / device / hardware；phase：eos /
-            eol，明确指定引用哪一个来源阶段。精确且唯一匹配时自动引用；缺版本和多来源冲突保持待确认。导入不会启动风险评估。
+            eol，明确指定引用哪一个来源阶段；supportTier：standard /
+            extended，保留厂商原始阶段，扩展支持须登记适用依据。精确且唯一匹配时自动引用；缺版本和多来源冲突保持待确认。导入不会启动风险评估。
           </p>
           {props.referenceLibrary}
         </section>
@@ -259,43 +271,126 @@ export function LifecycleWorkspacePage(
                             <strong>{item.name}</strong>
                             <small>{deviceCategories[item.category]}</small>
                           </td>
-                          <td>{item.data.purchasedOn ?? "未填写"}</td>
-                          <td>{item.data.warrantyUntil ?? "未填写"}</td>
+                          <td>
+                            {item.applicability.purchasedOn
+                              ? (item.data.purchasedOn ?? "未填写")
+                              : "不适用"}
+                          </td>
+                          <td>
+                            {item.applicability.warrantyUntil
+                              ? (item.data.warrantyUntil ?? "未填写")
+                              : "不适用"}
+                          </td>
                           <td>
                             {item.support.map((ref, i) => (
-                              <details className="lifecycle-reference" key={i}>
-                                <summary>
-                                  <span
-                                    className={`lifecycle-match ${ref.status}`}
-                                  >
-                                    {matches[ref.status]}
-                                  </span>{" "}
+                              <div className="lifecycle-support" key={i}>
+                                <strong>
                                   {ref.kind === "os"
                                     ? "OS"
                                     : ref.kind === "software"
                                       ? "软件"
-                                      : "设备"}{" "}
-                                  · {ref.date ?? "期限未知"}
-                                </summary>
+                                      : "硬件 / 型号"}{" "}
+                                  · {ref.rawProduct || ref.product || "缺产品"}{" "}
+                                  {ref.version}
+                                </strong>
                                 <p>
-                                  {ref.product || "未知产品"} /{" "}
-                                  {ref.version || "未知版本"} ·{" "}
-                                  {ref.stage ?? "未指定阶段"}
+                                  {ref.supportTier === "extended"
+                                    ? "扩展支持"
+                                    : "标准支持"}{" "}
+                                  · {ref.date ?? "期限未知"} ·{" "}
+                                  {ref.riskLevel
+                                    ? levelLabels[ref.riskLevel]
+                                    : matches[ref.status]}
                                 </p>
-                                <p>{ref.basis}</p>
-                                {ref.source && (
+                                {ref.standardDate &&
+                                  ref.supportTier === "extended" && (
+                                    <p>标准支持截止：{ref.standardDate}</p>
+                                  )}
+                                <details className="lifecycle-reference">
+                                  <summary>
+                                    <span
+                                      className={`lifecycle-match ${ref.status}`}
+                                    >
+                                      {matches[ref.status]}
+                                    </span>{" "}
+                                    {ref.kind === "os"
+                                      ? "OS"
+                                      : ref.kind === "software"
+                                        ? "软件"
+                                        : "设备"}{" "}
+                                    · {ref.date ?? "期限未知"}
+                                  </summary>
                                   <p>
-                                    {ref.source} · {ref.sourceRef}
+                                    {ref.product || "未知产品"} /{" "}
+                                    {ref.version || "未知版本"} ·{" "}
+                                    {ref.stage ?? "未指定阶段"}
                                   </p>
-                                )}
-                                {ref.batchId && (
-                                  <small>批次 {ref.batchId}</small>
-                                )}
-                              </details>
+                                  <p>{ref.basis}</p>
+                                  {ref.source && (
+                                    <p>
+                                      {ref.source} · {ref.sourceRef}
+                                    </p>
+                                  )}
+                                  {ref.batchId && (
+                                    <small>批次 {ref.batchId}</small>
+                                  )}
+                                  {ref.entitlement && (
+                                    <p>适用依据：{ref.entitlement}</p>
+                                  )}
+                                  {ref.mappingBasis && (
+                                    <p>
+                                      产品别名：{ref.rawProduct} → {ref.product}
+                                      ；{ref.mappingBasis}
+                                    </p>
+                                  )}
+                                  {ref.stages?.map((stage, j) => (
+                                    <p key={j}>
+                                      {stage.supportTier === "extended"
+                                        ? "扩展支持"
+                                        : "标准 / 原始支持"}{" "}
+                                      · {stage.stage} ·{" "}
+                                      {stage.date ?? "期限未知"} ·{" "}
+                                      {stage.source} · {stage.sourceRef}
+                                    </p>
+                                  ))}
+                                </details>
+                              </div>
                             ))}
+                            {item.applicability.os && (
+                              <div className="lifecycle-reference">
+                                <strong>
+                                  OS 来源 ·{" "}
+                                  {item.osIdentity.status === "conflict"
+                                    ? "待核对"
+                                    : item.osIdentity.confirmed
+                                      ? "已确认OS"
+                                      : "待确认采集"}
+                                </strong>
+                                <p>
+                                  NetBox登记平台：
+                                  {item.osIdentity.platform?.product ??
+                                    "未登记"}{" "}
+                                  {item.osIdentity.platform?.version} ·{" "}
+                                  {item.osIdentity.platform?.at}
+                                </p>
+                                <p>
+                                  已确认OS：
+                                  {item.osIdentity.confirmed
+                                    ? `${item.osIdentity.confirmed.product} ${item.osIdentity.confirmed.version} · ${item.osIdentity.confirmed.source} · ${item.osIdentity.confirmed.actor} · ${item.osIdentity.confirmed.at}`
+                                    : "无已确认OS；未确认观测不用于期限判断"}
+                                </p>
+                                {item.osIdentity.confirmed && (
+                                  <small>
+                                    快照 {item.osIdentity.confirmed.snapshotId}
+                                  </small>
+                                )}
+                              </div>
+                            )}
                           </td>
                           <td>
-                            <span className={`lifecycle-state state-${item.state}`}>
+                            <span
+                              className={`lifecycle-state state-${item.state}`}
+                            >
                               {states[item.state]}
                             </span>
                           </td>
@@ -305,7 +400,9 @@ export function LifecycleWorkspacePage(
                               className="secondary"
                               onClick={() => setEditing(item)}
                             >
-                              填写设备期限
+                              {item.category === "vm"
+                                ? "关联OS厂商资料"
+                                : "填写设备期限"}
                             </button>
                           </td>
                         </tr>
@@ -343,6 +440,7 @@ export function LifecycleWorkspacePage(
               {...props}
               key={editing.id}
               assetId={editing.id}
+              workspaceItem={editing}
               readOnly={false}
               onClose={() => {
                 setEditing(undefined);

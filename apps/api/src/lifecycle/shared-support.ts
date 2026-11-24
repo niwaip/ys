@@ -1,6 +1,9 @@
 import type { Queryable } from "../persistence/database";
 import type { LifecycleRow } from "../../../../packages/contracts/lifecycle";
-import type { SupportReference } from "../../../../packages/contracts/lifecycle-workspace";
+import type {
+  SupportReference,
+  OsIdentity,
+} from "../../../../packages/contracts/lifecycle-workspace";
 import { supportBindingSchema } from "../../../../packages/contracts/lifecycle-risk";
 const object = (value: unknown): Record<string, any> =>
   value && typeof value === "object" && !Array.isArray(value)
@@ -9,6 +12,23 @@ const object = (value: unknown): Record<string, any> =>
 const text = (value: unknown) =>
   typeof value === "string" ? value.trim() : "";
 export async function sharedSupport(db: Queryable, customer: string) {
+  const aliases = (
+    await db.query(
+      "SELECT category,alias,product,basis FROM lifecycle_product_aliases WHERE customer_id=$1",
+      [customer],
+    )
+  ).rows;
+  function canonical(kind: string, product: string) {
+    const mappings = aliases.filter(
+      (a) => a.category === kind && a.alias === product,
+    );
+    const targets = [...new Set(mappings.map((a) => String(a.product)))];
+    return {
+      product: targets.length === 1 ? targets[0] : product,
+      conflict: targets.length > 1,
+      basis: mappings.map((a) => String(a.basis)).join("；"),
+    };
+  }
   const batches = (
     await db.query(
       "SELECT id,result FROM import_materials WHERE customer_id=$1 AND format='lifecycle-csv-v1' ORDER BY imported_at DESC,id",
@@ -23,7 +43,7 @@ export async function sharedSupport(db: Queryable, customer: string) {
   );
   const baselines = (
     await db.query(
-      "SELECT DISTINCT ON(asset_id) asset_id,plan FROM asset_baselines WHERE customer_id=$1 AND status='confirmed' ORDER BY asset_id,sequence DESC",
+      "SELECT DISTINCT ON(asset_id) asset_id,id,snapshot_id,actor,created_at,plan FROM asset_baselines WHERE customer_id=$1 AND status='confirmed' ORDER BY asset_id,sequence DESC",
       [customer],
     )
   ).rows;
@@ -43,24 +63,69 @@ export async function sharedSupport(db: Queryable, customer: string) {
     binding?: unknown,
   ): SupportReference {
     const explicit = supportBindingSchema.safeParse(binding);
+    if (binding !== undefined && !explicit.success)
+      return {
+        kind,
+        product,
+        version,
+        status: "conflict",
+        basis: "支持关联或扩展支持适用依据无效，请核对",
+      };
     const target = explicit.success ? explicit.data : undefined;
-    const p = target?.product ?? product,
+    const mapping = canonical(kind, target?.product ?? product);
+    const p = mapping.product,
       v = target?.version ?? version;
-    const candidates = rows.filter(({ row, batchId }) =>
+    const allCandidates = rows.filter(({ row, batchId }) =>
       target
         ? batchId === target.batchId &&
-          row.product === p &&
+          canonical(kind, row.product).product === p &&
           (row.version ?? "") === v &&
           (!row.extensions.phase || row.extensions.phase === target.phase) &&
           (!row.extensions.category ||
             row.extensions.category === kind ||
             (kind === "device" && row.extensions.category === "hardware"))
         : row.extensions.category === kind &&
-          row.product === p &&
+          canonical(kind, row.product).product === p &&
           (row.version ?? "") === v &&
           ["eos", "eol"].includes(row.extensions.phase),
     );
-    const base = { kind, product: p, version: v };
+    const tier = target?.supportTier ?? "standard";
+    const candidates = allCandidates.filter(
+      ({ row }) => (row.extensions.supportTier || "standard") === tier,
+    );
+    const stages = allCandidates.map(({ row, batchId }) => {
+      const phase = target?.phase ?? (row.extensions.phase as "eos" | "eol");
+      return {
+        supportTier: row.extensions.supportTier || "standard",
+        date: row[phase].date,
+        stage: row[phase].name,
+        source: row.source,
+        sourceRef: row.sourceRef,
+        batchId,
+        row: row.row,
+      };
+    });
+    const standard = stages.filter((s) => s.supportTier === "standard");
+    const base = {
+      supportTier: tier,
+      entitlement: target?.entitlement,
+      stages,
+      standardDate: standard.length === 1 ? standard[0].date : null,
+      kind,
+      product: p,
+      rawProduct: product,
+      mappingBasis: mapping.basis || undefined,
+      version: v,
+    };
+    if (
+      mapping.conflict ||
+      allCandidates.some(({ row }) => canonical(kind, row.product).conflict)
+    )
+      return {
+        ...base,
+        status: "conflict",
+        basis: "产品别名映射有歧义，请核对明确配置",
+      };
     if (!p || (!v && (!target || kind === "os" || kind === "software")))
       return {
         ...base,
@@ -89,16 +154,70 @@ export async function sharedSupport(db: Queryable, customer: string) {
       row: row.row,
       phase,
       date: stage.date,
+      rawDate: stage.rawDate,
       stage: stage.name,
       source: row.source,
       sourceRef: row.sourceRef,
-      basis: target
-        ? "明确选择来源批次、产品版本及阶段"
-        : "唯一精确产品版本及明确阶段，自动引用",
+      basis:
+        (mapping.basis
+          ? `产品别名 ${product} → ${p}；${mapping.basis}；`
+          : "") +
+        (target
+          ? "明确选择来源批次、产品版本及阶段"
+          : "唯一精确产品版本及明确阶段，自动引用") +
+        (tier === "extended"
+          ? `；扩展支持适用依据：${target?.entitlement}`
+          : "；采用标准支持（旧资料保留原始阶段，不推断缩写含义）"),
     };
+  }
+  function osIdentity(id: string, attributes: unknown): OsIdentity {
+    const a = object(attributes),
+      b = baselines.find((b) => String(b.asset_id) === id),
+      plan = object(b?.plan),
+      os = object(object(plan.values).os),
+      platform = object(a.platform);
+    const confirmed =
+      text(os.id) || text(os.name)
+        ? {
+            product: text(os.id) || text(os.name),
+            version: text(os.version),
+            source: "已确认采集基线",
+            at: b?.created_at
+              ? new Date(String(b.created_at)).toISOString()
+              : null,
+            snapshotId: String(b?.snapshot_id),
+            baselineId: String(b?.id),
+            actor: String(b?.actor),
+            sources: object(object(plan.sources).os),
+          }
+        : null;
+    const registered = text(platform.name)
+      ? {
+          product: text(platform.name),
+          version: text(platform.version),
+          source: "NetBox登记平台",
+          at: text(object(a.netbox).syncedAt) || null,
+        }
+      : null;
+    const status =
+      registered && confirmed
+        ? canonical("os", registered.product).product ===
+            canonical("os", confirmed.product).product &&
+          !canonical("os", registered.product).conflict &&
+          !canonical("os", confirmed.product).conflict &&
+          (!registered.version || registered.version === confirmed.version)
+          ? "consistent"
+          : "conflict"
+        : confirmed
+          ? "platform_missing"
+          : registered
+            ? "confirmed_missing"
+            : "missing";
+    return { platform: registered, confirmed, status };
   }
   return {
     resolve,
+    osIdentity,
     forAsset(id: string, attributes: unknown) {
       const a = object(attributes),
         baseline = values.get(id) ?? {},
@@ -108,18 +227,31 @@ export async function sharedSupport(db: Queryable, customer: string) {
         platform = object(a.platform),
         deviceType = object(a.deviceType);
       const osProduct =
-          text(os.id) ||
+          (Object.keys(os).length ? text(os.id) || text(os.name) : "") ||
           text(object(a.os).id) ||
           text(a.osProduct) ||
           text(platform.name),
-        osVersion =
-          text(os.version) || text(object(a.os).version) || text(a.osVersion);
+        osVersion = Object.keys(os).length
+          ? text(os.version)
+          : text(object(a.os).version) || text(a.osVersion);
       const product =
           text(a.product) || text(device.model) || text(deviceType.model),
         version = text(a.version) || text(device.firmware);
       const refs = [resolve("device", product, version, lifecycle.device)];
-      if (osProduct || lifecycle.os)
-        refs.push(resolve("os", osProduct, osVersion, lifecycle.os));
+      if (osProduct || lifecycle.os) {
+        const identity = osIdentity(id, a);
+        refs.push(
+          identity.status === "conflict"
+            ? {
+                kind: "os",
+                product: osProduct,
+                version: osVersion,
+                status: "conflict",
+                basis: "NetBox登记平台与已确认OS不一致，待核对；不回写登记平台",
+              }
+            : resolve("os", osProduct, osVersion, lifecycle.os),
+        );
+      }
       if (!lifecycle.device) {
         const hardware = resolve("hardware", product, version);
         if (hardware.status === "matched" || hardware.status === "conflict")

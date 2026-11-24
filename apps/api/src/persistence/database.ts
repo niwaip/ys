@@ -192,6 +192,10 @@ CREATE TABLE windows_snapshots(id uuid PRIMARY KEY,customer_id text NOT NULL,ass
     version: 33,
     sql: `CREATE TABLE lifecycle_asset_history(id uuid PRIMARY KEY,customer_id text NOT NULL,asset_id uuid NOT NULL,actor text NOT NULL,before_data jsonb NOT NULL,after_data jsonb NOT NULL,source text NOT NULL,status text NOT NULL DEFAULT 'confirmed',created_at timestamptz NOT NULL DEFAULT now(),FOREIGN KEY(customer_id,asset_id) REFERENCES assets(customer_id,id));CREATE INDEX lifecycle_history_asset ON lifecycle_asset_history(customer_id,asset_id,created_at DESC);`,
   },
+  {
+    version: 34,
+    sql: `CREATE TABLE lifecycle_product_aliases(id uuid PRIMARY KEY,customer_id text NOT NULL REFERENCES customers(id),category text NOT NULL,alias text NOT NULL,product text NOT NULL,basis text NOT NULL,actor text NOT NULL,created_at timestamptz NOT NULL DEFAULT now()); CREATE INDEX lifecycle_alias_scope ON lifecycle_product_aliases(customer_id,category,alias);`,
+  },
 ];
 export async function openDatabase(url: string): Promise<Database> {
   let raw: Queryable & { close(): Promise<void> };

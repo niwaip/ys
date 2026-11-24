@@ -42,8 +42,14 @@ export const supportBindingSchema = z
     product: z.string().trim().min(1).max(500),
     version: z.string().trim().max(500),
     phase: z.enum(["eos", "eol"]),
+    supportTier: z.enum(["standard", "extended"]).optional(),
+    entitlement: z.string().trim().max(1000).optional(),
   })
-  .strict();
+  .strict()
+  .refine(
+    (v) => v.supportTier !== "extended" || !!v.entitlement,
+    "扩展支持须填写明确适用依据",
+  );
 export const lifecycleAssetSchema = z
   .object({
     os: supportBindingSchema.optional(),

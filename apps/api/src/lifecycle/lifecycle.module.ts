@@ -147,6 +147,13 @@ export class LifecycleService {
         throw new BadRequestException(
           `第${index + 2}行分类资料须填写明确phase阶段`,
         );
+      if (
+        raw.supportTier &&
+        !["standard", "extended"].includes(raw.supportTier)
+      )
+        throw new BadRequestException(
+          `第${index + 2}行supportTier须为standard或extended`,
+        );
       const eos = stage(raw.eosStage, raw.eosDate),
         eol = stage(raw.eolStage, raw.eolDate);
       return {

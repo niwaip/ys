@@ -1,4 +1,6 @@
 import type {
+  RiskConfig,
+  RiskType,
   RiskItem,
   RiskLevel,
   RiskSummary,
@@ -77,4 +79,18 @@ export function summarize(items: RiskItem[]): RiskSummary {
   summary.riskAssets = assets.size;
   for (const level of assets.values()) summary.byLevel[level].assets++;
   return summary;
+}
+
+export function ruleFor(
+  config: RiskConfig,
+  type: RiskType,
+  category: RiskItem["category"],
+) {
+  const override =
+    config.overrides.find((o) => o.type === type && o.category === category) ??
+    config.overrides.find((o) => o.type === type && o.category === "all");
+  return {
+    rule: override?.rule ?? config.defaultRule,
+    source: override ? `${override.category} / ${type}` : "客户默认",
+  };
 }

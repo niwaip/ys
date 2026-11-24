@@ -1,3 +1,8 @@
+import {
+  lifecycleApplicability,
+  type LifecycleWorkspaceItem,
+} from "../../../../../packages/contracts/lifecycle-workspace";
+import { ProductAliasForm } from "../lifecycle/ProductAliasForm";
 import { useEffect, useState, type FormEvent } from "react";
 import { api, ApiError } from "../../api";
 import type { FeatureProps } from "../../features";
@@ -11,6 +16,7 @@ import {
 export function AssetLifecycleForm(
   props: FeatureProps & {
     assetId: string;
+    workspaceItem?: LifecycleWorkspaceItem;
     onClose: () => void;
     readOnly: boolean;
     onSaved?: () => void;
@@ -95,6 +101,8 @@ export function AssetLifecycleForm(
           product: f.get(`${key}Product`),
           version: f.get(`${key}Version`),
           phase: f.get(`${key}Phase`),
+          supportTier: f.get(`${key}Tier`) || "standard",
+          entitlement: f.get(`${key}Entitlement`) || undefined,
         };
     const parsed = lifecycleAssetSchema.safeParse(data);
     if (!parsed.success) {
@@ -126,6 +134,17 @@ export function AssetLifecycleForm(
       setBusy(false);
     }
   }
+  const applicable =
+    props.workspaceItem?.applicability ??
+    lifecycleApplicability(
+      asset?.attributes.netbox &&
+        (asset.attributes.netbox as { objectType?: string }).objectType ===
+          "virtual-machine"
+        ? "vm"
+        : asset?.hardwareType === "network"
+          ? "network"
+          : "server",
+    );
   const { data, issues } = readLifecycleAsset(asset?.attributes.lifecycle);
   return (
     <section
@@ -150,98 +169,150 @@ export function AssetLifecycleForm(
       {asset && (
         <form onSubmit={save} key={asset.id}>
           <fieldset disabled={busy || props.readOnly}>
-            <div className="risk-form-grid">
-              <label>
-                购买日期
-                <input
-                  type="date"
-                  name="purchasedOn"
-                  defaultValue={data.purchasedOn}
-                />
-              </label>
-              <label>
-                维保到期日期
-                <input
-                  type="date"
-                  name="warrantyUntil"
-                  defaultValue={data.warrantyUntil}
-                />
-              </label>
-              <label>
-                日期依据
-                <input
-                  name="sourceRef"
-                  defaultValue={data.sourceRef}
-                  placeholder="合同或采购记录编号"
-                  maxLength={500}
-                />
-              </label>
-            </div>
+            {applicable.purchasedOn && (
+              <div className="risk-form-grid">
+                <label>
+                  购买日期
+                  <input
+                    type="date"
+                    name="purchasedOn"
+                    defaultValue={data.purchasedOn}
+                  />
+                </label>
+                <label>
+                  维保到期日期
+                  <input
+                    type="date"
+                    name="warrantyUntil"
+                    defaultValue={data.warrantyUntil}
+                  />
+                </label>
+                <label>
+                  日期依据
+                  <input
+                    name="sourceRef"
+                    defaultValue={data.sourceRef}
+                    placeholder="合同或采购记录编号"
+                    maxLength={500}
+                  />
+                </label>
+              </div>
+            )}
             {(
               [
                 ["os", "OS"],
                 ["device", "设备"],
               ] as const
-            ).map(([key, label]) => (
-              <fieldset key={key}>
-                <legend>{label} 支持资料</legend>
-                <p>明确选择来源及阶段；不根据 EOS/EOL 缩写推断厂商含义。</p>
-                <div className="risk-form-grid">
-                  <label>
-                    {label} 来源批次
-                    <select
-                      name={`${key}Batch`}
-                      defaultValue={data[key]?.batchId ?? ""}
-                    >
-                      <option value="">未关联</option>
-                      {data[key] &&
-                        !batches.some((b) => b.id === data[key]!.batchId) && (
-                          <option value={data[key]!.batchId}>
-                            已关联批次 {data[key]!.batchId}
+            )
+              .filter(([key]) => applicable[key])
+              .map(([key, label]) => (
+                <fieldset key={key}>
+                  <legend>{label} 支持资料</legend>
+                  <p>明确选择来源及阶段；不根据 EOS/EOL 缩写推断厂商含义。</p>
+                  <div className="risk-form-grid">
+                    <label>
+                      {label} 来源批次
+                      <select
+                        aria-label={`${label} 来源批次`}
+                        name={`${key}Batch`}
+                        defaultValue={data[key]?.batchId ?? ""}
+                      >
+                        <option value="">未关联</option>
+                        {data[key] &&
+                          !batches.some((b) => b.id === data[key]!.batchId) && (
+                            <option value={data[key]!.batchId}>
+                              已关联批次 {data[key]!.batchId}
+                            </option>
+                          )}
+                        {batches.map((b) => (
+                          <option key={b.id} value={b.id}>
+                            {b.fileName} · {b.importedAt}
                           </option>
-                        )}
-                      {batches.map((b) => (
-                        <option key={b.id} value={b.id}>
-                          {b.fileName} · {b.importedAt}
-                        </option>
-                      ))}
-                    </select>
-                  </label>
-                  <label>
-                    {label} 产品
-                    <input
-                      name={`${key}Product`}
-                      defaultValue={data[key]?.product}
-                      maxLength={500}
-                    />
-                  </label>
-                  <label>
-                    {label} 版本
-                    <input
-                      name={`${key}Version`}
-                      defaultValue={data[key]?.version}
-                      maxLength={500}
-                    />
-                  </label>
-                  <label>
-                    {label} 阶段
-                    <select
-                      name={`${key}Phase`}
-                      defaultValue={data[key]?.phase ?? "eol"}
-                    >
-                      <option value="eos">EOS 栏位（请核对来源阶段）</option>
-                      <option value="eol">EOL 栏位（请核对来源阶段）</option>
-                    </select>
-                  </label>
-                </div>
-              </fieldset>
-            ))}
+                        ))}
+                      </select>
+                    </label>
+                    <label>
+                      {label} 产品
+                      <input
+                        name={`${key}Product`}
+                        defaultValue={
+                          data[key]?.product ??
+                          props.workspaceItem?.support.find((r) =>
+                            key === "os"
+                              ? r.kind === "os"
+                              : ["device", "hardware"].includes(r.kind),
+                          )?.product
+                        }
+                        maxLength={500}
+                      />
+                    </label>
+                    <label>
+                      {label} 版本
+                      <input
+                        name={`${key}Version`}
+                        defaultValue={
+                          data[key]?.version ??
+                          props.workspaceItem?.support.find((r) =>
+                            key === "os"
+                              ? r.kind === "os"
+                              : ["device", "hardware"].includes(r.kind),
+                          )?.version
+                        }
+                        maxLength={500}
+                      />
+                    </label>
+                    <label>
+                      {label} 支持类型
+                      <select
+                        aria-label={`${label} 支持类型`}
+                        name={`${key}Tier`}
+                        defaultValue={data[key]?.supportTier ?? "standard"}
+                      >
+                        <option value="standard">标准支持</option>
+                        <option value="extended">扩展 / 付费支持</option>
+                      </select>
+                    </label>
+                    <label>
+                      {label} 扩展支持适用依据
+                      <input
+                        name={`${key}Entitlement`}
+                        defaultValue={data[key]?.entitlement}
+                        maxLength={1000}
+                        placeholder="服务权益或订阅凭证；采用扩展支持时必填"
+                      />
+                    </label>
+                    <label>
+                      {label} 阶段
+                      <select
+                        name={`${key}Phase`}
+                        defaultValue={data[key]?.phase ?? "eol"}
+                      >
+                        <option value="eos">EOS 栏位（请核对来源阶段）</option>
+                        <option value="eol">EOL 栏位（请核对来源阶段）</option>
+                      </select>
+                    </label>
+                  </div>
+                </fieldset>
+              ))}
             <button className="primary" disabled={busy}>
               保存资产生命周期资料
             </button>
           </fieldset>
         </form>
       )}
+      {props.workspaceItem?.support
+        .filter((r) => r.status === "unmatched" || r.status === "conflict")
+        .map((ref, i) => (
+          <ProductAliasForm
+            key={i}
+            {...props}
+            reference={ref}
+            onSaved={() => {
+              props.onSaved?.();
+              setNotice("产品别名已保存，请刷新核对引用结果");
+            }}
+          />
+        ))}
       <details onToggle={(e) => setHistoryOpen(e.currentTarget.open)}>
         <summary>资料变更历史</summary>
         {historyOpen &&
