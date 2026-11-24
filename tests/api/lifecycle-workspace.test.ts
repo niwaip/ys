@@ -211,3 +211,84 @@ test("编辑旧版本时返回冲突，不覆盖其他操作员已经确认的�
   expect(saved.attributes.lifecycle.purchasedOn).toBe("2020-01-01");
   expect(saved.attributes.lifecycle.warrantyUntil).toBeUndefined();
 });
+test("混合分类同名产品不干扰自动风险引用，明确阶段可消除同批次歧义", async () => {
+  const asset = (
+    await http()
+      .post(`${base}/assets`)
+      .set(auth)
+      .send({
+        name: "phase-router",
+        kind: "host",
+        attributes: { product: "Phase Router", version: "1" },
+      })
+      .expect(201)
+  ).body;
+  const header =
+    "source,sourceRef,product,version,eosStage,eosDate,eolStage,eolDate,category,phase";
+  const batch = (
+    await http()
+      .post(`${base}/lifecycle/batches`)
+      .set(auth)
+      .send({
+        fileName: "mixed.csv",
+        content:
+          header +
+          "\nVendor,Device,Phase Router,1,Sales,2020-01-01,Support,2021-01-01,device,eol\nVendor,Software,Phase Router,1,Sales,2020-01-01,Support,2030-01-01,software,eol",
+      })
+      .expect(201)
+  ).body;
+  let risk = (
+    await http().get(`${base}/lifecycle-risk/current`).set(auth).expect(200)
+  ).body;
+  expect(
+    risk.items.find(
+      (x: any) => x.assetId === asset.id && x.type === "device_support",
+    ),
+  ).toMatchObject({ dueDate: "2021-01-01", level: "critical" });
+  const phases = (
+    await http()
+      .post(`${base}/lifecycle/batches`)
+      .set(auth)
+      .send({
+        fileName: "phases.csv",
+        content:
+          header +
+          "\nVendor,EOS,Phase Router,1,Sales,2020-01-01,Support,2022-01-01,device,eos\nVendor,EOL,Phase Router,1,Sales,2020-01-01,Support,2023-01-01,device,eol",
+      })
+      .expect(201)
+  ).body;
+  await http()
+    .patch(`${base}/assets/${asset.id}/lifecycle`)
+    .set(auth)
+    .send({
+      device: {
+        batchId: phases.id,
+        product: "Phase Router",
+        version: "1",
+        phase: "eol",
+      },
+    })
+    .expect(200);
+  const workspace = (
+    await http()
+      .get(`${base}/lifecycle/workspace?q=phase-router`)
+      .set(auth)
+      .expect(200)
+  ).body;
+  expect(workspace.items[0].support).toContainEqual(
+    expect.objectContaining({
+      status: "matched",
+      batchId: phases.id,
+      phase: "eol",
+      date: "2023-01-01",
+    }),
+  );
+  risk = (
+    await http().get(`${base}/lifecycle-risk/current`).set(auth).expect(200)
+  ).body;
+  expect(
+    risk.items.find(
+      (x: any) => x.assetId === asset.id && x.type === "device_support",
+    ),
+  ).toMatchObject({ dueDate: "2023-01-01", level: "critical" });
+});

@@ -56,15 +56,13 @@ test("生命周期工作台按设备筛选，专属日期确认保存与共同CS
   expect((await downloading).suggestedFilename()).toBe(
     "ys-lifecycle-template.csv",
   );
-  await page
-    .getByLabel("生命周期 CSV 文件")
-    .setInputFiles({
-      name: "vendor.csv",
-      mimeType: "text/csv",
-      buffer: Buffer.from(
-        `source,sourceRef,product,version,eosStage,eosDate,eolStage,eolDate,category,phase\nVendor,Doc,${name},1,Sales,2020-01-01,Support,2030-01-01,device,eol`,
-      ),
-    });
+  await page.getByLabel("生命周期 CSV 文件").setInputFiles({
+    name: "vendor.csv",
+    mimeType: "text/csv",
+    buffer: Buffer.from(
+      `source,sourceRef,product,version,eosStage,eosDate,eolStage,eolDate,category,phase\nVendor,Doc,${name},1,Sales,2020-01-01,Support,2030-01-01,device,eol`,
+    ),
+  });
   await page.getByRole("button", { name: "导入生命周期批次" }).click();
   await expect(
     page.getByRole("heading", { name: "批次证据：vendor.csv", exact: true }),
@@ -76,6 +74,10 @@ test("生命周期工作台按设备筛选，专属日期确认保存与共同CS
   await page.reload();
   await page.getByLabel("搜索设备", { exact: true }).fill(name);
   await expect(row).toContainText("2028-01-02");
+  await page.screenshot({
+    path: "output/deployment/lifecycle-workspace-desktop.png",
+    fullPage: true,
+  });
   await page.setViewportSize({ width: 390, height: 844 });
   expect(
     await page.evaluate(

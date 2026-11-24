@@ -37,3 +37,14 @@ source/sourceRef/product/eosStage/eolStage 非空，最多500字符。version �
 共享 DTO 为 `packages/contracts/lifecycle.ts`，后端模块导出 `LifecycleService`（`getBatch(customer,id)`、`getAssessment(customer,id)`、`batches(customer)`、`assessments(customer)`）。读取必须先取得授权客户范围；服务 SQL 仍同时限制 customer_id。批次复用 T02 的 import_materials 证据存储和 transaction；资产导入历史仅列 format=csv，不混入生命周期资料。迁移8保存评估且以复合外键约束批次客户归属。
 
 报告应绑定明确 assessment.id + batchId + contentHash + ruleVersion，不读取“最新”替换选定事实。每项 items 的 product/version、match/verification/basis 和 evidence（原始来源行/阶段/rawDate/dateStatus/status）是该次事实快照。Dashboard 必须明确选择评估版本，按对象身份去重，不累计历史次数；weak/unmatched、unknown/invalid 日期分别披露覆盖缺口。尚未评估不能当作无风险。生命周期证据不修改 CVE 判断，报告复核不修改生命周期事实。
+
+
+## 资产生命周期工作台
+
+“设备专属期限”维护具体资产的购买和维保日期；“厂商共同资料 · CSV”维护 OS、软件、设备型号和硬件产品的共同支持阶段。导入与日期保存不自动评估。覆盖概览的完整状态要求适用资料均具备有效值，未知和冲突不当作完整。
+
+CSV 可追加 `category`（os/software/device/hardware）和 `phase`（eos/eol），指定分类时必须指定阶段。新工作台只自动引用产品、版本、分类、阶段唯一精确对应的资料；多个批次不自动择新，保持待确认。旧八列表头仍可导入并明确关联。已确认 OS/设备基线和明确关联的软件输入版本参与引用，未确认采集观测不参与。
+
+`GET /api/customers/:customerId/lifecycle/workspace` 支持 category、state（empty/partial/complete）、missing、q、limit、offset；客户范围筛选在分页前执行。summary 为当前客户全部在管资产概览，total 为筛选后的数量。
+
+`PATCH /api/customers/:customerId/assets/:assetId/lifecycle` 空值不清除旧字段；expected 快照用于拒绝旧表单覆盖新值。`GET /api/customers/:customerId/lifecycle/assets/:assetId/history` 回读操作员、来源和前后值。NetBox 管理资产写入原设备 custom_fields.ys_lifecycle，再回读核对；失败不更新本地缓存，保留未确认历史供同步核对。共同参考批次保存在 YS。历史评估仍读取固定证据，不被新资料改写。

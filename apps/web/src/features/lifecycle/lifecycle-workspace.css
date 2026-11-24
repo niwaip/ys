@@ -92,6 +92,21 @@
   width: 100%;
   min-width: 0;
   box-sizing: border-box;
+  min-height: 44px;
+  padding: 10px 12px;
+  border: 1px solid #dce6df;
+  border-radius: 8px;
+  background: white;
+  color: #304e40;
+  font: inherit;
+  font-size: 13px;
+}
+.lifecycle-filters select {
+  cursor: pointer;
+}
+.lifecycle-filters :is(input, select):focus-visible {
+  outline: 2px solid #78b69f;
+  outline-offset: 2px;
 }
 .lifecycle-inventory table {
   width: 100%;

@@ -156,10 +156,23 @@ export class LifecycleRiskService {
             }
           }
           const batch = batches.get(binding.batchId);
+          // Keep the workspace resolver's exact source row, including typed
+          // category and phase, instead of reintroducing unrelated CSV rows.
+          const resolved = automatic.find((r) =>
+            type === "device_support"
+              ? ["device", "hardware"].includes(r.kind)
+              : r.kind === "os",
+          );
           const matched = (batch?.rows ?? []).filter(
             (r) =>
               r.product === binding.product &&
               (r.version ?? "") === binding.version &&
+              (!r.extensions.phase || r.extensions.phase === binding.phase) &&
+              (!r.extensions.category ||
+                (type === "os_support"
+                  ? r.extensions.category === "os"
+                  : ["device", "hardware"].includes(r.extensions.category))) &&
+              (resolved?.status !== "matched" || r.row === resolved.row) &&
               (type !== "os_support" || !!binding.version),
           );
           for (const row of matched) {

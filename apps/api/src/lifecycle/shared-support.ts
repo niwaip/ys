@@ -50,7 +50,11 @@ export async function sharedSupport(db: Queryable, customer: string) {
       target
         ? batchId === target.batchId &&
           row.product === p &&
-          (row.version ?? "") === v
+          (row.version ?? "") === v &&
+          (!row.extensions.phase || row.extensions.phase === target.phase) &&
+          (!row.extensions.category ||
+            row.extensions.category === kind ||
+            (kind === "device" && row.extensions.category === "hardware"))
         : row.extensions.category === kind &&
           row.product === p &&
           (row.version ?? "") === v &&
