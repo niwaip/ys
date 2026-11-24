@@ -20,7 +20,7 @@
 | POST `/tasks/:taskId/finish`      | `{}`，执行结束或等待时保留缺口生成报告，不纳入未终态评估                                 |
 | GET `/hosts/:assetId/assessments` | 该客户主机完整历史候选，用户可明确选旧批次                                               |
 
-`scope` 为 `{kind:"selected",assetIds:[uuid]}` 或 `{kind:"tenant"}`。`mode` 为 `existing`、`assess`、`collect`、`incremental`；后者仅补扫缺失/过期漏洞评估，采集陈旧仍提醒，不以评估时间刷新。`collect` 复用资产已保存配置及实际能力，经原有上传/基线确认边界后执行；不支持或未配置项保留缺口。Linux 输入仍限已接入的 dpkg 范围；Windows 必须明确提供 `windowsRuleImportId`，不声明完整厂商补丁覆盖。
+`scope` 为 `{kind:"selected",assetIds:[uuid]}` 或 `{kind:"tenant"}`。`mode` 为 `existing`、`assess`、`collect`、`incremental`；增量任务分别检查采集及评估：采集缺失、陈旧或日期未知时进入采集/确认等待，可显式设置 `allowExistingCollection:true` 采用现有采集资料并仅补评估；关联 SBOM 需更新并明确关联新版本，或明确采用既有资料，不以评估时间刷新。`collect` 复用资产已保存配置及实际能力，经原有上传/基线确认边界后执行；不支持或未配置项保留缺口。Linux 输入仍限已接入的 dpkg 范围；Windows 必须明确提供 `windowsRuleImportId`，不声明完整厂商补丁覆盖。
 
 `freshnessDays` 默认 7，单独检查采集和评估。`overrides` 显式历史选择必须属于当前范围及客户。`sourceReportId` 记录采用新结果时的来源报告，`comparisonReportId` 固定基准修订；只在同对象、输入版本、解析/规则能力及覆盖可比时比较发现，移出主机不算问题消失，“未再观察到”不等于修复。
 

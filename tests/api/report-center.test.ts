@@ -1555,3 +1555,155 @@ test("服务重启保留任务且不自动重放扫描，显式重试才提交�
     .toBe("needs_attention");
   expect(calls).toBe(2);
 });
+
+test("增量任务分别处理陈旧采集与评估，等待资料跨重启保留，旧资料须明确采用", async () => {
+  directory = await mkdtemp(join(tmpdir(), "ys-report-incremental-"));
+  let calls = 0;
+  const options = { ...config, databaseUrl: `pglite://${directory}` };
+  const runtime = {
+    trivyExecutor: {
+      execute: async () => {
+        calls++;
+        throw new Error("fixture only");
+      },
+    },
+  };
+  app = await createApp(options, [], runtime);
+  let http = request(app.getHttpServer());
+  const { asset } = await linuxHost(http, "incremental-host");
+  await http
+    .post(`/api/customers/a/collections/configurations/${asset.id}`)
+    .set(auth)
+    .send({
+      category: "server",
+      platform: "linux",
+      items: [{ content: "basic", enabled: true, method: "manual" }],
+    })
+    .expect(201);
+  const input = {
+    name: "增量补扫",
+    scope: { kind: "selected", assetIds: [asset.id] },
+    mode: "incremental",
+    idempotencyKey: "incremental",
+  };
+  const task = (
+    await http
+      .post("/api/customers/a/report-center/tasks")
+      .set(auth)
+      .send(input)
+      .expect(202)
+  ).body;
+  const url = `/api/customers/a/report-center/tasks/${task.id}`;
+  await expect
+    .poll(async () => (await http.get(url).set(auth)).body.status)
+    .toBe("waiting");
+  expect(calls).toBe(0);
+  const waiting = (await http.get(url).set(auth)).body;
+  expect(waiting.items[0].needsCollection).toBe(true);
+  await app.close();
+  app = await createApp(options, [], runtime);
+  http = request(app.getHttpServer());
+  expect((await http.get(url).set(auth)).body.items[0].collectionRunId).toBe(
+    waiting.items[0].collectionRunId,
+  );
+  expect((await http.get(url).set(auth)).body.status).toBe("waiting");
+  const explicit = (
+    await http
+      .post("/api/customers/a/report-center/tasks")
+      .set(auth)
+      .send({
+        ...input,
+        idempotencyKey: "explicit-old",
+        allowExistingCollection: true,
+      })
+      .expect(202)
+  ).body;
+  await expect
+    .poll(
+      async () =>
+        (
+          await http
+            .get(`/api/customers/a/report-center/tasks/${explicit.id}`)
+            .set(auth)
+        ).body.status,
+    )
+    .toBe("needs_attention");
+  expect(calls).toBe(1);
+});
+
+test(
+  "格式失败保持可用文件与不完整清单，重试单个 PDF 不覆盖 XLSX",
+  { timeout: 30000 },
+  async () => {
+    directory = await mkdtemp(join(tmpdir(), "ys-report-format-retry-"));
+    app = await createApp({ ...config, databaseUrl: `pglite://${directory}` });
+    const http = request(app.getHttpServer());
+    const { asset } = await linuxHost(http, "format-retry");
+    const task = (
+      await http
+        .post("/api/customers/a/report-center/tasks")
+        .set(auth)
+        .send({
+          name: "格式重试",
+          scope: { kind: "selected", assetIds: [asset.id] },
+          mode: "existing",
+          idempotencyKey: "format-retry",
+        })
+        .expect(202)
+    ).body;
+    const report = (
+      await http.get(`/api/customers/a/reports/${task.reportId}`).set(auth)
+    ).body;
+    const base = `/api/customers/a/reports/${task.reportId}/revisions/${report.revision.id}/packages`;
+    const oldChannel = process.env.REPORT_PDF_CHANNEL;
+    let bundle!: { id: string };
+    try {
+      process.env.REPORT_PDF_CHANNEL = "invalid-fixture-channel";
+      bundle = (
+        await http.post(base).set(auth).send({ audience: "draft" }).expect(202)
+      ).body;
+      await expect
+        .poll(
+          async () =>
+            (await http.get(`${base}/${bundle.id}`).set(auth)).body.status,
+        )
+        .toBe("partial");
+    } finally {
+      if (oldChannel === undefined) delete process.env.REPORT_PDF_CHANNEL;
+      else process.env.REPORT_PDF_CHANNEL = oldChannel;
+    }
+    const failed = (await http.get(`${base}/${bundle.id}`).set(auth)).body;
+    const failedPdf = failed.files.find(
+        (file: { format: string }) => file.format === "pdf",
+      ),
+      sheet = failed.files.find(
+        (file: { format: string }) => file.format === "xlsx",
+      );
+    expect(failedPdf.status).toBe("failed");
+    expect(sheet.status).toBe("ready");
+    await http.get(`${base}/${bundle.id}/download`).set(auth).expect(409);
+    await http
+      .post(`${base}/${bundle.id}/retry`)
+      .set(auth)
+      .send({ fileIds: [sheet.id] })
+      .expect(409);
+    if (oldChannel) {
+      await http
+        .post(`${base}/${bundle.id}/retry`)
+        .set(auth)
+        .send({ fileIds: [failedPdf.id] })
+        .expect(201);
+      await expect
+        .poll(
+          async () =>
+            (await http.get(`${base}/${bundle.id}`).set(auth)).body.status,
+          { timeout: 15000 },
+        )
+        .toBe("complete");
+      const ready = (await http.get(`${base}/${bundle.id}`).set(auth)).body;
+      expect(
+        ready.files.find((file: { id: string }) => file.id === sheet.id).sha256,
+      ).toBe(sheet.sha256);
+    }
+  },
+);

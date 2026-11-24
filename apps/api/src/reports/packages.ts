@@ -35,6 +35,7 @@ const sha = (bytes: Uint8Array | string) =>
 export class ReportPackageService {
   private active = new Map<string, Promise<void>>();
   private stopping = false;
+  private queue: Promise<void> = Promise.resolve();
   constructor(
     private db: Database,
     private reports: ReportsService,
@@ -167,7 +168,8 @@ export class ReportPackageService {
   }
   private start(customer: string, bundle: ReportPackage) {
     if (this.stopping || this.active.has(bundle.id)) return;
-    const work = this.generate(customer, bundle)
+    const work = this.queue
+      .then(() => this.generate(customer, bundle))
       .catch(async (error) => {
         for (const file of bundle.files)
           if (["pending", "running"].includes(file.status)) {
@@ -178,6 +180,7 @@ export class ReportPackageService {
         await this.save(bundle);
       })
       .finally(() => this.active.delete(bundle.id));
+    this.queue = work;
     this.active.set(bundle.id, work);
   }
   private async generate(customer: string, bundle: ReportPackage) {
@@ -186,8 +189,10 @@ export class ReportPackageService {
       bundle.reportId,
       bundle.revisionId,
     );
-    if (bundle.input.audience === "official")
-      await this.review.export(customer, bundle.reportId, bundle.revisionId);
+    const officialHtml =
+      bundle.input.audience === "official"
+        ? await this.review.export(customer, bundle.reportId, bundle.revisionId)
+        : undefined;
     const revision = structuredClone(parent);
     if (bundle.input.audience === "draft") revision.status = "draft";
     for (const file of bundle.files) {
@@ -223,7 +228,8 @@ export class ReportPackageService {
             : revision;
           if (file.format === "xlsx") bytes = await xlsx(view);
           else {
-            const html = renderReport(view);
+            const html =
+              !file.hostId && officialHtml ? officialHtml : renderReport(view);
             bytes =
               file.format === "html"
                 ? Buffer.from(html, "utf8")
@@ -270,19 +276,33 @@ export class ReportPackageService {
       .strict()
       .safeParse(value);
     if (!parsed.success) throw new BadRequestException("请选择失败文件");
-    const bundle = await this.get(customer, reportId, revisionId, id);
-    if (this.active.has(id)) throw new ConflictException("文件仍在生成");
-    const files = bundle.files.filter((file) =>
-      parsed.data.fileIds.includes(file.id),
-    );
-    if (
-      files.length !== parsed.data.fileIds.length ||
-      files.some((file) => file.status !== "failed")
-    )
-      throw new ConflictException("只能重试此包失败的文件");
-    for (const file of files) file.status = "pending";
-    bundle.status = "generating";
-    await this.save(bundle);
+    const bundle = await this.db.transaction(async (tx) => {
+      const row = (
+        await tx.query(
+          "SELECT details FROM report_exports WHERE customer_id=$1 AND report_id=$2 AND revision_id=$3 AND id=$4 FOR UPDATE",
+          [customer, reportId, revisionId, id],
+        )
+      ).rows[0];
+      if (!row) throw new NotFoundException("该客户报告修订下未找到文件包");
+      const bundle = row.details as ReportPackage;
+      if (this.active.has(id) || bundle.status === "generating")
+        throw new ConflictException("文件仍在生成");
+      const files = bundle.files.filter((file) =>
+        parsed.data.fileIds.includes(file.id),
+      );
+      if (
+        files.length !== parsed.data.fileIds.length ||
+        files.some((file) => file.status !== "failed")
+      )
+        throw new ConflictException("只能重试此包失败的文件");
+      for (const file of files) file.status = "pending";
+      bundle.status = "generating";
+      await tx.query(
+        "UPDATE report_exports SET status=$2,details=$3::jsonb WHERE id=$1",
+        [bundle.id, bundle.status, JSON.stringify(bundle)],
+      );
+      return bundle;
+    });
     this.start(customer, bundle);
     return bundle;
   }

@@ -1,3 +1,4 @@
+import { reportStatistics, reportCoverage } from "./fact-summary";
 import { compareReports } from "./comparison";
 import { ReportPackageService, ReportPackageController } from "./packages";
 import { CollectionConfigurationService } from "../collections/configuration";
@@ -285,58 +286,12 @@ export class ReportsService {
           version: item.version,
         });
       }
-    const coverageIssues: string[] = [];
-    for (const [key, t] of scope) {
-      if (!cveTargets.has(key))
-        coverageIssues.push(
-          `${t.name} / ${t.version ?? "未知版本"}：未选择CVE评估，未评估`,
-        );
-      if (!lifeTargets.has(key))
-        coverageIssues.push(
-          `${t.name} / ${t.version ?? "未知版本"}：未选择生命周期评估，未评估`,
-        );
-    }
-    for (const a of assessmentSnapshots) {
-      if (!a.result)
-        coverageIssues.push(
-          `CVE评估 ${a.id}：${a.status}，无可用结果，不是零漏洞`,
-        );
-      else {
-        coverageIssues.push(
-          `CVE评估 ${a.id}：覆盖 ${a.result.coverage.status}，情报库 ${a.result.database.freshness}`,
-          ...a.result.coverage.issues.map((x) => `CVE评估 ${a.id}：${x}`),
-        );
-      }
-    }
-    for (const a of lifecycleSnapshots)
-      for (const item of a.items) {
-        if (item.match !== "exact")
-          coverageIssues.push(
-            `生命周期 ${item.assetId}：${item.match} / ${item.verification}`,
-          );
-        for (const e of item.evidence)
-          for (const [name, s] of [
-            ["EOS", e.eos],
-            ["EOL", e.eol],
-          ] as const)
-            if (s.dateStatus !== "known")
-              coverageIssues.push(
-                `生命周期 ${item.assetId} ${name}：${s.dateStatus}，日期未知`,
-              );
-      }
-    const findings: {
-        severity: string;
-        vulnerabilityId: string;
-        applicability: string;
-      }[] = assessmentSnapshots.reduce<
-        { severity: string; vulnerabilityId: string; applicability: string }[]
-      >((all, a) => [...all, ...(a.result?.findings ?? [])], []),
-      severityCounts: Record<string, number> = Object.create(null);
-    for (const finding of findings)
-      severityCounts[finding.severity] =
-        (severityCounts[finding.severity] ?? 0) + 1;
-    const lifecycleItems = lifecycleSnapshots.flatMap((a) => a.items),
-      now = new Date().toISOString();
+    const coverageIssues = reportCoverage({
+      scope: [...scope.values()],
+      assessmentSnapshots,
+      lifecycleSnapshots,
+    });
+    const now = new Date().toISOString();
     const sourceRefs: ReportFacts["sourceRefs"] = [];
     sourceRefs.push(
       ...ruleRefs.filter(
@@ -380,37 +335,10 @@ export class ReportsService {
       assessmentSnapshots,
       lifecycleSnapshots,
       sourceRefs,
-      statistics: {
-        confirmedAffectedCount: assessmentSnapshots.some((a) => a.result)
-          ? findings.filter((v) => v.applicability === "affected").length
-          : null,
-        applicabilityCounts: Object.fromEntries(
-          [...new Set(findings.map((v) => v.applicability))].map((key) => [
-            key,
-            findings.filter((v) => v.applicability === key).length,
-          ]),
-        ),
-        findingInstances: assessmentSnapshots.some((a) => a.result)
-          ? findings.length
-          : null,
-        uniqueCveCount: assessmentSnapshots.some((a) => a.result)
-          ? new Set(
-              findings
-                .filter((v) => /^CVE-\d{4}-\d{4,}$/.test(v.vulnerabilityId))
-                .map((v) => v.vulnerabilityId),
-            ).size
-          : null,
-        severityCounts,
-        lifecycleExact: lifecycleSnapshots.length
-          ? lifecycleItems.filter((i) => i.match === "exact").length
-          : null,
-        lifecycleWeak: lifecycleSnapshots.length
-          ? lifecycleItems.filter((i) => i.match === "weak").length
-          : null,
-        lifecycleUnmatched: lifecycleSnapshots.length
-          ? lifecycleItems.filter((i) => i.match === "unmatched").length
-          : null,
-      },
+      statistics: reportStatistics(
+        { assessmentSnapshots, lifecycleSnapshots },
+        center?.hosts,
+      ),
       coverageIssues,
     };
     if (center) {
@@ -450,33 +378,6 @@ export class ReportsService {
             version: null,
           });
       }
-      const involved = new Set<string>(),
-        affected = new Set<string>();
-      for (const assessment of assessmentSnapshots) {
-        if (!assessment.result?.findings.length) continue;
-        const hosts = center.hosts
-          .filter((host) => host.assessmentRefs.includes(assessment.id))
-          .map((host) => host.assetId);
-        for (const id of hosts) {
-          involved.add(id);
-          if (
-            assessment.result.findings.some(
-              (finding) => finding.applicability === "affected",
-            )
-          )
-            affected.add(id);
-        }
-      }
-      const hasResults = assessmentSnapshots.some(
-        (assessment) => assessment.result,
-      );
-      facts.statistics.involvedHostCount = hasResults ? involved.size : null;
-      facts.statistics.confirmedAffectedHostCount = hasResults
-        ? affected.size
-        : null;
-      facts.statistics.uniqueVulnerabilityCount = hasResults
-        ? new Set(findings.map((finding) => finding.vulnerabilityId)).size
-        : null;
     }
     if (center && finalizingTask?.comparisonBase)
       center.comparison = compareReports(facts, finalizingTask.comparisonBase);

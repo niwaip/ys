@@ -92,6 +92,7 @@ export class CollectionConfigurationService {
     assetId: string,
     key: string,
     expected?: CollectionConfiguration,
+    mayDispatch?: () => Promise<boolean>,
   ) {
     await this.collections.assertTarget(customer, assetId);
     const stored = await this.get(customer, assetId);
@@ -141,6 +142,8 @@ export class CollectionConfigurationService {
       if (item.status !== "submitting") continue;
       const setting = config.items.find((s) => s.content === item.content)!;
       try {
+        if (mayDispatch && !(await mayDispatch()))
+          throw new ConflictException("报告任务已取消，停止后续采集派发");
         const job = (await this.jobs.submit(customer, {
           assetId,
           profileId: setting.profileId!,

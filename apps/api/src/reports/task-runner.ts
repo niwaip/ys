@@ -69,13 +69,28 @@ export class ReportTaskRunner {
         status: "pending",
       });
     for (const item of task.items) {
-      if (
-        task.input.mode === "collect" &&
-        ["linux", "windows"].includes(item.kind)
-      )
+      const host = task.hosts.find((host) => host.assetId === item.objectId);
+      const object = task.frozenScope?.objects?.find(
+        (object) =>
+          object.objectId === item.objectId &&
+          object.versionId === item.snapshotId,
+      );
+      const collectionFreshness =
+        host?.freshness.collection ??
+        object?.freshness?.collection ??
+        "unknown";
+      item.needsCollection =
+        (task.input.mode === "collect" && !!host) ||
+        (incremental &&
+          collectionFreshness !== "fresh" &&
+          !task.input.allowExistingCollection);
+      if (item.needsCollection && host)
         item.collectionConfiguration =
-          ((await this.configurations.get(task.customerId, item.objectId)) as
-            CollectionConfiguration | undefined) ?? undefined;
+          ((await this.configurations.get(
+            task.customerId,
+            item.objectId,
+          )) as CollectionConfiguration | null) ?? undefined;
+      if (item.needsCollection) continue;
       if (incremental && item.snapshotId) {
         const job = (
           await this.db.query(
@@ -149,10 +164,14 @@ export class ReportTaskRunner {
           for (const host of item.hostIds)
             await requireActiveAsset(tx, customer, host);
         });
-        if (
-          task.input.mode === "collect" &&
-          ["linux", "windows"].includes(item.kind)
-        ) {
+        if (item.needsCollection) {
+          if (!["linux", "windows"].includes(item.kind)) {
+            item.status = "waiting_upload";
+            item.error =
+              "关联 SBOM 资料陈旧或缺少来源时间；需在主机资料页补齐并明确关联新版本后新建报告，或明确采用现有资料。可结束等待生成缺口报告";
+            await this.save(task);
+            continue;
+          }
           const ready = await this.collect(task, item);
           if (!ready) {
             await this.save(task);
@@ -269,9 +288,16 @@ export class ReportTaskRunner {
     task: ReportTask,
     item: import("../../../../packages/contracts/report-center").ReportTaskItem,
   ) {
+    if (!item.collectionConfiguration)
+      item.collectionConfiguration =
+        ((await this.configurations.get(
+          task.customerId,
+          item.objectId,
+        )) as CollectionConfiguration | null) ?? undefined;
     if (!item.collectionConfiguration) {
-      item.status = "unsupported";
-      item.error = "未保存采集配置，请到资产采集配置设置接入方式后新建任务";
+      item.status = "waiting_upload";
+      item.error =
+        "未保存采集配置；请到资产采集配置设置接入方式，再明确继续任务，或结束等待生成缺口报告";
       return false;
     }
     let run: ConfigurationRun;
@@ -279,8 +305,15 @@ export class ReportTaskRunner {
       run = await this.configurations.run(
         task.customerId,
         item.objectId,
-        `report:${task.id}:${item.id}`,
+        `report:${task.id}:${item.id}:${item.attempt}`,
         item.collectionConfiguration,
+        async () => {
+          await this.authorized(task);
+          return (
+            !this.stopping &&
+            (await this.load(task.customerId, task.id)).status !== "cancelled"
+          );
+        },
       );
       item.collectionRunId = run.id;
       await this.save(task);
@@ -348,6 +381,7 @@ export class ReportTaskRunner {
       return false;
     }
     item.snapshotId = snapshotId;
+    item.needsCollection = false;
     const normalized = snapshot.normalized as { collectedAt: string | null };
     const host = task.frozenScope!.hosts.find(
       (host) => host.assetId === item.objectId,
@@ -366,69 +400,101 @@ export class ReportTaskRunner {
     delete item.error;
     return true;
   }
+  private async change(
+    customer: string,
+    id: string,
+    update: (task: ReportTask) => void,
+  ) {
+    return this.db.transaction(async (tx) => {
+      const row = (
+        await tx.query(
+          "SELECT details FROM report_tasks WHERE customer_id=$1 AND id=$2 FOR UPDATE",
+          [customer, id],
+        )
+      ).rows[0];
+      if (!row) throw new NotFoundException("该客户下未找到报告任务");
+      const task = row.details as ReportTask;
+      update(task);
+      await tx.query(
+        "UPDATE report_tasks SET status=$3,details=$4::jsonb WHERE customer_id=$1 AND id=$2",
+        [customer, id, task.status, JSON.stringify(task)],
+      );
+      return task;
+    });
+  }
   async resume(customer: string, id: string) {
-    const task = await this.load(customer, id);
-    if (this.active.has(id) || task.status !== "waiting" || task.reportId)
-      throw new ConflictException("当前任务不处于等待资料状态");
-    for (const item of task.items ?? [])
-      if (["waiting_upload", "waiting_confirmation"].includes(item.status))
-        item.status = "pending";
-    task.status = "queued";
-    await this.save(task);
+    const task = await this.change(customer, id, (task) => {
+      if (this.active.has(id) || task.status !== "waiting" || task.reportId)
+        throw new ConflictException("当前任务不处于等待资料状态");
+      for (const item of task.items ?? [])
+        if (["waiting_upload", "waiting_confirmation"].includes(item.status))
+          item.status = "pending";
+      task.status = "queued";
+    });
     this.start(customer, id);
     return task;
   }
   async retry(customer: string, id: string, itemIds: string[]) {
-    const task = await this.load(customer, id);
-    if (
-      task.reportId ||
-      this.active.has(id) ||
-      !["needs_attention", "interrupted", "failed"].includes(task.status)
-    )
-      throw new ConflictException("当前任务不能重试");
-    const selected =
-      task.items?.filter((item) => itemIds.includes(item.id)) ?? [];
-    if (
-      selected.length !== itemIds.length ||
-      selected.some(
-        (item) =>
-          !["failed", "interrupted", "running", "pending"].includes(
-            item.status,
-          ),
+    const task = await this.change(customer, id, (task) => {
+      if (
+        task.reportId ||
+        this.active.has(id) ||
+        !["needs_attention", "interrupted", "failed", "waiting"].includes(
+          task.status,
+        )
       )
-    )
-      throw new ConflictException("只能重试本任务失败或中断的分项");
-    for (const item of selected) {
-      item.previousAssessmentIds = [
-        ...(item.previousAssessmentIds ?? []),
-        ...(item.assessmentId ? [item.assessmentId] : []),
-      ];
-      delete item.assessmentId;
-      delete item.error;
-      item.attempt++;
-      item.status = "pending";
-    }
-    task.status = "queued";
-    await this.save(task);
+        throw new ConflictException("当前任务不能重试");
+      const selected =
+        task.items?.filter((item) => itemIds.includes(item.id)) ?? [];
+      if (
+        selected.length !== itemIds.length ||
+        selected.some(
+          (item) =>
+            !["failed", "interrupted", "running", "pending"].includes(
+              item.status,
+            ),
+        )
+      )
+        throw new ConflictException("只能重试本任务失败或中断的分项");
+      for (const item of selected) {
+        if (item.needsCollection && item.collectionRunId) {
+          item.previousCollectionRunIds = [
+            ...(item.previousCollectionRunIds ?? []),
+            item.collectionRunId,
+          ];
+          delete item.collectionRunId;
+          item.snapshotId = null;
+        }
+        item.previousAssessmentIds = [
+          ...(item.previousAssessmentIds ?? []),
+          ...(item.assessmentId ? [item.assessmentId] : []),
+        ];
+        delete item.assessmentId;
+        delete item.error;
+        item.attempt++;
+        item.status = "pending";
+      }
+      task.status = "queued";
+    });
     this.start(customer, id);
     return task;
   }
   async cancel(customer: string, id: string) {
-    const task = await this.load(customer, id);
-    if (task.reportId) throw new ConflictException("已固定报告不能取消");
-    task.status = "cancelled";
-    task.cancelledAt ??= new Date().toISOString();
-    for (const item of task.items ?? [])
-      if (
-        [
-          "pending",
-          "running",
-          "waiting_upload",
-          "waiting_confirmation",
-        ].includes(item.status)
-      )
-        item.status = "cancelled";
-    await this.save(task);
+    const task = await this.change(customer, id, (task) => {
+      if (task.reportId) throw new ConflictException("已固定报告不能取消");
+      task.status = "cancelled";
+      task.cancelledAt ??= new Date().toISOString();
+      for (const item of task.items ?? [])
+        if (
+          [
+            "pending",
+            "running",
+            "waiting_upload",
+            "waiting_confirmation",
+          ].includes(item.status)
+        )
+          item.status = "cancelled";
+    });
     return task;
   }
   async finish(customer: string, id: string) {
@@ -449,7 +515,7 @@ export class ReportTaskRunner {
   }
   private async finalize(task: ReportTask) {
     const center = task.frozenScope!;
-    for (const host of center.hosts) {
+    for (const host of task.input.mode === "existing" ? [] : center.hosts) {
       host.issues = host.issues.filter(
         (issue) =>
           !issue.startsWith("未取得当前已确认资料对应") &&
@@ -493,7 +559,9 @@ export class ReportTaskRunner {
           assessment.status === "succeeded" ? "fresh" : "missing";
       }
     }
-    for (const object of center.objects ?? []) {
+    for (const object of task.input.mode === "existing"
+      ? []
+      : (center.objects ?? [])) {
       const item = task.items?.find(
         (item) =>
           item.objectId === object.objectId &&

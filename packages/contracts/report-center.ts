@@ -29,6 +29,7 @@ export const reportTaskInput = z
       })
       .strict()
       .optional(),
+    allowExistingCollection: z.boolean().default(false),
     freshnessDays: z.number().int().min(1).max(3650).default(7),
     overrides: z
       .array(
@@ -158,5 +159,28 @@ export type ReportTaskItem = {
   error?: string;
   previousAssessmentIds?: string[];
   collectionRunId?: string;
+  needsCollection?: boolean;
+  previousCollectionRunIds?: string[];
   collectionConfiguration?: import("./collection-configuration").CollectionConfiguration;
+};
+
+export type ReportResultChoice = {
+  objectId: string;
+  versionId?: string;
+  name: string;
+  items: {
+    id: string;
+    kind: string;
+    status: string;
+    versionId: string;
+    createdAt: string;
+  }[];
+};
+export type ReportPreflight = {
+  checkedAt: string;
+  hosts: ReportHost[];
+  objects: ReportLinkedObject[];
+  resultChoices: ReportResultChoice[];
+  total: number;
+  available: number;
 };

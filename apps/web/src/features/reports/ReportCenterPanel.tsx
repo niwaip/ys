@@ -9,6 +9,7 @@ import type { FeatureProps } from "../../features";
 import type {
   ReportTask,
   ReportTaskInput,
+  ReportPreflight,
 } from "../../../../../packages/contracts/report-center";
 import {
   ReportPresentationFields,
@@ -34,17 +35,10 @@ export function ReportCenterPanel({
     [tasks, setTasks] = useState<ReportTask[]>([]),
     [busy, setBusy] = useState(false),
     [error, setError] = useState("");
-  const [choice, setChoice] = useState(""),
-    [choices, setChoices] = useState<
-      { id: string; status: string; versionId: string; createdAt: string }[]
-    >([]);
+  const [overrides, setOverrides] = useState<ReportTaskInput["overrides"]>([]);
+  const [dirtySelection, setDirtySelection] = useState(false);
   const [step, setStep] = useState(1),
-    [preflight, setPreflight] = useState<{
-      checkedAt: string;
-      hosts: ReportTask["hosts"];
-      total: number;
-      available: number;
-    }>();
+    [preflight, setPreflight] = useState<ReportPreflight>();
   const [comparisonReportId, setComparison] = useState(""),
     [useSource, setUseSource] = useState(false);
   const [output, setOutput] = useState<NonNullable<ReportTaskInput["output"]>>({
@@ -57,6 +51,7 @@ export function ReportCenterPanel({
   );
   const [windowsRuleImportId, setWindowsRule] = useState("");
   const [rules, setRules] = useState<{ id: string; fileName: string }[]>([]);
+  const [allowExistingCollection, setAllowExistingCollection] = useState(false);
   const [mode, setMode] = useState<ReportTaskInput["mode"]>("existing");
   const [presentation, setPresentation] = useState(defaultPresentation);
   const controller = useRef(new AbortController());
@@ -116,21 +111,9 @@ export function ReportCenterPanel({
     return () => controller.current.abort();
   }, [customerId, token]);
   useEffect(() => {
-    let active = true;
-    setChoice("");
-    setChoices([]);
-    if (selected)
-      call<{ items: typeof choices }>(`${base}/hosts/${selected}/assessments`)
-        .then((result) => {
-          if (active) setChoices(result.items);
-        })
-        .catch((e) => {
-          if (active) fail(e);
-        });
-    return () => {
-      active = false;
-    };
-  }, [selected, customerId, token]);
+    setOverrides([]);
+    setDirtySelection(false);
+  }, [selected, scopeMode, JSON.stringify(multiIds), customerId, mode]);
   const hasActive = tasks.some((task) =>
     ["queued", "running"].includes(task.status),
   );
@@ -142,6 +125,7 @@ export function ReportCenterPanel({
   async function taskAction(
     task: ReportTask,
     action: "retry" | "cancel" | "finish" | "resume",
+    itemIds?: string[],
   ) {
     setBusy(true);
     try {
@@ -150,13 +134,15 @@ export function ReportCenterPanel({
         body: JSON.stringify(
           action === "retry"
             ? {
-                itemIds: task.items
-                  ?.filter((item) =>
-                    ["failed", "interrupted", "running", "pending"].includes(
-                      item.status,
-                    ),
-                  )
-                  .map((item) => item.id),
+                itemIds:
+                  itemIds ??
+                  task.items
+                    ?.filter((item) =>
+                      ["failed", "interrupted", "running", "pending"].includes(
+                        item.status,
+                      ),
+                    )
+                    .map((item) => item.id),
               }
             : {},
         ),
@@ -181,10 +167,8 @@ export function ReportCenterPanel({
       mode,
       presentation,
       freshnessDays,
-      overrides:
-        choice && scopeMode === "single" && mode === "existing"
-          ? [{ objectId: selected, assessmentId: choice }]
-          : [],
+      allowExistingCollection,
+      overrides: mode === "existing" ? overrides : [],
       output,
       ...(comparisonReportId ? { comparisonReportId } : {}),
       ...(useSource && sourceReport ? { sourceReportId: sourceReport.id } : {}),
@@ -203,7 +187,7 @@ export function ReportCenterPanel({
     freshnessDays >= 1 &&
     freshnessDays <= 3650;
   async function next() {
-    if (step === 2) {
+    if (step === 2 || (step === 3 && dirtySelection)) {
       setBusy(true);
       setError("");
       try {
@@ -213,6 +197,7 @@ export function ReportCenterPanel({
             body: JSON.stringify(input()),
           }),
         );
+        setDirtySelection(false);
         setStep(3);
       } catch (e) {
         fail(e);
@@ -336,30 +321,6 @@ export function ReportCenterPanel({
         )}
       </div>
       <div hidden={step !== 2}>
-        {selected && scopeMode === "single" && mode === "existing" && (
-          <label className="block">
-            报告评估批次
-            <select
-              aria-label="报告评估批次"
-              value={choice}
-              onChange={(e) => setChoice(e.target.value)}
-            >
-              <option value="">自动匹配当前资料版本</option>
-              {choices.map((item) => (
-                <option
-                  key={item.id}
-                  value={item.id}
-                  disabled={
-                    item.status === "queued" || item.status === "running"
-                  }
-                >
-                  {new Date(item.createdAt).toLocaleString()} · {item.status} ·
-                  版本 {item.versionId.slice(0, 8)}
-                </option>
-              ))}
-            </select>
-          </label>
-        )}
         <label>
           结果来源
           <select
@@ -373,6 +334,16 @@ export function ReportCenterPanel({
             <option value="incremental">仅补扫缺失或过期评估</option>
           </select>
         </label>
+        {mode === "incremental" && (
+          <label>
+            <input
+              type="checkbox"
+              checked={allowExistingCollection}
+              onChange={(e) => setAllowExistingCollection(e.target.checked)}
+            />
+            明确采用现有采集资料（含陈旧或未知日期），只补评估
+          </label>
+        )}
         {mode !== "existing" && (
           <p>
             使用固定的已确认资料；不隐式重新采集。未接入的平台或不完整资料会保留缺口；任务在后台执行，可刷新后查看。
@@ -416,6 +387,70 @@ export function ReportCenterPanel({
                 </li>
               ))}
             </ul>
+          </>
+        )}
+        {mode === "existing" &&
+          preflight?.resultChoices.map((group) => {
+            const selected = overrides.find(
+              (item) =>
+                item.objectId === group.objectId &&
+                item.versionId === group.versionId,
+            );
+            return (
+              <label
+                className="block"
+                key={`${group.objectId}:${group.versionId ?? ""}`}
+              >
+                历史结果 · {group.name}
+                <select
+                  aria-label={`历史结果 ${group.name}${group.versionId ? ` ${group.versionId.slice(0, 8)}` : ""}`}
+                  value={selected?.assessmentId ?? ""}
+                  onChange={(e) => {
+                    const others = overrides.filter(
+                      (item) =>
+                        !(
+                          item.objectId === group.objectId &&
+                          item.versionId === group.versionId
+                        ),
+                    );
+                    setOverrides(
+                      e.target.value
+                        ? [
+                            ...others,
+                            {
+                              objectId: group.objectId,
+                              ...(group.versionId
+                                ? { versionId: group.versionId }
+                                : {}),
+                              assessmentId: e.target.value,
+                            },
+                          ]
+                        : others,
+                    );
+                    setDirtySelection(true);
+                  }}
+                >
+                  <option value="">自动匹配当前资料版本的最近成功结果</option>
+                  {group.items.map((item) => (
+                    <option
+                      key={item.id}
+                      value={item.id}
+                      disabled={["queued", "running"].includes(item.status)}
+                    >
+                      {new Date(item.createdAt).toLocaleString()} ·{" "}
+                      {item.status} · 资料 {item.versionId.slice(0, 8)}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            );
+          })}
+        {dirtySelection && (
+          <>
+            <p role="status">历史结果选择已变化，请重新检查对应资料与覆盖。</p>
+            <button disabled={busy} onClick={next}>
+              应用历史选择并重新检查
+            </button>
           </>
         )}
       </div>
@@ -520,7 +555,10 @@ export function ReportCenterPanel({
           </button>
         )}{" "}
         {step < 5 && (
-          <button disabled={busy || !validScope} onClick={next}>
+          <button
+            disabled={busy || !validScope || (step === 3 && dirtySelection)}
+            onClick={next}
+          >
             下一步
           </button>
         )}
@@ -570,6 +608,30 @@ export function ReportCenterPanel({
                     {item.name} · {item.kind} · {item.status} · 输入{" "}
                     {item.snapshotId ?? "未知"} · {item.error}{" "}
                     {item.collectionRunId && `采集批次 ${item.collectionRunId}`}
+                    {item.needsCollection && (
+                      <a
+                        href={`#collections?asset=${item.hostIds[0]}${item.snapshotId ? `&snapshot=${item.snapshotId}` : ""}`}
+                      >
+                        打开采集与资料确认
+                      </a>
+                    )}
+                    {!task.reportId &&
+                      [
+                        "needs_attention",
+                        "interrupted",
+                        "failed",
+                        "waiting",
+                      ].includes(task.status) &&
+                      ["failed", "interrupted", "pending", "running"].includes(
+                        item.status,
+                      ) && (
+                        <button
+                          disabled={busy}
+                          onClick={() => taskAction(task, "retry", [item.id])}
+                        >
+                          重试此项 · {item.name}
+                        </button>
+                      )}
                   </li>
                 ))}
               </ul>

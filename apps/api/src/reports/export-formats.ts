@@ -1,3 +1,4 @@
+import { reportStatistics, reportCoverage } from "./fact-summary";
 import ExcelJS from "exceljs";
 import { chromium } from "playwright";
 import type { ReportRevision } from "../../../../packages/contracts/reports";
@@ -341,57 +342,11 @@ export function hostRevision(
   f.sourceRefs = f.sourceRefs.filter((r) => refs.has(r.id));
   f.coverageIssues = [
     ...host.issues,
+    ...reportCoverage(f),
     "本分报告为父修订固定事实的主机视图；共享对象不可按分报告数量累计。父事实 SHA-256：" +
       parent.factHash,
   ];
-  const findings = f.assessmentSnapshots.flatMap<
-    NonNullable<
-      ReportRevision["facts"]["assessmentSnapshots"][number]["result"]
-    >["findings"][number]
-  >((a) => a.result?.findings ?? []);
-  const known = f.assessmentSnapshots.some((a) => a.result);
-  f.statistics = {
-    ...f.statistics,
-    findingInstances: known ? findings.length : null,
-    uniqueCveCount: known
-      ? new Set(
-          findings
-            .filter((v) => /^CVE-/.test(v.vulnerabilityId))
-            .map((v) => v.vulnerabilityId),
-        ).size
-      : null,
-    uniqueVulnerabilityCount: known
-      ? new Set(findings.map((v) => v.vulnerabilityId)).size
-      : null,
-    involvedHostCount: known ? Number(findings.length > 0) : null,
-    confirmedAffectedHostCount: known
-      ? Number(findings.some((v) => v.applicability === "affected"))
-      : null,
-    confirmedAffectedCount: known
-      ? findings.filter((v) => v.applicability === "affected").length
-      : null,
-    severityCounts: {},
-    applicabilityCounts: {},
-    lifecycleExact: null,
-    lifecycleWeak: null,
-    lifecycleUnmatched: null,
-  };
-  for (const v of findings) {
-    f.statistics.severityCounts[v.severity] =
-      (f.statistics.severityCounts[v.severity] ?? 0) + 1;
-    f.statistics.applicabilityCounts![v.applicability] =
-      (f.statistics.applicabilityCounts![v.applicability] ?? 0) + 1;
-  }
-  const life = f.lifecycleSnapshots.flatMap((a) => a.items);
-  if (f.lifecycleSnapshots.length) {
-    f.statistics.lifecycleExact = life.filter(
-      (i) => i.match === "exact",
-    ).length;
-    f.statistics.lifecycleWeak = life.filter((i) => i.match === "weak").length;
-    f.statistics.lifecycleUnmatched = life.filter(
-      (i) => i.match === "unmatched",
-    ).length;
-  }
+  f.statistics = reportStatistics(f, center.hosts);
   return {
     ...parent,
     facts: f,

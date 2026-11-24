@@ -15,6 +15,8 @@ import {
   reportTaskInput,
   type ReportTask,
   type ReportHost,
+  type ReportPreflight,
+  type ReportResultChoice,
 } from "../../../../packages/contracts/report-center";
 import type { AuthorizedRequest, Operator } from "../auth/auth";
 import type { Database } from "../persistence/database";
@@ -373,14 +375,49 @@ export class ReportCenterService {
     };
     return { hosts, assetIds, objects, lifecycle };
   }
-  async preflight(customer: string, value: unknown) {
+  async preflight(customer: string, value: unknown): Promise<ReportPreflight> {
     const parsed = reportTaskInput.safeParse(value);
     if (!parsed.success)
       throw new BadRequestException("请选择明确服务器范围和报告配置");
     const checkedAt = new Date().toISOString();
     const resolved = await this.resolve(customer, parsed.data, checkedAt);
+    const candidates = (
+      await this.db.query(
+        `SELECT id,status,target_object_id AS "objectId",target_input_id AS "versionId",details#>>'{target,kind}' AS kind,details->>'createdAt' AS "createdAt" FROM vulnerability_jobs WHERE customer_id=$1 AND target_object_id=ANY($2::text[]) ORDER BY created_at DESC,id DESC`,
+        [
+          customer,
+          [
+            ...resolved.assetIds,
+            ...resolved.objects.map((object) => object.objectId),
+          ],
+        ],
+      )
+    ).rows as (ReportResultChoice["items"][number] & { objectId: string })[];
+    const resultChoices: ReportResultChoice[] = [
+      ...resolved.hosts.map((host) => ({
+        objectId: host.assetId,
+        name: host.name,
+        items: candidates.filter(
+          (job) =>
+            job.objectId === host.assetId &&
+            ["linux", "windows"].includes(job.kind),
+        ),
+      })),
+      ...resolved.objects.map((object) => ({
+        objectId: object.objectId,
+        versionId: object.versionId,
+        name: object.name,
+        items: candidates.filter(
+          (job) =>
+            job.objectId === object.objectId &&
+            job.kind === object.kind &&
+            job.versionId === object.versionId,
+        ),
+      })),
+    ];
     return {
       checkedAt,
+      resultChoices,
       hosts: resolved.hosts,
       objects: resolved.objects,
       available: resolved.hosts.filter((host) => host.status === "available")

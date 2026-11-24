@@ -200,6 +200,22 @@ export function ReportPackagePanel({
               <li key={file.id}>
                 {file.name} · {file.status}{" "}
                 {file.error && <span role="status">{file.error}</span>}{" "}
+                {file.status === "failed" && (
+                  <button
+                    disabled={busy}
+                    onClick={() =>
+                      run(async () => {
+                        await call(`${base}/${bundle.id}/retry`, {
+                          method: "POST",
+                          body: JSON.stringify({ fileIds: [file.id] }),
+                        });
+                        await refresh();
+                      })
+                    }
+                  >
+                    重试此文件 · {file.format.toUpperCase()}
+                  </button>
+                )}
                 {file.status === "ready" && (
                   <button
                     disabled={busy}
