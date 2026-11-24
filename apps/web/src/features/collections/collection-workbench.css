@@ -828,3 +828,168 @@
   padding: 16px 0;
   font-weight: 600;
 }
+
+/* The result card emphasizes the collected inventory; full audit remains available. */
+.compact-result-preview > summary,
+.configuration-run label:has(+ .compact-result-preview),
+.baseline-compact > .baseline-overview,
+.baseline-compact .baseline-toolbar,
+.baseline-compact .baseline-tabs + .collect-muted,
+.baseline-compact .baseline-layer > header,
+.baseline-compact > .collect-options,
+.baseline-compact .baseline-confirm p {
+  display: none;
+}
+.compact-result-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 8px 0 16px;
+}
+.compact-result-heading > strong {
+  font-size: 20px;
+}
+.compact-result-heading button {
+  font-size: 12px;
+}
+.docker-result-metrics {
+  display: grid;
+  grid-template-columns: 1fr 1fr 2fr;
+  gap: 16px;
+  margin-bottom: 16px;
+}
+.docker-result-metrics > div {
+  background: #f4f8f6;
+  border: 1px solid #e3ece7;
+  border-radius: 10px;
+  padding: 16px 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.docker-result-metrics span {
+  color: #687e74;
+  font-size: 13px;
+}
+.docker-result-metrics strong {
+  color: #1c6f59;
+  font-size: 32px;
+  line-height: 1.1;
+}
+.docker-result-metrics b {
+  font-size: 18px;
+  margin: auto 0;
+  overflow-wrap: anywhere;
+}
+.baseline-compact > .notice {
+  padding: 8px 12px;
+  margin: 8px 0 16px;
+  font-size: 13px;
+}
+.baseline-compact .baseline-layer {
+  margin: 0;
+  border-radius: 0 0 10px 10px;
+}
+.baseline-compact .baseline-tabs {
+  margin-bottom: 0;
+}
+.baseline-compact .baseline-layer-content {
+  padding: 16px;
+}
+.baseline-compact .baseline-list-controls {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+.baseline-compact .baseline-list-controls > strong {
+  display: none;
+}
+.baseline-compact .baseline-list-controls > input {
+  width: 260px;
+  max-width: 100%;
+  margin: 0;
+}
+.baseline-compact .baseline-list-controls label {
+  margin: 0;
+  white-space: nowrap;
+}
+.baseline-compact .baseline-containers-table td {
+  padding: 12px 16px;
+}
+.baseline-compact .baseline-containers-table td:first-child {
+  width: 42%;
+}
+.baseline-compact .baseline-containers-table td:nth-child(2) {
+  width: 40%;
+}
+.baseline-compact .baseline-containers-table td:last-child {
+  width: 18%;
+}
+.baseline-compact .pagination {
+  padding-bottom: 0;
+}
+.baseline-compact .pagination button:disabled {
+  display: none;
+}
+.baseline-compact .baseline-confirm {
+  margin-top: 16px;
+  padding: 16px;
+}
+.baseline-compact .baseline-confirm strong {
+  font-size: 14px;
+}
+.compact-reject-toggle {
+  margin-top: 12px;
+  font-size: 12px;
+}
+.row-evidence {
+  font-size: 11px;
+  color: #7b8d83;
+  margin-top: 3px;
+}
+.row-evidence code {
+  display: block;
+  overflow-wrap: anywhere;
+  max-width: 320px;
+  white-space: normal;
+}
+.runtime-state {
+  display: inline-block;
+  border-radius: 20px;
+  padding: 4px 10px;
+  background: #f0f2f1;
+  color: #6b776f;
+  font-size: 12px;
+  white-space: nowrap;
+}
+.runtime-running {
+  background: #e6f4eb;
+  color: #22764c;
+}
+@media (max-width: 600px) {
+  .docker-result-metrics {
+    grid-template-columns: 1fr 1fr;
+    gap: 8px;
+  }
+  .docker-result-metrics > div {
+    padding: 12px;
+  }
+  .docker-result-metrics > div:last-child {
+    grid-column: 1 / -1;
+  }
+  .compact-result-heading {
+    align-items: flex-start;
+  }
+  .compact-result-heading > strong {
+    font-size: 17px;
+  }
+}
+.baseline-compact .baseline-tabs b,
+.baseline-compact .baseline-list-controls > label {
+  display: none;
+}
+.baseline-compact .baseline-layer.has-changes {
+  border-left: 1px solid #dfe8e1;
+}

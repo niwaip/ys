@@ -333,7 +333,14 @@ export function AssetConfiguration({
                 />
                 选中此结果
               </label>
-              <details open={latest}>
+              <details
+                open={latest}
+                className={
+                  latest && item.content === "docker"
+                    ? "compact-result-preview"
+                    : undefined
+                }
+              >
                 <summary>预览并逐项采纳或拒绝</summary>
                 <AssetBaseline
                   {...props}
@@ -341,6 +348,7 @@ export function AssetConfiguration({
                   assetId={assetId!}
                   snapshotId={item.snapshotId}
                   observationOnly
+                  compact={latest && item.content === "docker"}
                   scope={
                     item.content === "docker"
                       ? "container-inventory"

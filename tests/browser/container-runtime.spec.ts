@@ -407,11 +407,45 @@ test("Docker批次结果直接显示容器镜像及确认入口，历史默认�
     result.getByText("Docker容器 · 采集完成", { exact: true }),
   ).toBeVisible();
   await expect(result.getByText("待确认采纳", { exact: true })).toBeVisible();
-  await expect(result.getByText(/本次容器目录：/)).toBeVisible();
-  await expect(result.getByText(/本次镜像目录：/)).toBeVisible();
+  await expect(
+    result.getByRole("tab", { name: "容器（3）", exact: true }),
+  ).toBeVisible();
+  await expect(
+    result.getByRole("region", { name: "Docker采集概要" }),
+  ).toBeVisible();
+  await expect(result.getByRole("tab", { name: /^镜像（/ })).toBeVisible();
+  await expect(result.getByText(/本次镜像目录：/)).not.toBeVisible();
+  await result.getByRole("tab", { name: /^镜像（/ }).click();
+  await expect(
+    result.getByRole("columnheader", { name: "镜像仓库", exact: true }),
+  ).toBeVisible();
   await expect(
     result.getByRole("button", { name: "确认采纳容器资料", exact: true }),
   ).toBeVisible();
+  await result
+    .getByRole("button", { name: "高级审核与基线比较", exact: true })
+    .click();
+  await expect(
+    result.getByRole("button", { name: "已确认基础数据", exact: true }),
+  ).toBeVisible();
+  await result
+    .getByRole("button", { name: "返回结果概要", exact: true })
+    .click();
+  await expect(
+    result.getByRole("tab", { name: "容器（3）", exact: true }),
+  ).toHaveAttribute("aria-selected", "true");
+  await result.screenshot({
+    path: "output/deployment/docker-compact-result-desktop.png",
+  });
+  await page.setViewportSize({ width: 390, height: 844 });
+  expect(
+    await page.evaluate(
+      () => document.documentElement.scrollWidth <= innerWidth,
+    ),
+  ).toBe(true);
+  await result.screenshot({
+    path: "output/deployment/docker-compact-result-mobile.png",
+  });
   await expect(config.locator(".configuration-history")).not.toHaveAttribute(
     "open",
     "",

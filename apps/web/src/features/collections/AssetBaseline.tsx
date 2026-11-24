@@ -207,7 +207,11 @@ function Layer({
   excluded,
   onError,
   readOnly = false,
+  compact = false,
+  imageNames = {},
 }: {
+  compact?: boolean;
+  imageNames?: Record<string, string>;
   readOnly?: boolean;
   name: string;
   base: string;
@@ -486,14 +490,57 @@ function Layer({
                                 v.name ?? v.Names ?? v.containerId ?? "未知",
                               )}
                             </strong>
-                            <small className="block subtle">
-                              {String(v.containerId ?? v.ID ?? "")}
-                            </small>
+                            {!compact && (
+                              <small className="block subtle">
+                                {String(v.containerId ?? v.ID ?? "")}
+                              </small>
+                            )}
+                            {compact && (
+                              <details className="row-evidence">
+                                <summary>标识</summary>
+                                <code>
+                                  {String(v.containerId ?? v.ID ?? "")}
+                                </code>
+                              </details>
+                            )}
                           </td>
                           <td>
-                            {String(v.image ?? v.imageId ?? v.Image ?? "未知")}
+                            {compact ? (
+                              <span
+                                title={String(
+                                  v.image ?? v.imageId ?? v.Image ?? "",
+                                )}
+                              >
+                                {imageNames[
+                                  String(v.image ?? v.imageId ?? v.Image)
+                                ] ??
+                                  String(
+                                    v.image ?? v.imageId ?? v.Image ?? "未知",
+                                  ).replace(/^(sha256:)(.{12}).+$/, "$1$2…")}
+                              </span>
+                            ) : (
+                              String(v.image ?? v.imageId ?? v.Image ?? "未知")
+                            )}
                           </td>
-                          <td>{String(v.state ?? v.State ?? "未知")}</td>
+                          <td>
+                            <span
+                              className={
+                                compact
+                                  ? `runtime-state runtime-${String(v.state ?? v.State)}`
+                                  : undefined
+                              }
+                            >
+                              {compact
+                                ? ({
+                                    running: "运行中",
+                                    exited: "已停止",
+                                    paused: "已暂停",
+                                    created: "已创建",
+                                  }[String(v.state ?? v.State)] ??
+                                  String(v.state ?? v.State ?? "未知"))
+                                : String(v.state ?? v.State ?? "未知")}
+                            </span>
+                          </td>
                         </>
                       ) : name === "images" ? (
                         <>
@@ -501,7 +548,18 @@ function Layer({
                             {String(v.repository ?? v.Repository ?? "未知")}
                           </td>
                           <td>{String(v.tag ?? v.Tag ?? "未知")}</td>
-                          <td>{String(v.imageId ?? v.id ?? v.ID ?? "未知")}</td>
+                          <td>
+                            {compact ? (
+                              <details className="row-evidence">
+                                <summary>查看标识</summary>
+                                <code>
+                                  {String(v.imageId ?? v.id ?? v.ID ?? "未知")}
+                                </code>
+                              </details>
+                            ) : (
+                              String(v.imageId ?? v.id ?? v.ID ?? "未知")
+                            )}
+                          </td>
                         </>
                       ) : (
                         <>
@@ -624,7 +682,9 @@ export function AssetBaseline({
   readOnly = false,
   scope,
   observationOnly = false,
+  compact = false,
 }: {
+  compact?: boolean;
   observationOnly?: boolean;
   scope?: "container-inventory";
   readOnly?: boolean;
@@ -632,6 +692,13 @@ export function AssetBaseline({
   snapshotId?: string;
   onConfirmed?: () => void;
 } & FeatureProps) {
+  const [advanced, setAdvanced] = useState(false);
+  const [showReject, setShowReject] = useState(false);
+  const [inventory, setInventory] = useState<{
+    containers: Page;
+    images: Page;
+  }>();
+  const compactView = compact && !advanced;
   const containerScope = scope === "container-inventory";
   const containerSections = [
     "dockerClient",
@@ -684,6 +751,28 @@ export function AssetBaseline({
       });
     return () => c.abort();
   }, [base, snapshotId, token, revision]);
+  useEffect(() => {
+    if (!compact || !snapshotId) return;
+    const controller = new AbortController();
+    setInventory(undefined);
+    Promise.all(
+      ["containers", "images"].map((name) =>
+        api<Page>(
+          `${base}/sections/${name}?snapshotId=${snapshotId}&view=observed&offset=0`,
+          token,
+          {},
+          controller.signal,
+        ),
+      ),
+    )
+      .then(([containers, images]) => {
+        if (!controller.signal.aborted) setInventory({ containers, images });
+      })
+      .catch((e) => {
+        if (!controller.signal.aborted) fail(e);
+      });
+    return () => controller.abort();
+  }, [compact, base, snapshotId, token]);
   async function confirm() {
     if (!data?.snapshot) return;
     setBusy(true);
@@ -777,17 +866,57 @@ export function AssetBaseline({
     network: ["network"],
     packages: ["packages"],
     docker: ["dockerClient", "dockerDaemon"],
-    containers: ["containers", "images"],
+    containers: compactView ? ["containers"] : ["containers", "images"],
+    images: ["images"],
     software: [],
   };
   const tabLabels = {
     ...labels,
     docker: "Docker 环境",
-    containers: "容器",
+    containers: compactView
+      ? `容器（${inventory?.containers.total ?? "—"}）`
+      : "容器",
+    images: `镜像（${inventory?.images.total ?? "—"}）`,
     software: "软件 / 项目",
   };
   return (
-    <div className="asset-baseline">
+    <div className={`asset-baseline${compactView ? " baseline-compact" : ""}`}>
+      {compact && (
+        <div className="compact-result-heading">
+          <strong>Docker 采集结果</strong>
+          <button
+            type="button"
+            className="secondary"
+            onClick={() => {
+              setAdvanced((v) => !v);
+              setActiveTab("containers");
+              setView("observed");
+            }}
+          >
+            {advanced ? "返回结果概要" : "高级审核与基线比较"}
+          </button>
+        </div>
+      )}
+      {compactView && (
+        <section className="docker-result-metrics" aria-label="Docker采集概要">
+          <div>
+            <span>容器</span>
+            <strong>{inventory?.containers.total ?? "—"}</strong>
+            <small>
+              {states[data.sections.containers?.status] ?? "正在读取"}
+            </small>
+          </div>
+          <div>
+            <span>镜像</span>
+            <strong>{inventory?.images.total ?? "—"}</strong>
+            <small>{states[data.sections.images?.status] ?? "正在读取"}</small>
+          </div>
+          <div>
+            <span>当前主机</span>
+            <b>{data.asset.name}</b>
+          </div>
+        </section>
+      )}
       <div className="baseline-overview">
         <div>
           <span className="collect-kicker">
@@ -879,9 +1008,10 @@ export function AssetBaseline({
             aria-label="资产资料分区"
           >
             {Object.keys(tabs)
-              .filter(
-                (key) =>
-                  !containerScope || ["docker", "containers"].includes(key),
+              .filter((key) =>
+                compactView
+                  ? ["containers", "images"].includes(key)
+                  : !containerScope || ["docker", "containers"].includes(key),
               )
               .map((key) => (
                 <button
@@ -996,6 +1126,16 @@ export function AssetBaseline({
                     }
                     onError={fail}
                     readOnly={readOnly}
+                    compact={compactView}
+                    imageNames={Object.fromEntries(
+                      (inventory?.images.items ?? []).map((value) => {
+                        const image = value as Record<string, unknown>;
+                        return [
+                          String(image.imageId ?? image.id ?? image.ID),
+                          `${image.repository ?? image.Repository ?? "未知"}:${image.tag ?? image.Tag ?? "未知"}`,
+                        ];
+                      }),
+                    )}
                   />
                 </section>
               );
@@ -1044,7 +1184,17 @@ export function AssetBaseline({
             )}
         </>
       )}
+      {compactView && data.review?.status === "pending" && (
+        <button
+          type="button"
+          className="secondary compact-reject-toggle"
+          onClick={() => setShowReject((v) => !v)}
+        >
+          {showReject ? "取消拒绝" : "拒绝本次资料"}
+        </button>
+      )}
       {observationOnly &&
+        (!compactView || showReject) &&
         data.snapshot &&
         data.review?.status === "pending" && (
           <div className="collect-reject">
