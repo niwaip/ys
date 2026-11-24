@@ -142,12 +142,12 @@
   color: #7a8b7d;
   font-size: 11px;
 }
-.lifecycle-state.complete,
+.lifecycle-state.state-complete,
 .lifecycle-match.matched {
   background: #e8f5ed;
   color: #287a52;
 }
-.lifecycle-state.partial,
+.lifecycle-state.state-partial,
 .lifecycle-match.conflict {
   background: #fff3df;
   color: #a57c2c;

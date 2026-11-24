@@ -295,7 +295,7 @@ export function LifecycleWorkspacePage(
                             ))}
                           </td>
                           <td>
-                            <span className={`lifecycle-state ${item.state}`}>
+                            <span className={`lifecycle-state state-${item.state}`}>
                               {states[item.state]}
                             </span>
                           </td>
