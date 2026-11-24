@@ -83,12 +83,17 @@ export class AssetsController {
     );
   }
   @Patch(":assetId/lifecycle") lifecycle(req: AuthorizedRequest) {
-    const input = lifecycleAssetSchema.safeParse(req.body);
+    const input = lifecycleAssetSchema
+      .extend({ expected: z.record(z.string(), z.json()).optional() })
+      .safeParse(req.body);
     if (!input.success) throw new BadRequestException("生命周期资料无效");
+    const { expected, ...values } = input.data;
     return this.assets.updateLifecycle(
       req.params.customerId,
       this.id(req),
-      input.data,
+      values,
+      req.operator.name,
+      expected,
     );
   }
   @Get(":assetId")

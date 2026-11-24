@@ -1,3 +1,7 @@
+import {
+  LifecycleWorkspaceService,
+  LifecycleWorkspaceController,
+} from "./workspace";
 import { requireActiveAsset } from "../assets/asset-state";
 import {
   BadRequestException,
@@ -132,6 +136,16 @@ export class LifecycleService {
       )
         throw new BadRequestException(
           `第${index + 2}行列数或来源/产品/阶段无效`,
+        );
+      if (
+        (raw.category &&
+          !["os", "software", "device", "hardware"].includes(raw.category)) ||
+        (raw.phase && !["eos", "eol"].includes(raw.phase))
+      )
+        throw new BadRequestException(`第${index + 2}行分类或引用阶段无效`);
+      if (raw.category && !raw.phase)
+        throw new BadRequestException(
+          `第${index + 2}行分类资料须填写明确phase阶段`,
         );
       const eos = stage(raw.eosStage, raw.eosDate),
         eol = stage(raw.eolStage, raw.eolDate);
@@ -380,8 +394,13 @@ for (const method of [
 Inject(LifecycleService)(LifecycleController, undefined, 0);
 @Module({
   imports: [SoftwareModule],
-  controllers: [LifecycleController],
+  controllers: [LifecycleController, LifecycleWorkspaceController],
   providers: [
+    {
+      provide: LifecycleWorkspaceService,
+      inject: [DATABASE],
+      useFactory: (db: Database) => new LifecycleWorkspaceService(db),
+    },
     {
       provide: LifecycleService,
       inject: [DATABASE, SoftwareService],

@@ -111,7 +111,7 @@ test("客户同步NetBox原生资产，保留稳定身份、分页与来源，�
     .patch(`/api/customers/acme/assets/${first.body.items[0].id}/lifecycle`)
     .set(auth)
     .send({ warrantyUntil: "2099-01-01" })
-    .expect(409);
+    .expect(502); // Fixture does not confirm the new controlled remote write; never fall back locally.
   await http
     .post("/api/customers/acme/netbox/sync")
     .set(auth)

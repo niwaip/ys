@@ -57,6 +57,9 @@ test("lifecycle CSV exposes separate stages and immutable assessment history per
   await page.getByRole("button", { name: "进入工作台" }).click();
   await page.locator("nav button").filter({ hasText: "资产台账" }).click();
   await page.locator("nav button").filter({ hasText: "生命周期资料" }).click();
+  await page
+    .getByRole("tab", { name: "厂商共同资料 · CSV", exact: true })
+    .click();
   await page.getByLabel("生命周期 CSV 文件").setInputFiles({
     name: `lifecycle-${unique}.csv`,
     mimeType: "text/csv",
@@ -89,6 +92,7 @@ test("lifecycle CSV exposes separate stages and immutable assessment history per
   ).toBeVisible();
   await page.reload();
   await page.locator("nav button").filter({ hasText: "生命周期资料" }).click();
+  await page.getByRole("tab",{name:"厂商共同资料 · CSV",exact:true}).click();
   await expect(
     page.getByRole("button", { name: `lifecycle-${unique}.csv`, exact: true }),
   ).toBeVisible();

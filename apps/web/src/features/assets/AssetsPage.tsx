@@ -265,7 +265,7 @@ export function AssetsPage({
           token={token}
           onUnauthorized={onUnauthorized}
           assetId={lifecycleAsset}
-          readOnly={netboxMode !== false}
+          readOnly={false}
           onClose={() => setLifecycleAsset(undefined)}
         />
       )}

@@ -179,3 +179,37 @@ export type LifecycleRiskOverview = Pick<
   RiskView,
   "id" | "calculatedAt" | "summary"
 > & { pendingItems: number };
+
+/** Read independent known fields without discarding valid dates because a different source field is invalid. */
+export function readLifecycleAsset(value: unknown): {
+  data: Partial<LifecycleAsset>;
+  issues: string[];
+  hasValues: boolean;
+} {
+  const raw =
+    value && typeof value === "object" && !Array.isArray(value)
+      ? (value as Record<string, unknown>)
+      : {};
+  const data: Partial<LifecycleAsset> = {},
+    issues: string[] = [];
+  for (const key of ["purchasedOn", "warrantyUntil"] as const) {
+    if (raw[key] === undefined || raw[key] === "") continue;
+    const parsed = dateSchema.safeParse(raw[key]);
+    if (parsed.success) data[key] = parsed.data;
+    else issues.push(`${key}日期无效，请核对来源`);
+  }
+  for (const key of ["os", "device"] as const) {
+    if (raw[key] === undefined) continue;
+    const parsed = supportBindingSchema.safeParse(raw[key]);
+    if (parsed.success) data[key] = parsed.data;
+    else issues.push(`${key}支持资料关联无效`);
+  }
+  if (typeof raw.sourceRef === "string") data.sourceRef = raw.sourceRef;
+  return {
+    data,
+    issues,
+    hasValues: ["purchasedOn", "warrantyUntil", "os", "device"].some(
+      (key) => raw[key] !== undefined && raw[key] !== null && raw[key] !== "",
+    ),
+  };
+}

@@ -185,6 +185,10 @@ CREATE TABLE windows_snapshots(id uuid PRIMARY KEY,customer_id text NOT NULL,ass
   CREATE TABLE collection_rejections(customer_id text NOT NULL,snapshot_id uuid NOT NULL,asset_id uuid NOT NULL,actor text NOT NULL,reason text NOT NULL,created_at timestamptz NOT NULL DEFAULT now(),PRIMARY KEY(customer_id,snapshot_id),FOREIGN KEY(customer_id,snapshot_id) REFERENCES collection_snapshots(customer_id,id),FOREIGN KEY(customer_id,asset_id) REFERENCES assets(customer_id,id));`,
   },
   {
+    version: 33,
+    sql: `CREATE TABLE lifecycle_asset_history(id uuid PRIMARY KEY,customer_id text NOT NULL,asset_id uuid NOT NULL,actor text NOT NULL,before_data jsonb NOT NULL,after_data jsonb NOT NULL,source text NOT NULL,status text NOT NULL DEFAULT 'confirmed',created_at timestamptz NOT NULL DEFAULT now(),FOREIGN KEY(customer_id,asset_id) REFERENCES assets(customer_id,id));CREATE INDEX lifecycle_history_asset ON lifecycle_asset_history(customer_id,asset_id,created_at DESC);`,
+  },
+  {
     version: 32,
     sql: `CREATE TABLE collection_configurations(customer_id text NOT NULL,asset_id uuid NOT NULL,details jsonb NOT NULL,PRIMARY KEY(customer_id,asset_id),FOREIGN KEY(customer_id,asset_id) REFERENCES assets(customer_id,id));CREATE TABLE collection_configuration_runs(id uuid PRIMARY KEY,customer_id text NOT NULL,asset_id uuid NOT NULL,idempotency_key text NOT NULL,input_hash text NOT NULL,details jsonb NOT NULL,created_at timestamptz NOT NULL DEFAULT now(),UNIQUE(customer_id,asset_id,idempotency_key),FOREIGN KEY(customer_id,asset_id) REFERENCES assets(customer_id,id));`,
   },

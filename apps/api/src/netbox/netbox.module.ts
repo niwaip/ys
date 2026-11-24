@@ -1,3 +1,5 @@
+import { isDeepStrictEqual } from "node:util";
+import type { LifecycleAsset } from "../../../../packages/contracts/lifecycle-risk";
 import { requireActiveAsset } from "../assets/asset-state";
 import {
   BadGatewayException,
@@ -486,6 +488,122 @@ export class NetBoxService {
       { assetId, externalId: Number(mapping.external_id) },
     );
   }
+  async updateLifecycle(
+    customer: string,
+    id: string,
+    input: LifecycleAsset,
+    actor: string,
+    expected?: Record<string, unknown>,
+  ) {
+    const result = await this.db.transaction(async (session) => {
+      await session.query("SELECT id FROM customers WHERE id=$1 FOR UPDATE", [
+        customer,
+      ]);
+      await requireActiveAsset(session, customer, id);
+      const local = (
+        await session.query(
+          "SELECT attributes FROM assets WHERE customer_id=$1 AND id=$2",
+          [customer, id],
+        )
+      ).rows[0];
+      const mapping = (
+        await session.query(
+          "SELECT object_type,external_id FROM netbox_assets WHERE customer_id=$1 AND asset_id=$2 AND instance=$3 AND active=true",
+          [customer, id, this.config?.baseUrl],
+        )
+      ).rows[0];
+      if (!mapping)
+        throw new ConflictException("当前NetBox映射不可用，请先同步");
+      const path = `${paths[mapping.object_type as keyof typeof paths]}${mapping.external_id}/`;
+      const native = this.validate(
+        await this.read(path),
+        this.tenant(customer),
+      );
+      if (native.id !== Number(mapping.external_id))
+        throw new ConflictException("NetBox对象身份已变化");
+      const old = native.custom_fields?.ys_lifecycle ?? {};
+      if (!old || typeof old !== "object" || Array.isArray(old))
+        throw new ConflictException("NetBox生命周期字段不是JSON对象，请先核对");
+      const patch = Object.fromEntries(
+        Object.entries(input).filter(([, v]) => v !== "" && v !== undefined),
+      );
+      const cached =
+        (local.attributes as Record<string, unknown>).lifecycle ?? {};
+      const merged = { ...old, ...patch };
+      if (expected !== undefined && !isDeepStrictEqual(cached, expected))
+        throw new ConflictException("生命周期资料已变化，请刷新后重新填写");
+      if (
+        !isDeepStrictEqual(old, cached) &&
+        !Object.entries(patch).every(([key, value]) =>
+          isDeepStrictEqual((old as Record<string, unknown>)[key], value),
+        )
+      )
+        throw new ConflictException(
+          "NetBox生命周期资料已变化，请先同步后重新填写",
+        );
+      let checked: NativeAsset;
+      try {
+        if (!isDeepStrictEqual(old, merged)) {
+          const response = await fetch(new URL(path, this.config!.baseUrl), {
+            method: "PATCH",
+            headers: {
+              Authorization: `Token ${this.config!.token}`,
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify({
+              custom_fields: { ...native.custom_fields, ys_lifecycle: merged },
+            }),
+            signal: AbortSignal.timeout(this.config!.timeoutMs ?? 15000),
+            redirect: "error",
+          });
+          if (!response.ok) throw new Error(`NetBox写入返回${response.status}`);
+        }
+        checked = this.validate(await this.read(path), this.tenant(customer));
+        if (
+          checked.id !== native.id ||
+          !isDeepStrictEqual(checked.custom_fields?.ys_lifecycle, merged)
+        )
+          throw new Error("NetBox回读未确认");
+      } catch {
+        await session.query(
+          "INSERT INTO lifecycle_asset_history(id,customer_id,asset_id,actor,before_data,after_data,source,status) VALUES($1,$2,$3,$4,$5::jsonb,$6::jsonb,'netbox','unknown')",
+          [
+            randomUUID(),
+            customer,
+            id,
+            actor,
+            JSON.stringify(old),
+            JSON.stringify(merged),
+          ],
+        );
+        return { ok: false };
+      }
+      await this.cache(
+        session,
+        customer,
+        mapping.object_type as keyof typeof paths,
+        checked,
+        id,
+      );
+      await session.query(
+        "INSERT INTO lifecycle_asset_history(id,customer_id,asset_id,actor,before_data,after_data,source) VALUES($1,$2,$3,$4,$5::jsonb,$6::jsonb,'netbox')",
+        [
+          randomUUID(),
+          customer,
+          id,
+          actor,
+          JSON.stringify(old),
+          JSON.stringify(merged),
+        ],
+      );
+      return { ok: true };
+    });
+    if (!result.ok)
+      throw new BadGatewayException(
+        "NetBox写回或回读未获确认，本地资料未更新；远端可能已写入，请同步核对后重试",
+      );
+  }
+
   async updateBaseline(
     customerId: string,
     assetId: string,

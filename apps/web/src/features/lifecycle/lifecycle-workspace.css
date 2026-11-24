@@ -1,0 +1,209 @@
+.lifecycle-workspace {
+  max-width: 1600px;
+  margin: 0 auto;
+}
+.lifecycle-metrics {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 16px;
+  margin: 24px 0;
+}
+.lifecycle-metrics button {
+  text-align: left;
+  border: 1px solid #e0e9e3;
+  background: white;
+  border-radius: 12px;
+  padding: 20px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  box-shadow: none;
+}
+.lifecycle-metrics span {
+  color: #728579;
+  font-size: 13px;
+}
+.lifecycle-metrics strong {
+  font-size: 30px;
+  color: #226f59;
+}
+.lifecycle-view-tabs {
+  display: flex;
+  gap: 8px;
+  border-bottom: 1px solid #dce6df;
+  margin: 24px 0;
+}
+.lifecycle-view-tabs button {
+  background: transparent;
+  border: 0;
+  border-radius: 0;
+  padding: 14px 22px;
+  color: #7a8c80;
+  box-shadow: none;
+}
+.lifecycle-view-tabs button[aria-selected="true"] {
+  border-bottom: 3px solid #23775d;
+  color: #236d57;
+  font-weight: 700;
+}
+.lifecycle-inventory,
+.lifecycle-shared {
+  background: white;
+  border: 1px solid #e0e8e2;
+  border-radius: 14px;
+  overflow: hidden;
+}
+.lifecycle-section-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 20px;
+  padding: 24px;
+}
+.lifecycle-section-heading h2 {
+  font-size: 20px;
+  margin: 0 0 8px;
+}
+.lifecycle-section-heading p,
+.lifecycle-help {
+  font-size: 13px;
+  line-height: 1.7;
+  color: #7a8c80;
+  margin: 0;
+}
+.lifecycle-filters {
+  display: grid;
+  grid-template-columns: 1fr 1fr 1fr 1.5fr;
+  gap: 16px;
+  padding: 20px 24px;
+  background: #f6f9f7;
+  border-top: 1px solid #e7eee9;
+  border-bottom: 1px solid #e7eee9;
+}
+.lifecycle-filters label {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  font-size: 12px;
+  color: #75887b;
+}
+.lifecycle-filters input,
+.lifecycle-filters select {
+  width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
+}
+.lifecycle-inventory table {
+  width: 100%;
+  border-collapse: collapse;
+  min-width: 850px;
+}
+.lifecycle-inventory th {
+  text-align: left;
+  color: #8b9a8e;
+  background: #fcfdfc;
+  font-size: 12px;
+  font-weight: 500;
+  padding: 16px 20px;
+}
+.lifecycle-inventory td {
+  padding: 18px 20px;
+  border-top: 1px solid #edf1ee;
+  vertical-align: top;
+  font-size: 13px;
+}
+.lifecycle-inventory td small {
+  display: block;
+  color: #89988d;
+  margin-top: 6px;
+}
+.lifecycle-state,
+.lifecycle-match {
+  display: inline-block;
+  white-space: nowrap;
+  padding: 4px 8px;
+  border-radius: 14px;
+  background: #f0f3f1;
+  color: #7a8b7d;
+  font-size: 11px;
+}
+.lifecycle-state.complete,
+.lifecycle-match.matched {
+  background: #e8f5ed;
+  color: #287a52;
+}
+.lifecycle-state.partial,
+.lifecycle-match.conflict {
+  background: #fff3df;
+  color: #a57c2c;
+}
+.lifecycle-reference {
+  font-size: 12px;
+  max-width: 320px;
+  overflow-wrap: anywhere;
+  margin-bottom: 7px;
+}
+.lifecycle-reference p {
+  margin: 6px 0;
+  color: #75887b;
+}
+.lifecycle-reference summary {
+  cursor: pointer;
+}
+.lifecycle-pagination {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 18px 24px;
+  border-top: 1px solid #edf1ee;
+  color: #87988b;
+  font-size: 12px;
+}
+.lifecycle-pagination div {
+  display: flex;
+  gap: 8px;
+}
+.lifecycle-empty {
+  padding: 48px;
+  text-align: center;
+  color: #8b9d8e;
+}
+.lifecycle-shared > .lifecycle-help {
+  padding: 0 24px 20px;
+}
+.lifecycle-shared > .asset-panel {
+  margin: 0 24px 24px;
+  padding: 24px;
+  border-radius: 10px;
+}
+.lifecycle-workspace .asset-lifecycle {
+  margin-top: 24px;
+  padding: 24px;
+  border-radius: 14px;
+}
+@media (max-width: 800px) {
+  .lifecycle-metrics {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 8px;
+  }
+  .lifecycle-metrics button {
+    padding: 14px;
+  }
+  .lifecycle-filters {
+    grid-template-columns: 1fr 1fr;
+    padding: 16px;
+  }
+  .lifecycle-section-heading {
+    padding: 18px;
+    align-items: flex-start;
+    flex-direction: column;
+  }
+  .lifecycle-view-tabs button {
+    padding: 12px;
+    font-size: 13px;
+  }
+  .lifecycle-shared > .asset-panel {
+    margin: 0 12px 16px;
+    padding: 16px;
+  }
+}

@@ -1,3 +1,4 @@
+import { sharedSupport } from "../lifecycle/shared-support";
 import {
   BadRequestException,
   Controller,
@@ -71,6 +72,7 @@ export class LifecycleRiskService {
       "SELECT asset_id,risk_type,details FROM lifecycle_risk_treatments WHERE customer_id=$1",
       [customer],
     );
+    const shared = await sharedSupport(tx, customer);
     const items: RiskItem[] = [];
     const batches = new Map<
       string,
@@ -93,6 +95,23 @@ export class LifecycleRiskService {
         warrantyUntil: warranty.success ? warranty.data : undefined,
         sourceRef: typeof value.sourceRef === "string" ? value.sourceRef : "",
       };
+      const automatic = shared.forAsset(String(asset.id), asset.attributes);
+      for (const kind of ["os", "device"] as const) {
+        if (!data[kind]) {
+          const ref = automatic.find((r) =>
+            kind === "device"
+              ? ["device", "hardware"].includes(r.kind)
+              : r.kind === kind,
+          );
+          if (ref?.status === "matched" && ref.batchId && ref.phase)
+            data[kind] = {
+              batchId: ref.batchId,
+              product: ref.product,
+              version: ref.version,
+              phase: ref.phase,
+            };
+        }
+      }
       const category = asset.hardware_type as RiskItem["category"];
       for (const type of riskTypes) {
         const override =
@@ -105,6 +124,20 @@ export class LifecycleRiskService {
           basis = "缺少日期或明确的产品支持资料",
           conflict = false;
         const evidence: RiskItem["evidence"] = [];
+        if (type === "os_support" || type === "device_support") {
+          const ref = automatic.find((r) =>
+            type === "device_support"
+              ? ["device", "hardware"].includes(r.kind)
+              : r.kind === "os",
+          );
+          if (
+            ref?.status === "conflict" &&
+            !data[type === "os_support" ? "os" : "device"]
+          ) {
+            conflict = true;
+            basis = ref.basis;
+          }
+        }
         const binding =
           type === "os_support"
             ? data?.os

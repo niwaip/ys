@@ -5,6 +5,7 @@ import type { Asset } from "../../../../../packages/contracts";
 import type { LifecycleBatch } from "../../../../../packages/contracts/lifecycle";
 import {
   lifecycleAssetSchema,
+  readLifecycleAsset,
   type LifecycleAsset,
 } from "../../../../../packages/contracts/lifecycle-risk";
 export function AssetLifecycleForm(
@@ -12,6 +13,7 @@ export function AssetLifecycleForm(
     assetId: string;
     onClose: () => void;
     readOnly: boolean;
+    onSaved?: () => void;
   },
 ) {
   const [asset, setAsset] = useState<Asset>(),
@@ -19,7 +21,39 @@ export function AssetLifecycleForm(
     [error, setError] = useState(""),
     [busy, setBusy] = useState(false),
     [notice, setNotice] = useState("");
+  const [history, setHistory] = useState<
+    {
+      id: string;
+      actor: string;
+      createdAt: string;
+      source: string;
+      status: string;
+      before: unknown;
+      after: unknown;
+    }[]
+  >([]);
+  const [historyOpen, setHistoryOpen] = useState(false);
   const base = `/customers/${props.customerId}`;
+  useEffect(() => {
+    if (!historyOpen) return;
+    const c = new AbortController();
+    api<{ items: typeof history }>(
+      `${base}/lifecycle/assets/${props.assetId}/history`,
+      props.token,
+      {},
+      c.signal,
+    )
+      .then((v) => {
+        if (!c.signal.aborted) setHistory(v.items);
+      })
+      .catch((e) => {
+        if (!c.signal.aborted) {
+          if (e instanceof ApiError && e.status === 401) props.onUnauthorized();
+          else setError(e.message);
+        }
+      });
+    return () => c.abort();
+  }, [base, props.assetId, props.token, historyOpen, notice]);
   useEffect(() => {
     const c = new AbortController();
     Promise.all([
@@ -69,14 +103,22 @@ export function AssetLifecycleForm(
     }
     setBusy(true);
     setError("");
+    setNotice("");
     try {
-      const a = await api<Asset>(
+      const saved = await api<Asset>(
         `${base}/assets/${props.assetId}/lifecycle`,
         props.token,
-        { method: "PATCH", body: JSON.stringify(parsed.data) },
+        {
+          method: "PATCH",
+          body: JSON.stringify({
+            ...parsed.data,
+            expected: asset?.attributes.lifecycle ?? {},
+          }),
+        },
       );
-      setAsset(a);
+      setAsset(saved);
       setNotice("生命周期资料已保存");
+      props.onSaved?.();
     } catch (e) {
       if (e instanceof ApiError && e.status === 401) props.onUnauthorized();
       else setError((e as Error).message);
@@ -84,10 +126,7 @@ export function AssetLifecycleForm(
       setBusy(false);
     }
   }
-  const parsed = lifecycleAssetSchema.safeParse(
-      asset?.attributes.lifecycle ?? {},
-    ),
-    data: Partial<LifecycleAsset> = parsed.success ? parsed.data : {};
+  const { data, issues } = readLifecycleAsset(asset?.attributes.lifecycle);
   return (
     <section
       className="asset-panel asset-lifecycle"
@@ -98,10 +137,16 @@ export function AssetLifecycleForm(
         <button onClick={props.onClose}>关闭资料</button>
       </div>
       {error && <p role="alert">{error}</p>}
+      {issues.length > 0 && <p className="notice">{issues.join("；")}</p>}
       {notice && <p role="status">{notice}</p>}
-      {props.readOnly && (
-        <p>请在 NetBox 的 ys_lifecycle 自定义 JSON 字段维护，随后同步资产。</p>
+      {asset?.source === "netbox" && (
+        <p className="notice">
+          此设备由NetBox管理。确认后写回ys_lifecycle并同步回读；不会修改资产身份或其他自定义字段。
+        </p>
       )}
+      <p className="hint">
+        购买与维保是设备专属日期。留空保留原资料；厂商支持日期由共同资料来源确定。
+      </p>
       {asset && (
         <form onSubmit={save} key={asset.id}>
           <fieldset disabled={busy || props.readOnly}>
@@ -197,6 +242,38 @@ export function AssetLifecycleForm(
           </fieldset>
         </form>
       )}
+      <details onToggle={(e) => setHistoryOpen(e.currentTarget.open)}>
+        <summary>资料变更历史</summary>
+        {historyOpen &&
+          (history.length ? (
+            history.map((item) => (
+              <article key={item.id}>
+                <strong>
+                  {new Date(item.createdAt).toLocaleString("zh-CN")} ·{" "}
+                  {item.actor}
+                </strong>
+                <p>
+                  {item.source === "netbox" ? "NetBox写回" : "YS保存"} ·{" "}
+                  {item.status === "unknown"
+                    ? "写回未确认，请核对远端"
+                    : "已确认"}
+                </p>
+                <details>
+                  <summary>查看修改前后</summary>
+                  <pre>
+                    {JSON.stringify(
+                      { before: item.before, after: item.after },
+                      null,
+                      2,
+                    )}
+                  </pre>
+                </details>
+              </article>
+            ))
+          ) : (
+            <p>暂无变更记录</p>
+          ))}
+      </details>
     </section>
   );
 }

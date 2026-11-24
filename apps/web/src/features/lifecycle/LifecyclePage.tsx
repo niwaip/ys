@@ -1,3 +1,4 @@
+import { LifecycleWorkspacePage } from "./LifecycleWorkspacePage";
 import { useEffect, useRef, useState } from "react";
 import type {
   Software,
@@ -20,13 +21,17 @@ const stageLabels = {
   future: "阶段日期未到",
   unknown: "未知",
 };
-export function LifecyclePage({
+function LifecycleReferencePage({
   customerId,
   token,
   onUnauthorized,
   mode = "both",
   assetId,
-}: FeatureProps & { mode?: "both" | "materials" | "assessment" }) {
+  embedded = false,
+}: FeatureProps & {
+  mode?: "both" | "materials" | "assessment";
+  embedded?: boolean;
+}) {
   const [batches, setBatches] = useState<LifecycleBatch[]>([]),
     [assessments, setAssessments] = useState<LifecycleAssessment[]>([]),
     [selected, setSelected] = useState<LifecycleBatch>(),
@@ -108,16 +113,18 @@ export function LifecyclePage({
   }
   return (
     <>
-      <div className="page-heading">
-        <div>
-          <div className="eyebrow">LIFECYCLE</div>
-          <h1>{mode === "materials" ? "生命周期资料" : "EOSL评估"}</h1>
-          <p>独立导入有来源的阶段资料，按指定批次保存评估依据。</p>
-          {assetId && (
-            <p>本次仅评估台账选中的资产：{assets[0]?.name ?? assetId}</p>
-          )}
+      {!embedded && (
+        <div className="page-heading">
+          <div>
+            <div className="eyebrow">LIFECYCLE</div>
+            <h1>{mode === "materials" ? "生命周期资料" : "EOSL评估"}</h1>
+            <p>独立导入有来源的阶段资料，按指定批次保存评估依据。</p>
+            {assetId && (
+              <p>本次仅评估台账选中的资产：{assets[0]?.name ?? assetId}</p>
+            )}
+          </div>
         </div>
-      </div>
+      )}
       {mode !== "assessment" && (
         <section className="asset-panel import-upload">
           <h2>上传生命周期 CSV</h2>
@@ -376,5 +383,20 @@ export function LifecyclePage({
         </section>
       )}
     </>
+  );
+}
+
+export function LifecyclePage(
+  props: FeatureProps & { mode?: "both" | "materials" | "assessment" },
+) {
+  return props.mode === "materials" ? (
+    <LifecycleWorkspacePage
+      {...props}
+      referenceLibrary={
+        <LifecycleReferencePage {...props} mode="materials" embedded />
+      }
+    />
+  ) : (
+    <LifecycleReferencePage {...props} />
   );
 }

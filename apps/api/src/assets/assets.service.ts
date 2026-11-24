@@ -1,3 +1,4 @@
+import { isDeepStrictEqual } from "node:util";
 import { type LifecycleAsset } from "../../../../packages/contracts/lifecycle-risk";
 import { NetBoxService } from "../netbox/netbox.module";
 import { randomUUID } from "node:crypto";
@@ -13,7 +14,7 @@ const columns = `id, customer_id AS "customerId", name, kind, source, source_ref
 // Device role templates take precedence over role-name heuristics; native VM identity always wins.
 const roleName =
   "lower(COALESCE(attributes#>>'{role,slug}','') || ' ' || COALESCE(attributes#>>'{role,name}',''))";
-const categoryExpression = `CASE WHEN attributes#>>'{netbox,objectType}'='virtual-machine' THEN 'vm' ELSE COALESCE((SELECT category FROM collection_role_templates t WHERE t.customer_id=assets.customer_id AND t.role_id::text=assets.attributes#>>'{role,id}'),CASE WHEN ${roleName} ~ 'switch|router|firewall|network|交换|路由|防火墙|网络' THEN 'network' WHEN ${roleName} ~ 'storage|san|nas|存储' THEN 'storage' WHEN ${roleName} ~ 'power|pdu|ups|电源' THEN 'power' WHEN ${roleName} ~ 'server|服务器' THEN 'server' WHEN hardware_type='server' THEN 'server' WHEN hardware_type='network' THEN 'network' ELSE 'other' END) END`;
+export const categoryExpression = `CASE WHEN attributes#>>'{netbox,objectType}'='virtual-machine' THEN 'vm' ELSE COALESCE((SELECT category FROM collection_role_templates t WHERE t.customer_id=assets.customer_id AND t.role_id::text=assets.attributes#>>'{role,id}'),CASE WHEN ${roleName} ~ 'switch|router|firewall|network|交换|路由|防火墙|网络' THEN 'network' WHEN ${roleName} ~ 'storage|san|nas|存储' THEN 'storage' WHEN ${roleName} ~ 'power|pdu|ups|电源' THEN 'power' WHEN ${roleName} ~ 'server|服务器' THEN 'server' WHEN hardware_type='server' THEN 'server' WHEN hardware_type='network' THEN 'network' ELSE 'other' END) END`;
 function serialize(row: Record<string, unknown>): Asset {
   return {
     ...row,
@@ -51,11 +52,30 @@ export class AssetsService {
     );
     return serialize(result.rows[0]);
   }
-  async updateLifecycle(customer: string, id: string, input: LifecycleAsset) {
-    if (this.netbox.enabled)
-      throw new ConflictException(
-        "NetBox模式下请在NetBox维护生命周期资料后同步",
-      );
+  async updateLifecycle(
+    customer: string,
+    id: string,
+    input: LifecycleAsset,
+    actor = "操作员",
+    expected?: Record<string, unknown>,
+  ) {
+    for (const binding of [input.os, input.device])
+      if (binding) {
+        if (
+          !(
+            await this.db.query(
+              "SELECT id FROM import_materials WHERE customer_id=$1 AND id=$2 AND format='lifecycle-csv-v1'",
+              [customer, binding.batchId],
+            )
+          ).rows.length
+        )
+          throw new NotFoundException("该客户下未找到生命周期批次");
+      }
+    if (this.netbox.enabled) {
+      await this.netbox.updateLifecycle(customer, id, input, actor, expected);
+      return this.get(customer, id);
+    }
+
     return this.db.transaction(async (tx) => {
       await tx.query("SELECT id FROM customers WHERE id=$1 FOR UPDATE", [
         customer,
@@ -71,9 +91,44 @@ export class AssetsService {
           if (!found.rows.length)
             throw new NotFoundException("该客户下未找到生命周期批次");
         }
+      const current = (
+        await tx.query(
+          "SELECT attributes FROM assets WHERE customer_id=$1 AND id=$2",
+          [customer, id],
+        )
+      ).rows[0].attributes as Record<string, unknown>;
+      const before =
+        current.lifecycle &&
+        typeof current.lifecycle === "object" &&
+        !Array.isArray(current.lifecycle)
+          ? current.lifecycle
+          : {};
+      if (expected !== undefined && !isDeepStrictEqual(before, expected))
+        throw new ConflictException(
+          "生命周期资料已被其他操作更新，请刷新后重新填写",
+        );
+      const merged = {
+        ...before,
+        ...Object.fromEntries(
+          Object.entries(input).filter(
+            ([, value]) => value !== "" && value !== undefined,
+          ),
+        ),
+      };
+      await tx.query(
+        "INSERT INTO lifecycle_asset_history(id,customer_id,asset_id,actor,before_data,after_data,source) VALUES($1,$2,$3,$4,$5::jsonb,$6::jsonb,'ys')",
+        [
+          randomUUID(),
+          customer,
+          id,
+          actor,
+          JSON.stringify(before),
+          JSON.stringify(merged),
+        ],
+      );
       const r = await tx.query(
         `UPDATE assets SET attributes=jsonb_set(attributes,'{lifecycle}',$3::jsonb) WHERE customer_id=$1 AND id=$2 RETURNING ${columns}`,
-        [customer, id, JSON.stringify(input)],
+        [customer, id, JSON.stringify(merged)],
       );
       return serialize(r.rows[0]);
     });
