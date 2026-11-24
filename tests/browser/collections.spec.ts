@@ -80,6 +80,9 @@ test("网页新建凭证并绑定所选主机，刷新后仅显示关联连接",
   await expect(page.getByRole("row").filter({ hasText: name })).toBeVisible();
   await page.locator("nav button").filter({ hasText: "资产采集" }).click();
   await page.getByLabel("目标资产").selectOption({ label: name });
+  await page.getByLabel("设备资料类型").selectOption("server");
+  await page.getByLabel("基础资料采集方式").selectOption("automatic");
+  await page.getByRole("button", { name: "配置基础资料", exact: true }).click();
   await page.getByRole("button", { name: "＋ 新建连接" }).click();
   const dialog = page.getByRole("dialog", { name: "新建主机连接" });
   await dialog.getByLabel("主机地址").fill("192.0.2.10");
@@ -125,6 +128,9 @@ test("网页新建凭证并绑定所选主机，刷新后仅显示关联连接",
   await page.reload();
   await page.locator("nav button").filter({ hasText: "资产采集" }).click();
   await page.getByLabel("目标资产").selectOption({ label: name });
+  await page.getByLabel("设备资料类型").selectOption("server");
+  await page.getByLabel("基础资料采集方式").selectOption("automatic");
+  await page.getByRole("button", { name: "配置基础资料", exact: true }).click();
   await expect(
     page.getByLabel("主机连接").locator("option:checked"),
   ).toHaveText(`${name} · SSH`);
@@ -173,6 +179,13 @@ test("采集工作台按资产到内容顺序展示且历史独立", async ({ pa
     path: "output/multi-device-layout-before.png",
     fullPage: false,
   });
+  await expect(
+    setup.getByRole("button", { name: "开始基础采集 →", exact: true }),
+  ).not.toBeVisible();
+  await setup.getByLabel("基础资料采集方式").selectOption("automatic");
+  await setup
+    .getByRole("button", { name: "配置基础资料", exact: true })
+    .click();
   await expect(
     setup.getByRole("button", { name: "开始基础采集 →", exact: true }),
   ).toBeVisible();

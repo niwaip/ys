@@ -16,8 +16,8 @@ test("Windows脚本上传在统一配置中预览，确认后用于评估并保�
   await page.getByRole("button", { name: "进入工作台" }).click();
   await page.getByLabel("目标资产", { exact: true }).selectOption(asset.id);
   await page.getByLabel("设备资料类型").selectOption("server");
-  await page.getByLabel("目标平台").selectOption("windows");
   await page.getByRole("button", { name: "配置基础资料", exact: true }).click();
+  await page.getByLabel("目标平台").selectOption("windows");
   await expect(
     page.getByRole("button", { name: "开始基础采集 →", exact: true }),
   ).toHaveCount(0);

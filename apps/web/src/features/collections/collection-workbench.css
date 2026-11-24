@@ -1133,3 +1133,24 @@
     padding: 14px;
   }
 }
+.single-collection-editor {
+  margin-top: 20px;
+  padding: 0 20px;
+  border: 1px solid #e0e8e2;
+  border-radius: 10px;
+  background: #fff;
+}
+.single-collection-editor > summary {
+  padding: 16px 0;
+  color: #61786a;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.single-collection-editor[open] {
+  padding-bottom: 20px;
+}
+.single-collection-editor > .collect-muted {
+  margin: 0 0 16px;
+  font-size: 12px;
+}

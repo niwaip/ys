@@ -129,6 +129,8 @@ test("redesigned collection tasks, capability gaps, immutable directory handoff,
   await expect(
     page.getByRole("button", { name: "配置基础资料", exact: true }),
   ).toHaveAttribute("aria-pressed", "true");
+  await page.getByLabel("基础资料采集方式").selectOption("automatic");
+  await page.getByRole("button", { name: "配置基础资料", exact: true }).click();
   await page
     .getByRole("button", { name: "开始基础采集 →", exact: true })
     .click();
@@ -388,10 +390,21 @@ test("Docker批次结果直接显示容器镜像及确认入口，历史默认�
   await page
     .getByLabel("目标资产", { exact: true })
     .selectOption({ label: "Docker测试主机" });
+  await expect(
+    page.getByText("单项采集与资料补充", { exact: true }),
+  ).toBeVisible();
+  await expect(
+    page.getByRole("button", { name: "开始基础采集 →", exact: true }),
+  ).not.toBeVisible();
   const config = page.getByRole("region", {
     name: "操作系统与配置",
     exact: true,
   });
+  await config
+    .getByRole("button", { name: "配置基础资料", exact: true })
+    .click();
+  await page.getByRole("tab", { name: "手动输入", exact: true }).click();
+  await expect(page.getByLabel("OS发行版ID", { exact: true })).toBeVisible();
   await config.getByLabel("选择基础资料", { exact: true }).uncheck();
   await config.getByLabel("选择Docker容器", { exact: true }).check();
   await config.getByLabel("Docker容器采集方式").selectOption("automatic");
@@ -407,6 +420,13 @@ test("Docker批次结果直接显示容器镜像及确认入口，历史默认�
     result.getByText("Docker容器 · 采集完成", { exact: true }),
   ).toBeVisible();
   await expect(result.getByText("待确认采纳", { exact: true })).toBeVisible();
+  await expect(page.locator(".single-collection-editor")).not.toHaveAttribute(
+    "open",
+    "",
+  );
+  await expect(
+    page.getByLabel("OS发行版ID", { exact: true }),
+  ).not.toBeVisible();
   await expect(
     result.getByRole("tab", { name: "容器（3）", exact: true }),
   ).toBeVisible();

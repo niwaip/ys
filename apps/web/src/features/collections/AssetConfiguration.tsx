@@ -36,6 +36,7 @@ export function AssetConfiguration({
   onContent,
   onMethod,
   onRestore,
+  onRunStarted,
   ...props
 }: FeatureProps & {
   category: DeviceCategory;
@@ -45,6 +46,7 @@ export function AssetConfiguration({
   onContent: (v: ConfigurationContent) => void;
   onMethod: (v: string) => void;
   onRestore: (v: CollectionConfiguration) => void;
+  onRunStarted?: () => void;
 }) {
   const { assetId, customerId, token, onUnauthorized } = props;
   const base = `/customers/${customerId}/collections`;
@@ -248,6 +250,7 @@ export function AssetConfiguration({
           }),
         });
         if (stop.current) return;
+        onRunStarted?.();
         setNotice(
           "采集批次已创建：自动项已提交，脚本和手动项等待输入。原始结果自动保存，核对后再采纳。",
         );

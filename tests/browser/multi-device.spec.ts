@@ -19,6 +19,7 @@ test("网络设备在统一工作台手动录入、预览及拒绝，刷新保�
   ).toHaveCount(0);
   await page.getByLabel("目标资产", { exact: true }).selectOption(asset.id);
   await page.getByLabel("设备资料类型").selectOption("network");
+  await page.getByRole("button", { name: "配置基础资料", exact: true }).click();
   await page.getByRole("tab", { name: "手动输入", exact: true }).click();
   await expect(page.getByLabel("OS发行版ID")).toHaveCount(0);
   await page.getByLabel("来源说明", { exact: true }).fill("现场版本命令");
@@ -77,6 +78,7 @@ test("配置旁新增资产后自动选中，切换目标清除当前结果及�
   await page
     .getByLabel("目标资产", { exact: true })
     .selectOption({ label: name });
+  await page.getByRole("button", { name: "配置基础资料", exact: true }).click();
   await page.getByRole("tab", { name: "上传脚本结果", exact: true }).click();
   await page.getByLabel("采集JSON文件").setInputFiles({
     name: "invalid.json",
@@ -84,6 +86,7 @@ test("配置旁新增资产后自动选中，切换目标清除当前结果及�
     buffer: Buffer.from("{"),
   });
   await page.getByLabel("目标资产", { exact: true }).selectOption(other.id);
+  await page.getByRole("button", { name: "配置基础资料", exact: true }).click();
   await page.getByRole("tab", { name: "上传脚本结果", exact: true }).click();
   await expect(
     page.getByRole("button", { name: "保存基础快照", exact: true }),

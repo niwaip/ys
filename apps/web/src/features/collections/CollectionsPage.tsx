@@ -80,8 +80,10 @@ export function CollectionsPage({
   >({});
   const [platform, setPlatform] = useState("linux");
   const [showBaseline, setShowBaseline] = useState(false);
+  const [editorOpen, setEditorOpen] = useState(false);
   useEffect(() => {
     setShowBaseline(false);
+    setEditorOpen(false);
   }, [target]);
   const [addingAsset, setAddingAsset] = useState(false);
   const [typeFilter, setTypeFilter] = useState<DeviceCategory | "">("");
@@ -820,7 +822,9 @@ export function CollectionsPage({
                 setCategory(value.category);
                 setPlatform(value.platform);
               }}
+              onRunStarted={() => setEditorOpen(false)}
               onContent={(value) => {
+                setEditorOpen(true);
                 setActiveContent(value);
                 setScope(value === "docker" ? "container-inventory" : "basic");
               }}
@@ -835,539 +839,558 @@ export function CollectionsPage({
               }
             />
           )}
-          {activeContent === "software" && (
-            <section className="software-configuration">
-              <h3>软件清单与组件资料分别保存</h3>
-              <p>
-                自动清单包含系统包及可直接取得的软件版本；不表示已发现所有应用依赖。可在下方录入版本或上传清单，再按明确应用路径取得组件资料。
-              </p>
-            </section>
-          )}
-          <div
-            className="collect-access"
-            hidden={tab !== "connect" || !linuxSupported}
+          <details
+            className="single-collection-editor"
+            open={editorOpen}
+            onToggle={(e) => setEditorOpen(e.currentTarget.open)}
           >
-            <div className="collect-label-row">
-              <label htmlFor="collection-connection">
-                主机连接{" "}
-                <span
-                  className="collect-tip"
-                  tabIndex={0}
-                  title="连接将主机地址、登录账号和凭证关联起来。基础采集只执行固定读取命令，不要求目标安装Trivy。"
-                >
-                  ⓘ
-                </span>
-              </label>
-              <button
-                type="button"
-                className="text-button"
-                disabled={!target}
-                onClick={() => setEditingConnection(true)}
-              >
-                ＋ 新建连接
-              </button>
-            </div>
-            <select
-              id="collection-connection"
-              disabled={busy}
-              value={profileId}
-              onChange={(e) => setProfileId(e.target.value)}
-              required
-            >
-              <option value="">选择已关联的连接</option>
-              {availableProfiles.map((item) => (
-                <option value={item.id} key={item.id}>
-                  {item.label}
-                </option>
-              ))}
-            </select>
-            {selectedProfile ? (
-              <div className="collect-connection-summary">
-                <span className="collect-configured-dot" />
-                <div>
-                  <strong>
-                    {selectedProfile.transport === "local"
-                      ? `YS 部署主机 · ${selectedProfile.host ?? "本机"}`
-                      : selectedProfile.host || "SSH访问"}
-                  </strong>
-                  <p>{selectedProfile.credentialName ?? "已关联访问凭证"}</p>
-                </div>
-                <span className="collect-pill">
-                  {selectedProfile.transport === "local" ? "本机身份" : "SSH"}
-                </span>
-              </div>
-            ) : (
-              <div className="collect-connection-empty">
-                <span>⌁</span>
-                <div>
-                  <strong>还没有关联连接</strong>
-                  <p>新建连接，选择或保存一项登录凭证。</p>
-                </div>
-              </div>
+            <summary>单项采集与资料补充</summary>
+            <p className="collect-muted">
+              此处用于重新采集或新增资料，不代表已有资料缺失。已确认内容请在上方查看。
+            </p>
+            {activeContent === "software" && (
+              <section className="software-configuration">
+                <h3>软件清单与组件资料分别保存</h3>
+                <p>
+                  自动清单包含系统包及可直接取得的软件版本；不表示已发现所有应用依赖。可在下方录入版本或上传清单，再按明确应用路径取得组件资料。
+                </p>
+              </section>
             )}
-            <button
-              type="button"
-              className="secondary"
-              disabled={busy || !profileId || !target}
-              onClick={() => void checkCapabilities()}
-            >
-              检查采集能力
-            </button>
-            {selectedProfile && !capability && (
-              <p className="collect-muted">尚未检查连接与采集能力。</p>
-            )}
-            <details className="collect-access-help">
-              <summary>执行位置说明</summary>
-              <p className="collect-muted">
-                本机执行指 YS
-                部署主机，不是浏览器所在电脑。连接由部署端登记并限定客户与资产。
-              </p>
-            </details>
-          </div>
-          {capability && tab === "connect" && (
             <div
-              className="collect-capabilities"
-              role="region"
-              aria-label="采集能力检查"
+              className="collect-access"
+              hidden={tab !== "connect" || !linuxSupported}
             >
-              <strong>
-                {capability.hostname} · {capability.identity ?? "身份未取得"}
-              </strong>
-              <p>
-                检查于 {new Date(capability.checkedAt).toLocaleString()} ·{" "}
-                {capability.transport === "local"
-                  ? "YS 部署主机"
-                  : "SSH 目标主机"}
-              </p>
-              <dl>
-                {[
-                  ["主机基础访问", capability.basic],
-                  ["Docker 目录访问", capability.docker],
-                  ["Trivy 镜像生成", capability.trivy],
-                ].map(([label, check]) => (
-                  <div key={String(label)}>
-                    <dt>{String(label)}</dt>
-                    <dd>
-                      {
-                        capabilityLabels[
-                          (
-                            check as import("../../../../../packages/contracts/collections").CapabilityCheck
-                          ).status
-                        ]
-                      }
-                    </dd>
-                  </div>
-                ))}
-              </dl>
-            </div>
-          )}
-          <div className="collect-workspace collect-task-workspace">
-            <form
-              className={`collect-input collect-mode-${tab}`}
-              onSubmit={submit}
-              key={`${tab}:${target}:${category}:${platform}`}
-            >
-              <p className="collect-muted">
-                单项操作 ·{" "}
-                {activeContent === "software"
-                  ? "软件清单"
-                  : scope === "basic"
-                    ? "基础资料"
-                    : "Docker目录"}
-                。下方临时操作不改变上方已保存的批次配置。
-              </p>
-              <div
-                className="collect-methods collect-entry-groups"
-                role="tablist"
-                aria-label="资料接入方式"
-              >
+              <div className="collect-label-row">
+                <label htmlFor="collection-connection">
+                  主机连接{" "}
+                  <span
+                    className="collect-tip"
+                    tabIndex={0}
+                    title="连接将主机地址、登录账号和凭证关联起来。基础采集只执行固定读取命令，不要求目标安装Trivy。"
+                  >
+                    ⓘ
+                  </span>
+                </label>
                 <button
                   type="button"
-                  role="tab"
-                  aria-selected={tab !== "manual"}
-                  onClick={() => setTab(linuxSupported ? "connect" : "upload")}
+                  className="text-button"
+                  disabled={!target}
+                  onClick={() => setEditingConnection(true)}
                 >
-                  自动／脚本采集
+                  ＋ 新建连接
                 </button>
-                {scope === "basic" && (
+              </div>
+              <select
+                id="collection-connection"
+                disabled={busy}
+                value={profileId}
+                onChange={(e) => setProfileId(e.target.value)}
+                required
+              >
+                <option value="">选择已关联的连接</option>
+                {availableProfiles.map((item) => (
+                  <option value={item.id} key={item.id}>
+                    {item.label}
+                  </option>
+                ))}
+              </select>
+              {selectedProfile ? (
+                <div className="collect-connection-summary">
+                  <span className="collect-configured-dot" />
+                  <div>
+                    <strong>
+                      {selectedProfile.transport === "local"
+                        ? `YS 部署主机 · ${selectedProfile.host ?? "本机"}`
+                        : selectedProfile.host || "SSH访问"}
+                    </strong>
+                    <p>{selectedProfile.credentialName ?? "已关联访问凭证"}</p>
+                  </div>
+                  <span className="collect-pill">
+                    {selectedProfile.transport === "local" ? "本机身份" : "SSH"}
+                  </span>
+                </div>
+              ) : (
+                <div className="collect-connection-empty">
+                  <span>⌁</span>
+                  <div>
+                    <strong>还没有关联连接</strong>
+                    <p>新建连接，选择或保存一项登录凭证。</p>
+                  </div>
+                </div>
+              )}
+              <button
+                type="button"
+                className="secondary"
+                disabled={busy || !profileId || !target}
+                onClick={() => void checkCapabilities()}
+              >
+                检查采集能力
+              </button>
+              {selectedProfile && !capability && (
+                <p className="collect-muted">尚未检查连接与采集能力。</p>
+              )}
+              <details className="collect-access-help">
+                <summary>执行位置说明</summary>
+                <p className="collect-muted">
+                  本机执行指 YS
+                  部署主机，不是浏览器所在电脑。连接由部署端登记并限定客户与资产。
+                </p>
+              </details>
+            </div>
+            {capability && tab === "connect" && (
+              <div
+                className="collect-capabilities"
+                role="region"
+                aria-label="采集能力检查"
+              >
+                <strong>
+                  {capability.hostname} · {capability.identity ?? "身份未取得"}
+                </strong>
+                <p>
+                  检查于 {new Date(capability.checkedAt).toLocaleString()} ·{" "}
+                  {capability.transport === "local"
+                    ? "YS 部署主机"
+                    : "SSH 目标主机"}
+                </p>
+                <dl>
+                  {[
+                    ["主机基础访问", capability.basic],
+                    ["Docker 目录访问", capability.docker],
+                    ["Trivy 镜像生成", capability.trivy],
+                  ].map(([label, check]) => (
+                    <div key={String(label)}>
+                      <dt>{String(label)}</dt>
+                      <dd>
+                        {
+                          capabilityLabels[
+                            (
+                              check as import("../../../../../packages/contracts/collections").CapabilityCheck
+                            ).status
+                          ]
+                        }
+                      </dd>
+                    </div>
+                  ))}
+                </dl>
+              </div>
+            )}
+            <div className="collect-workspace collect-task-workspace">
+              <form
+                className={`collect-input collect-mode-${tab}`}
+                onSubmit={submit}
+                key={`${tab}:${target}:${category}:${platform}`}
+              >
+                <p className="collect-muted">
+                  单项操作 ·{" "}
+                  {activeContent === "software"
+                    ? "软件清单"
+                    : scope === "basic"
+                      ? "基础资料"
+                      : "Docker目录"}
+                  。下方临时操作不改变上方已保存的批次配置。
+                </p>
+                <div
+                  className="collect-methods collect-entry-groups"
+                  role="tablist"
+                  aria-label="资料接入方式"
+                >
                   <button
                     type="button"
                     role="tab"
-                    aria-label="手动输入"
-                    aria-selected={tab === "manual"}
-                    onClick={() => setTab("manual")}
-                  >
-                    手动输入
-                  </button>
-                )}
-              </div>
-              {tab !== "manual" && (
-                <div className="collect-auto-options">
-                  {scope === "basic" && hostType && (
-                    <label>
-                      目标平台
-                      <select
-                        aria-label="目标平台"
-                        value={platform}
-                        onChange={(e) => {
-                          setPlatform(e.target.value);
-                          setTab(
-                            e.target.value === "windows" ? "upload" : "connect",
-                          );
-                          setContent("");
-                          setFileName("");
-                        }}
-                      >
-                        <option value="linux">Linux</option>
-                        <option value="windows">Windows</option>
-                      </select>
-                    </label>
-                  )}
-                  <div
-                    className="collect-methods"
-                    role="tablist"
-                    aria-label="自动采集方式"
-                  >
-                    {[
-                      ...(linuxSupported ? [["connect", "连接采集"]] : []),
-                      ["upload", "上传脚本结果"],
-                      ...(hostType ? [["offline", "离线脚本"]] : []),
-                    ].map(([key, label]) => (
-                      <button
-                        type="button"
-                        role="tab"
-                        aria-label={label}
-                        aria-selected={tab === key}
-                        key={key}
-                        onClick={() => setTab(key)}
-                      >
-                        {label}
-                      </button>
-                    ))}
-                  </div>
-                  {!linuxSupported && (
-                    <p className="notice">
-                      {hostType
-                        ? "Windows目前支持脚本结果上传，不支持远程执行。"
-                        : "该类设备暂不支持连接采集；可上传ys-host/1设备资料或手动输入。SNMP v3将在后续阶段提供。"}
-                    </p>
-                  )}
-                </div>
-              )}
-              {tab === "connect" ? (
-                <>
-                  <div className="collect-scope">
-                    <div>
-                      <strong>
-                        {scope === "basic" ? "基础采集" : "容器 / 镜像目录"}
-                      </strong>
-                      <span
-                        className="collect-tip"
-                        tabIndex={0}
-                        title={
-                          scope === "basic"
-                            ? "读取操作系统、运行内核、安装包和可见硬件/网络信息。不访问 Docker 引擎，不扫描容器内部或应用目录。"
-                            : "单独读取容器和镜像目录及其关系，不扫描镜像内部组件。"
-                        }
-                      >
-                        ⓘ
-                      </span>
-                    </div>
-                    <p>
-                      {scope === "basic"
-                        ? "操作系统 · 安装包 · 硬件 · 网络"
-                        : "容器实例 · 镜像身份 · 关联关系"}
-                    </p>
-                  </div>
-                  {scope === "container-inventory" && !directoryAuthorized && (
-                    <p className="notice">
-                      该连接未授权 Docker
-                      访问。请在连接管理中配置已授权连接；也可下载离线脚本后上传结果。
-                    </p>
-                  )}
-                  {scope === "container-inventory" && (
-                    <p className="collect-muted">
-                      目录发现不要求 Trivy；生成镜像组件资料时才需要 Trivy。
-                    </p>
-                  )}
-                  <details className="collect-options">
-                    <summary>高级采集选项</summary>
-                    <label className="collect-check">
-                      <input
-                        type="checkbox"
-                        checked={usePi}
-                        onChange={(e) => setUsePi(e.target.checked)}
-                      />
-                      使用Pi Agent协助{" "}
-                      <span
-                        className="collect-tip"
-                        title="Pi只调用固定采集工具，需要服务器已配置Pi。基础采集可以直接执行。"
-                        tabIndex={0}
-                      >
-                        ⓘ
-                      </span>
-                    </label>
-                    {usePi && (
-                      <label>
-                        采集需求
-                        <textarea
-                          name="message"
-                          defaultValue="取得所选范围的基础资料，披露读取缺口。"
-                          maxLength={4000}
-                          rows={2}
-                        />
-                      </label>
-                    )}
-                  </details>
-                </>
-              ) : tab === "offline" ? (
-                <section className="collect-offline">
-                  {platform === "windows" && (
-                    <p>
-                      在目标Windows上运行下载的PowerShell脚本：
-                      <code>powershell -File .\\ys-windows.ps1</code>，生成
-                      windows-collection.json
-                      后上传。仅执行只读查询，不更改执行策略。
-                    </p>
-                  )}
-                  <h3>
-                    {scope === "basic"
-                      ? "主机基础资料离线脚本"
-                      : "容器目录离线脚本"}
-                  </h3>
-                  <p hidden={platform === "windows"}>
-                    在目标 Linux 主机准备 Node.js；基础脚本无需
-                    Docker，容器目录脚本需要 Docker 读取权限，两者均不要求
-                    Trivy。
-                  </p>
-                  <button
-                    type="button"
-                    className="secondary"
-                    disabled={busy}
-                    onClick={() => void downloadScript()}
-                  >
-                    下载{scope === "basic" ? "基础" : "容器目录"}采集脚本
-                  </button>
-                  <code hidden={platform === "windows"}>
-                    node ys-
-                    {scope === "basic" ? "host-basic" : "docker-inventory"}.mjs
-                    &gt; collection.json
-                  </code>
-                  <p>
-                    不安装、不提权、不拉取镜像。执行后选择“上传脚本结果”，确认资料属于当前目标主机。
-                  </p>
-                </section>
-              ) : tab === "upload" ? (
-                <>
-                  <h3>上传采集资料</h3>
-                  <p className="collect-muted">
-                    支持 Linux ys-host/1、Windows
-                    windows-bat/1，以及包含设备资料区块的 ys-host/1
-                    JSON；软件与镜像SBOM在对应功能上传。
-                    <span
-                      className="collect-tip"
-                      tabIndex={0}
-                      title="支持ys-host/1 JSON，最多5MB、50000条包记录；超限明确拒绝，不会截断。"
-                    >
-                      ⓘ
-                    </span>
-                  </p>
-                  <label className="collect-check">
-                    <input type="checkbox" required />
-                    我已确认资料属于所选主机
-                  </label>
-                  <label className="collect-upload">
-                    ⇧<strong>{fileName || "选择JSON文件"}</strong>
-                    <small>点击选择本地采集结果</small>
-                    <input
-                      aria-label="采集JSON文件"
-                      type="file"
-                      accept=".json,application/json"
-                      required
-                      onChange={async (e) => {
-                        const file = e.target.files?.[0];
-                        setContent("");
-                        setFileName("");
-                        if (!file) return;
-                        if (file.size > 5000000) {
-                          setError("资料超过5MB，未截断上传");
-                          return;
-                        }
-                        const revision = ++fileRevision.current;
-                        const requested = currentSelection.current;
-                        const text = await file.text();
-                        if (
-                          requested !== currentSelection.current ||
-                          revision !== fileRevision.current
-                        )
-                          return;
-                        setContent(text);
-                        setFileName(file.name);
-                      }}
-                    />
-                  </label>
-                  {content && (
-                    <details>
-                      <summary>预览原始资料</summary>
-                      <pre>{content}</pre>
-                    </details>
-                  )}
-                </>
-              ) : (
-                <>
-                  <div className="collect-fields">
-                    <label>
-                      资产名称 / 主机名
-                      <input
-                        name="hostname"
-                        required
-                        maxLength={255}
-                        defaultValue={asset?.name}
-                      />
-                    </label>
-                    <label>
-                      来源说明
-                      <input
-                        name="note"
-                        required
-                        maxLength={1000}
-                        placeholder="例如：客户现场提供"
-                      />
-                    </label>
-                    {(hostType && activeContent !== "software"
-                      ? [
-                          ["id", "OS发行版ID"],
-                          ["version", "OS版本"],
-                          ["kernel", "运行内核"],
-                          ["architecture", "架构"],
-                        ]
-                      : []
-                    ).map(([key, label]) => (
-                      <label key={key}>
-                        {label}
-                        <input name={key} maxLength={255} />
-                      </label>
-                    ))}
-                  </div>
-                  <DeviceFields
-                    category={category}
-                    softwareOnly={activeContent === "software"}
-                  />
-                  <details className="collect-options">
-                    <summary>更多来源信息</summary>
-                    <div className="collect-fields">
-                      <label>
-                        序列号
-                        <input name="serial" maxLength={255} />
-                      </label>
-                      <label>
-                        已知采集时间
-                        <input name="collectedAt" type="datetime-local" />
-                      </label>
-                    </div>
-                    <p className="collect-muted">未知字段或时间留空。</p>
-                  </details>
-                </>
-              )}
-              <div className="collect-submit">
-                <span>
-                  ◈{" "}
-                  {tab === "connect"
-                    ? scope === "basic"
-                      ? "仅收集主机资料，不访问 Docker 引擎"
-                      : "仅发现目录，不自动扫描镜像"
-                    : "保存来源与独立资料版本"}
-                </span>
-                {tab !== "offline" && (
-                  <button
-                    className="primary"
-                    disabled={
-                      busy ||
-                      collecting ||
-                      !asset ||
-                      (tab === "connect" &&
-                        (!linuxSupported ||
-                          !profileId ||
-                          (scope === "container-inventory" &&
-                            !directoryAuthorized))) ||
-                      (tab === "upload" && !content)
+                    aria-selected={tab !== "manual"}
+                    onClick={() =>
+                      setTab(linuxSupported ? "connect" : "upload")
                     }
                   >
-                    {busy
-                      ? "处理中…"
-                      : collecting
-                        ? "采集中…"
-                        : tab === "connect"
-                          ? scope === "basic"
-                            ? "开始基础采集 →"
-                            : "采集容器目录 →"
-                          : scope === "basic"
-                            ? "保存基础快照"
-                            : "保存容器目录"}
+                    自动／脚本采集
                   </button>
-                )}
-              </div>
-              <div ref={feedback} className="collect-feedback">
-                {error && (
-                  <div role="alert" className="error">
-                    {error}
+                  {scope === "basic" && (
+                    <button
+                      type="button"
+                      role="tab"
+                      aria-label="手动输入"
+                      aria-selected={tab === "manual"}
+                      onClick={() => setTab("manual")}
+                    >
+                      手动输入
+                    </button>
+                  )}
+                </div>
+                {tab !== "manual" && (
+                  <div className="collect-auto-options">
+                    {scope === "basic" && hostType && (
+                      <label>
+                        目标平台
+                        <select
+                          aria-label="目标平台"
+                          value={platform}
+                          onChange={(e) => {
+                            setPlatform(e.target.value);
+                            setTab(
+                              e.target.value === "windows"
+                                ? "upload"
+                                : "connect",
+                            );
+                            setContent("");
+                            setFileName("");
+                          }}
+                        >
+                          <option value="linux">Linux</option>
+                          <option value="windows">Windows</option>
+                        </select>
+                      </label>
+                    )}
+                    <div
+                      className="collect-methods"
+                      role="tablist"
+                      aria-label="自动采集方式"
+                    >
+                      {[
+                        ...(linuxSupported ? [["connect", "连接采集"]] : []),
+                        ["upload", "上传脚本结果"],
+                        ...(hostType ? [["offline", "离线脚本"]] : []),
+                      ].map(([key, label]) => (
+                        <button
+                          type="button"
+                          role="tab"
+                          aria-label={label}
+                          aria-selected={tab === key}
+                          key={key}
+                          onClick={() => setTab(key)}
+                        >
+                          {label}
+                        </button>
+                      ))}
+                    </div>
+                    {!linuxSupported && (
+                      <p className="notice">
+                        {hostType
+                          ? "Windows目前支持脚本结果上传，不支持远程执行。"
+                          : "该类设备暂不支持连接采集；可上传ys-host/1设备资料或手动输入。SNMP v3将在后续阶段提供。"}
+                      </p>
+                    )}
                   </div>
                 )}
-                {notice && (
-                  <div role="status" className="notice">
-                    {notice}
-                  </div>
-                )}
-                {currentJob && (
-                  <section
-                    aria-label="本次采集任务"
-                    className="collect-progress-card"
-                    aria-live="polite"
-                  >
-                    <h3>
-                      采集任务：
-                      {statuses[currentJob.status] ?? currentJob.status}
-                    </h3>
-                    <progress
-                      aria-label="采集进度"
-                      max={100}
-                      value={
-                        collecting ? undefined : currentJob.snapshotId ? 100 : 0
-                      }
-                    />
-                    {collecting && (
-                      <>
-                        <p>
-                          正在
-                          {currentJob.scope === "basic"
-                            ? "采集主机基础资料"
-                            : "读取 Docker 镜像与容器目录"}
-                          ，请稍候…
+                {tab === "connect" ? (
+                  <>
+                    <div className="collect-scope">
+                      <div>
+                        <strong>
+                          {scope === "basic" ? "基础采集" : "容器 / 镜像目录"}
+                        </strong>
+                        <span
+                          className="collect-tip"
+                          tabIndex={0}
+                          title={
+                            scope === "basic"
+                              ? "读取操作系统、运行内核、安装包和可见硬件/网络信息。不访问 Docker 引擎，不扫描容器内部或应用目录。"
+                              : "单独读取容器和镜像目录及其关系，不扫描镜像内部组件。"
+                          }
+                        >
+                          ⓘ
+                        </span>
+                      </div>
+                      <p>
+                        {scope === "basic"
+                          ? "操作系统 · 安装包 · 硬件 · 网络"
+                          : "容器实例 · 镜像身份 · 关联关系"}
+                      </p>
+                    </div>
+                    {scope === "container-inventory" &&
+                      !directoryAuthorized && (
+                        <p className="notice">
+                          该连接未授权 Docker
+                          访问。请在连接管理中配置已授权连接；也可下载离线脚本后上传结果。
                         </p>
-                      </>
-                    )}
-                    {currentJob.error && <p>{currentJob.error}</p>}
-                    {currentJob.snapshotId && (
-                      <button
-                        type="button"
-                        className="secondary"
-                        onClick={() =>
-                          void showSnapshot(currentJob.snapshotId!)
-                        }
-                      >
-                        查看本次采集资料
-                      </button>
-                    )}
-                    {!collecting &&
-                      !currentJob.snapshotId &&
-                      !currentJob.error && (
-                        <p>未取得采集资料，请查看任务记录后重试。</p>
                       )}
+                    {scope === "container-inventory" && (
+                      <p className="collect-muted">
+                        目录发现不要求 Trivy；生成镜像组件资料时才需要 Trivy。
+                      </p>
+                    )}
+                    <details className="collect-options">
+                      <summary>高级采集选项</summary>
+                      <label className="collect-check">
+                        <input
+                          type="checkbox"
+                          checked={usePi}
+                          onChange={(e) => setUsePi(e.target.checked)}
+                        />
+                        使用Pi Agent协助{" "}
+                        <span
+                          className="collect-tip"
+                          title="Pi只调用固定采集工具，需要服务器已配置Pi。基础采集可以直接执行。"
+                          tabIndex={0}
+                        >
+                          ⓘ
+                        </span>
+                      </label>
+                      {usePi && (
+                        <label>
+                          采集需求
+                          <textarea
+                            name="message"
+                            defaultValue="取得所选范围的基础资料，披露读取缺口。"
+                            maxLength={4000}
+                            rows={2}
+                          />
+                        </label>
+                      )}
+                    </details>
+                  </>
+                ) : tab === "offline" ? (
+                  <section className="collect-offline">
+                    {platform === "windows" && (
+                      <p>
+                        在目标Windows上运行下载的PowerShell脚本：
+                        <code>powershell -File .\\ys-windows.ps1</code>，生成
+                        windows-collection.json
+                        后上传。仅执行只读查询，不更改执行策略。
+                      </p>
+                    )}
+                    <h3>
+                      {scope === "basic"
+                        ? "主机基础资料离线脚本"
+                        : "容器目录离线脚本"}
+                    </h3>
+                    <p hidden={platform === "windows"}>
+                      在目标 Linux 主机准备 Node.js；基础脚本无需
+                      Docker，容器目录脚本需要 Docker 读取权限，两者均不要求
+                      Trivy。
+                    </p>
+                    <button
+                      type="button"
+                      className="secondary"
+                      disabled={busy}
+                      onClick={() => void downloadScript()}
+                    >
+                      下载{scope === "basic" ? "基础" : "容器目录"}采集脚本
+                    </button>
+                    <code hidden={platform === "windows"}>
+                      node ys-
+                      {scope === "basic" ? "host-basic" : "docker-inventory"}
+                      .mjs &gt; collection.json
+                    </code>
+                    <p>
+                      不安装、不提权、不拉取镜像。执行后选择“上传脚本结果”，确认资料属于当前目标主机。
+                    </p>
                   </section>
+                ) : tab === "upload" ? (
+                  <>
+                    <h3>上传采集资料</h3>
+                    <p className="collect-muted">
+                      支持 Linux ys-host/1、Windows
+                      windows-bat/1，以及包含设备资料区块的 ys-host/1
+                      JSON；软件与镜像SBOM在对应功能上传。
+                      <span
+                        className="collect-tip"
+                        tabIndex={0}
+                        title="支持ys-host/1 JSON，最多5MB、50000条包记录；超限明确拒绝，不会截断。"
+                      >
+                        ⓘ
+                      </span>
+                    </p>
+                    <label className="collect-check">
+                      <input type="checkbox" required />
+                      我已确认资料属于所选主机
+                    </label>
+                    <label className="collect-upload">
+                      ⇧<strong>{fileName || "选择JSON文件"}</strong>
+                      <small>点击选择本地采集结果</small>
+                      <input
+                        aria-label="采集JSON文件"
+                        type="file"
+                        accept=".json,application/json"
+                        required
+                        onChange={async (e) => {
+                          const file = e.target.files?.[0];
+                          setContent("");
+                          setFileName("");
+                          if (!file) return;
+                          if (file.size > 5000000) {
+                            setError("资料超过5MB，未截断上传");
+                            return;
+                          }
+                          const revision = ++fileRevision.current;
+                          const requested = currentSelection.current;
+                          const text = await file.text();
+                          if (
+                            requested !== currentSelection.current ||
+                            revision !== fileRevision.current
+                          )
+                            return;
+                          setContent(text);
+                          setFileName(file.name);
+                        }}
+                      />
+                    </label>
+                    {content && (
+                      <details>
+                        <summary>预览原始资料</summary>
+                        <pre>{content}</pre>
+                      </details>
+                    )}
+                  </>
+                ) : (
+                  <>
+                    <div className="collect-fields">
+                      <label>
+                        资产名称 / 主机名
+                        <input
+                          name="hostname"
+                          required
+                          maxLength={255}
+                          defaultValue={asset?.name}
+                        />
+                      </label>
+                      <label>
+                        来源说明
+                        <input
+                          name="note"
+                          required
+                          maxLength={1000}
+                          placeholder="例如：客户现场提供"
+                        />
+                      </label>
+                      {(hostType && activeContent !== "software"
+                        ? [
+                            ["id", "OS发行版ID"],
+                            ["version", "OS版本"],
+                            ["kernel", "运行内核"],
+                            ["architecture", "架构"],
+                          ]
+                        : []
+                      ).map(([key, label]) => (
+                        <label key={key}>
+                          {label}
+                          <input name={key} maxLength={255} />
+                        </label>
+                      ))}
+                    </div>
+                    <DeviceFields
+                      category={category}
+                      softwareOnly={activeContent === "software"}
+                    />
+                    <details className="collect-options">
+                      <summary>更多来源信息</summary>
+                      <div className="collect-fields">
+                        <label>
+                          序列号
+                          <input name="serial" maxLength={255} />
+                        </label>
+                        <label>
+                          已知采集时间
+                          <input name="collectedAt" type="datetime-local" />
+                        </label>
+                      </div>
+                      <p className="collect-muted">未知字段或时间留空。</p>
+                    </details>
+                  </>
                 )}
-              </div>
-            </form>
-          </div>
+                <div className="collect-submit">
+                  <span>
+                    ◈{" "}
+                    {tab === "connect"
+                      ? scope === "basic"
+                        ? "仅收集主机资料，不访问 Docker 引擎"
+                        : "仅发现目录，不自动扫描镜像"
+                      : "保存来源与独立资料版本"}
+                  </span>
+                  {tab !== "offline" && (
+                    <button
+                      className="primary"
+                      disabled={
+                        busy ||
+                        collecting ||
+                        !asset ||
+                        (tab === "connect" &&
+                          (!linuxSupported ||
+                            !profileId ||
+                            (scope === "container-inventory" &&
+                              !directoryAuthorized))) ||
+                        (tab === "upload" && !content)
+                      }
+                    >
+                      {busy
+                        ? "处理中…"
+                        : collecting
+                          ? "采集中…"
+                          : tab === "connect"
+                            ? scope === "basic"
+                              ? "开始基础采集 →"
+                              : "采集容器目录 →"
+                            : scope === "basic"
+                              ? "保存基础快照"
+                              : "保存容器目录"}
+                    </button>
+                  )}
+                </div>
+                <div ref={feedback} className="collect-feedback">
+                  {error && (
+                    <div role="alert" className="error">
+                      {error}
+                    </div>
+                  )}
+                  {notice && (
+                    <div role="status" className="notice">
+                      {notice}
+                    </div>
+                  )}
+                  {currentJob && (
+                    <section
+                      aria-label="本次采集任务"
+                      className="collect-progress-card"
+                      aria-live="polite"
+                    >
+                      <h3>
+                        采集任务：
+                        {statuses[currentJob.status] ?? currentJob.status}
+                      </h3>
+                      <progress
+                        aria-label="采集进度"
+                        max={100}
+                        value={
+                          collecting
+                            ? undefined
+                            : currentJob.snapshotId
+                              ? 100
+                              : 0
+                        }
+                      />
+                      {collecting && (
+                        <>
+                          <p>
+                            正在
+                            {currentJob.scope === "basic"
+                              ? "采集主机基础资料"
+                              : "读取 Docker 镜像与容器目录"}
+                            ，请稍候…
+                          </p>
+                        </>
+                      )}
+                      {currentJob.error && <p>{currentJob.error}</p>}
+                      {currentJob.snapshotId && (
+                        <button
+                          type="button"
+                          className="secondary"
+                          onClick={() =>
+                            void showSnapshot(currentJob.snapshotId!)
+                          }
+                        >
+                          查看本次采集资料
+                        </button>
+                      )}
+                      {!collecting &&
+                        !currentJob.snapshotId &&
+                        !currentJob.error && (
+                          <p>未取得采集资料，请查看任务记录后重试。</p>
+                        )}
+                    </section>
+                  )}
+                </div>
+              </form>
+            </div>
+          </details>
         </div>
       </section>
       {asset &&
