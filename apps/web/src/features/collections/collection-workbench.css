@@ -993,3 +993,143 @@
 .baseline-compact .baseline-layer.has-changes {
   border-left: 1px solid #dfe8e1;
 }
+
+.configuration-commandbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 20px;
+  margin-top: 18px;
+  padding: 18px 20px;
+  background: #f5f8f6;
+  border: 1px solid #e0e9e3;
+  border-radius: 12px;
+}
+.configuration-command-copy strong,
+.configuration-result-intro > span {
+  color: #467361;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+}
+.configuration-command-copy p {
+  font-size: 13px;
+  color: #728278;
+  margin: 6px 0 0;
+}
+.configuration-commandbar .configuration-actions {
+  margin: 0;
+  flex-shrink: 0;
+  gap: 10px;
+}
+.configuration-commandbar button,
+.baseline-review-actions button {
+  min-height: 42px;
+  border-radius: 8px;
+  padding: 10px 18px;
+  font-size: 14px;
+}
+.configuration-result-intro {
+  margin: 28px 0 14px;
+}
+.configuration-result-intro h3 {
+  margin: 6px 0;
+  font-size: 22px;
+}
+.configuration-result-intro p {
+  margin: 0;
+  color: #728278;
+  font-size: 13px;
+}
+.configuration-run {
+  padding: 18px 20px;
+  border-color: #e1e9e4;
+  border-radius: 12px;
+}
+.configuration-run > strong {
+  font-size: 12px;
+  color: #708277;
+  font-weight: 500;
+}
+.configuration-run > div > p {
+  margin: 4px 0 12px;
+  color: #708277;
+  font-size: 12px;
+}
+.compact-result-heading {
+  padding: 6px 0 14px;
+}
+.compact-result-heading > strong {
+  font-size: 18px;
+}
+.compact-result-heading button {
+  border: 0;
+  background: transparent;
+  color: #61796b;
+  box-shadow: none;
+  padding: 6px 0 6px 12px;
+}
+.docker-result-metrics {
+  gap: 12px;
+  margin-bottom: 10px;
+}
+.docker-result-metrics > div {
+  padding: 14px 18px;
+  gap: 4px;
+}
+.docker-result-metrics strong {
+  font-size: 30px;
+}
+.docker-result-metrics b {
+  font-size: 16px;
+}
+.baseline-compact > .notice:has(> span) {
+  display: inline-flex;
+  border-radius: 20px;
+  padding: 5px 12px;
+  margin: 0 0 14px;
+}
+.baseline-compact .compact-review-footer {
+  background: #f8faf9;
+  border: 1px solid #e2eae5;
+  border-radius: 10px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 20px;
+  padding: 16px 18px;
+}
+.review-footer-help {
+  display: block;
+  color: #7b8b80;
+  font-size: 12px;
+  margin-top: 6px;
+  line-height: 1.6;
+}
+.baseline-review-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 10px;
+}
+@media (max-width: 800px) {
+  .configuration-commandbar,
+  .baseline-compact .compact-review-footer {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 14px;
+  }
+  .configuration-commandbar .configuration-actions,
+  .baseline-review-actions {
+    display: flex;
+    flex-wrap: wrap;
+  }
+  .configuration-commandbar button,
+  .baseline-review-actions button {
+    flex: 1;
+    white-space: nowrap;
+  }
+  .configuration-run {
+    padding: 14px;
+  }
+}

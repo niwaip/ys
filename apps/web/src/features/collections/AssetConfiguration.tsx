@@ -248,10 +248,12 @@ export function AssetConfiguration({
           }),
         });
         if (stop.current) return;
-        setNotice("批次已保存：自动项已提交，脚本和手动项等待输入");
+        setNotice(
+          "采集批次已创建：自动项已提交，脚本和手动项等待输入。原始结果自动保存，核对后再采纳。",
+        );
         setRevision((v) => v + 1);
         key.current = requestId();
-      } else setNotice("采集配置已保存，可刷新重复使用");
+      } else setNotice("方案已保存，未启动采集，也未更新资产基线。");
     } catch (e) {
       if (!stop.current) fail(e);
     } finally {
@@ -555,23 +557,29 @@ export function AssetConfiguration({
           {notice}
         </p>
       )}
-      <div className="configuration-actions">
-        <button
-          type="button"
-          className="secondary"
-          disabled={busy || !loaded}
-          onClick={() => void save()}
-        >
-          保存采集配置
-        </button>
-        <button
-          type="button"
-          className="primary"
-          disabled={busy || !loaded}
-          onClick={() => void save(true)}
-        >
-          执行选中采集项
-        </button>
+      <div className="configuration-commandbar">
+        <div className="configuration-command-copy">
+          <strong>01 · 采集方案</strong>
+          <p>保存采集范围、方式和连接；开始采集时会先保存方案。</p>
+        </div>
+        <div className="configuration-actions">
+          <button
+            type="button"
+            className="secondary"
+            disabled={busy || !loaded}
+            onClick={() => void save()}
+          >
+            仅保存配置
+          </button>
+          <button
+            type="button"
+            className="primary"
+            disabled={busy || !loaded}
+            onClick={() => void save(true)}
+          >
+            {busy ? "正在提交…" : "保存并开始采集"}
+          </button>
+        </div>
       </div>
       {runs.length > 0 && (
         <>
@@ -579,10 +587,11 @@ export function AssetConfiguration({
             aria-label="最近一次采集结果"
             className="configuration-latest"
           >
-            <h3>最近一次采集结果</h3>
-            <p>
-              采集完成后请核对以下资料，再确认采纳；采集本身不会自动扫描风险。
-            </p>
+            <div className="configuration-result-intro">
+              <span>02 · 核对结果</span>
+              <h3>最近一次采集结果</h3>
+              <p>原始结果自动保存；确认采纳后，才会更新资产基线。</p>
+            </div>
             {renderRun(runs[0], true)}
           </section>
           <details className="configuration-history">
@@ -591,14 +600,19 @@ export function AssetConfiguration({
             </summary>
             {runs.slice(1).map((run) => renderRun(run))}
           </details>
-          <button
-            type="button"
-            className="primary"
-            disabled={busy || !selected.length}
-            onClick={() => void adopt()}
-          >
-            采纳选中结果
-          </button>
+          {(selected.length > 0 ||
+            runs[0].items.some(
+              (item) => item.snapshotId && item.content !== "docker",
+            )) && (
+            <button
+              type="button"
+              className="primary"
+              disabled={busy || !selected.length}
+              onClick={() => void adopt()}
+            >
+              采纳选中结果
+            </button>
+          )}
         </>
       )}
     </section>

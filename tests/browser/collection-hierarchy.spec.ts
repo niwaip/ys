@@ -76,18 +76,26 @@ test("分项配置刷新保留，手动软件结果归入批次并经选中采�
   });
   await config.getByLabel("选择软件清单与组件", { exact: true }).check();
   await config.getByLabel("软件清单与组件采集方式").selectOption("manual");
-  await config
-    .getByRole("button", { name: "保存采集配置", exact: true })
-    .click();
+  await config.getByRole("button", { name: "仅保存配置", exact: true }).click();
   await expect(
-    config.getByText("采集配置已保存，可刷新重复使用", { exact: true }),
+    config.getByText("方案已保存，未启动采集，也未更新资产基线。", {
+      exact: true,
+    }),
   ).toBeVisible();
+  await expect(
+    config.getByRole("region", { name: "最近一次采集结果", exact: true }),
+  ).toHaveCount(0);
+  await expect(
+    config.getByText("原始结果自动保存；确认采纳后，才会更新资产基线。", {
+      exact: true,
+    }),
+  ).toHaveCount(0);
   await page.reload();
   await expect(
     config.getByLabel("选择软件清单与组件", { exact: true }),
   ).toBeChecked();
   await config
-    .getByRole("button", { name: "执行选中采集项", exact: true })
+    .getByRole("button", { name: "保存并开始采集", exact: true })
     .click();
   await config
     .getByRole("button", { name: "录入软件清单与组件", exact: true })
@@ -291,7 +299,7 @@ test("批次录入期间查看旧历史不绑定旧快照，只有本次成功�
       r.request().method() === "POST",
   );
   await config
-    .getByRole("button", { name: "执行选中采集项", exact: true })
+    .getByRole("button", { name: "保存并开始采集", exact: true })
     .click();
   const run = await (await creation).json();
   await config
@@ -357,7 +365,7 @@ test("恢复只含软件项的配置不会额外启用基础采集", async ({ pa
     exact: true,
   });
   await expect(
-    config.getByRole("button", { name: "执行选中采集项", exact: true }),
+    config.getByRole("button", { name: "保存并开始采集", exact: true }),
   ).toBeEnabled();
   await expect(
     config.getByLabel("选择基础资料", { exact: true }),
@@ -371,7 +379,7 @@ test("恢复只含软件项的配置不会额外启用基础采集", async ({ pa
       r.request().method() === "POST",
   );
   await config
-    .getByRole("button", { name: "执行选中采集项", exact: true })
+    .getByRole("button", { name: "保存并开始采集", exact: true })
     .click();
   expect(
     (await (await response).json()).items.map(

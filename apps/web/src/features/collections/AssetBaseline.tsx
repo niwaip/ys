@@ -1143,11 +1143,15 @@ export function AssetBaseline({
           {!readOnly &&
             view === "observed" &&
             (!observationOnly || data.review?.status !== "rejected") && (
-              <div className="baseline-confirm">
+              <div
+                className={`baseline-confirm${compactView ? " compact-review-footer" : ""}`}
+              >
                 <div>
                   <strong>
                     {containerScope
-                      ? "是否采纳本次容器资料？"
+                      ? compactView
+                        ? "核对完成后，确认更新资产资料"
+                        : "是否采纳本次容器资料？"
                       : "确认本次基础资料"}
                   </strong>
                   <p>
@@ -1160,38 +1164,48 @@ export function AssetBaseline({
                           : "当前未配置NetBox，将更新YS资产基线。"}{" "}
                     原始采集记录保留。
                   </p>
+                  {compactView && (
+                    <small className="review-footer-help">
+                      原始结果已保存，采纳后更新资产基线；不会自动扫描风险。
+                    </small>
+                  )}
                 </div>
-                <button
-                  className="primary"
-                  disabled={
-                    busy ||
-                    !selected.length ||
-                    data.history.some((h) =>
-                      ["pending", "unknown"].includes(h.status),
-                    )
-                  }
-                  onClick={() => void confirm()}
-                >
-                  {busy
-                    ? "处理中…"
-                    : observationOnly && data.review?.status === "confirmed"
-                      ? "补充采纳选中资料"
-                      : containerScope
-                        ? "确认采纳容器资料"
-                        : "确认选中资料并更新基线"}
-                </button>
+                <div className="baseline-review-actions">
+                  {compactView && data.review?.status === "pending" && (
+                    <button
+                      type="button"
+                      className="secondary"
+                      disabled={busy}
+                      onClick={() => setShowReject((v) => !v)}
+                    >
+                      {showReject ? "取消" : "不采纳本次结果"}
+                    </button>
+                  )}
+                  <button
+                    className="primary"
+                    disabled={
+                      busy ||
+                      !selected.length ||
+                      data.history.some((h) =>
+                        ["pending", "unknown"].includes(h.status),
+                      )
+                    }
+                    onClick={() => void confirm()}
+                  >
+                    {busy
+                      ? "处理中…"
+                      : observationOnly && data.review?.status === "confirmed"
+                        ? "补充采纳选中资料"
+                        : containerScope
+                          ? compactView
+                            ? "确认采纳，更新资产资料"
+                            : "确认采纳容器资料"
+                          : "确认选中资料并更新基线"}
+                  </button>
+                </div>
               </div>
             )}
         </>
-      )}
-      {compactView && data.review?.status === "pending" && (
-        <button
-          type="button"
-          className="secondary compact-reject-toggle"
-          onClick={() => setShowReject((v) => !v)}
-        >
-          {showReject ? "取消拒绝" : "拒绝本次资料"}
-        </button>
       )}
       {observationOnly &&
         (!compactView || showReject) &&

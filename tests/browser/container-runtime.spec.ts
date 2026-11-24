@@ -397,7 +397,7 @@ test("Docker批次结果直接显示容器镜像及确认入口，历史默认�
   await config.getByLabel("Docker容器采集方式").selectOption("automatic");
   await config.getByLabel("Docker容器授权连接").selectOption("docker-fixture");
   await config
-    .getByRole("button", { name: "执行选中采集项", exact: true })
+    .getByRole("button", { name: "保存并开始采集", exact: true })
     .click();
   const result = config.getByRole("region", {
     name: "最近一次采集结果",
@@ -420,7 +420,7 @@ test("Docker批次结果直接显示容器镜像及确认入口，历史默认�
     result.getByRole("columnheader", { name: "镜像仓库", exact: true }),
   ).toBeVisible();
   await expect(
-    result.getByRole("button", { name: "确认采纳容器资料", exact: true }),
+    result.getByRole("button", { name: "确认采纳，更新资产资料", exact: true }),
   ).toBeVisible();
   await result
     .getByRole("button", { name: "高级审核与基线比较", exact: true })
@@ -434,6 +434,25 @@ test("Docker批次结果直接显示容器镜像及确认入口，历史默认�
   await expect(
     result.getByRole("tab", { name: "容器（3）", exact: true }),
   ).toHaveAttribute("aria-selected", "true");
+  const accept = result.getByRole("button", {
+    name: "确认采纳，更新资产资料",
+    exact: true,
+  });
+  const decline = result.getByRole("button", {
+    name: "不采纳本次结果",
+    exact: true,
+  });
+  await expect(decline).toBeVisible();
+  expect(
+    Math.abs(
+      (await accept.boundingBox())!.y - (await decline.boundingBox())!.y,
+    ),
+  ).toBeLessThan(8);
+  await expect(
+    result.getByText("原始结果已保存，采纳后更新资产基线；不会自动扫描风险。", {
+      exact: true,
+    }),
+  ).toBeVisible();
   await result.screenshot({
     path: "output/deployment/docker-compact-result-desktop.png",
   });
