@@ -34,7 +34,7 @@
 
 | 接口                                    | 行为                                                     |
 | --------------------------------------- | -------------------------------------------------------- |
-| POST `/`                                | 202，`{audience:"draft"                                  | "official",pdfMode?,perHostIds?,evidenceAssessmentIds?}`；同修订同选择幂等返回同一包 |
+| POST `/`                                | 202，`{audience,pdfMode?,perHostIds?,evidenceAssessmentIds?}`（audience 为 draft 或 official）；同修订同选择幂等返回同一包 |
 | GET `/`、GET `/:packageId`              | 持久生成记录、所选文件逐项状态、错误、SHA-256 与字节数   |
 | POST `/:packageId/retry`                | `{fileIds}`，只重试失败转换/附件，不重扫、不替换成功文件 |
 | GET `/:packageId/files/:fileId`         | 校验实际字节后下载已成功文件                             |

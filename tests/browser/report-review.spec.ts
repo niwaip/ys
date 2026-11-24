@@ -51,7 +51,7 @@ test("controlled revision review and formal HTML delivery, then edits return to 
   await page.getByLabel("操作员访问令牌").fill("browser-test-secret-token");
   await page.getByRole("button", { name: "进入工作台" }).click();
   await page.locator("nav button").filter({ hasText: "资产台账" }).click();
-  await page.getByRole("button", { name: "风险事实报告" }).click();
+  await page.getByRole("button", { name: "报告中心" }).click();
   const summaryResponse = page.waitForResponse((r) =>
     r.url().endsWith(`/reports/${report.id}/revisions?view=summary`),
   );

@@ -4,6 +4,10 @@
 
 设计依据：[扫描报告中心设计](../../scan-report-center-design.md)。术语与 ADR 沿用已确认设计，不重复建设现有采集、评估、内部复核及固定事实能力。
 
+## 实施记录
+
+报告中心实现已进入集成分支，验证与边界见[验收记录](../../verification/report-center.md)。工单保持 OPEN，合并前不提前关闭；生产部署不在本轮范围。原始工单验收清单保留为设计依据。
+
 ## 发布目标
 
 配置的工单系统为 niwaip/ys GitHub Issues。已创建[规格 #65](https://github.com/niwaip/ys/issues/65)及 15 个 ready-for-agent 子工单，建立原生 sub-issue 与 blocking 关系。发布身份映射见 published.json。当前对话没有指定既有规格作为父工单；不修改或关闭其他现有规格及工单。

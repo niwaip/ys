@@ -390,7 +390,10 @@ test("Linux快照扫描分页、原始证据下载、历史回读及客户隔离
     page.getByRole("heading", { name: "发现 120 条漏洞记录" }),
   ).toBeVisible();
 
-  await page.locator("nav button").filter({ hasText: "风险事实报告" }).click();
+  await page.locator("nav button").filter({ hasText: "报告中心" }).click();
+  await page
+    .getByText("旧版评估引用入口（兼容历史使用方式）", { exact: true })
+    .click();
   await page.getByLabel(new RegExp(job.id)).check();
   await page.getByRole("button", { name: "生成事实草稿" }).click();
   const preview = page.frameLocator('iframe[title="事实报告草稿"]');
