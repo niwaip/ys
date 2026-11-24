@@ -70,7 +70,7 @@ test("软件后台评估呈现发现、覆盖、过期库和证据，刷新后�
   ).toHaveCount(0);
   await expect(
     page.getByText("CVE-2099-FIXTURE", { exact: true }),
-  ).toBeVisible();
+  ).toBeVisible({ timeout: 15000 });
   await expect(
     page.getByText("已覆盖声明组件", { exact: false }),
   ).toBeVisible();

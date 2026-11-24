@@ -16,7 +16,7 @@ export function ReportPresentationFields({
   prefix?: string;
 }) {
   return (
-    <fieldset disabled={disabled}>
+    <fieldset className="report-presentation" disabled={disabled}>
       <legend>{prefix}报告内容</legend>
       <label>
         报告专题

@@ -60,12 +60,14 @@ test("controlled revision review and formal HTML delivery, then edits return to 
   expect(revisionSummaries).toHaveLength(1);
   expect(revisionSummaries[0]).not.toHaveProperty("facts");
 
+  await page.getByRole("tab", { name: "编辑与复核", exact: true }).click();
   await expect(
     page.getByRole("button", { name: "下载正式 HTML" }),
   ).toBeDisabled();
   await expect(page.getByRole("button", { name: "复核通过" })).toBeDisabled();
   await page.getByText("文字编辑语法与本报告引用目录", { exact: true }).click();
   await expect(page.getByText(/这里只接受列出的有限句法/)).toBeVisible();
+  await page.getByText("编辑受控叙述与章节顺序", { exact: true }).click();
   await page.getByLabel(/scope.*叙述文字/).fill("已修复，无风险。");
   await page.getByRole("button", { name: "保存为新草稿" }).click();
   await expect(page.getByRole("alert")).toContainText(
@@ -81,11 +83,13 @@ test("controlled revision review and formal HTML delivery, then edits return to 
   await expect(
     page.getByRole("button", { name: "修订 2 · draft" }),
   ).toBeVisible();
+  await page.getByRole("tab", { name: "报告预览", exact: true }).click();
   await expect(
     page
       .frameLocator('iframe[title="事实报告草稿"]')
       .getByText(/建议核对输入身份，以便明确后续核查范围/),
   ).toBeVisible();
+  await page.getByRole("tab", { name: "编辑与复核", exact: true }).click();
   await page.getByRole("button", { name: "提交复核", exact: true }).click();
   await expect(
     page.getByRole("button", { name: "复核通过", exact: true }),
@@ -95,11 +99,13 @@ test("controlled revision review and formal HTML delivery, then edits return to 
     page.getByRole("button", { name: "正式交付该修订" }),
   ).toBeEnabled();
   await page.getByRole("button", { name: "正式交付该修订" }).click();
+  await page.getByRole("tab", { name: "报告预览", exact: true }).click();
   await expect(
     page
       .frameLocator('iframe[title="事实报告草稿"]')
       .getByText("正式交付 · 已内部复核", { exact: true }),
   ).toBeVisible();
+  await page.getByRole("tab", { name: "编辑与复核", exact: true }).click();
   const [download] = await Promise.all([
     page.waitForEvent("download"),
     page.getByRole("button", { name: "下载正式 HTML" }).click(),

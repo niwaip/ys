@@ -60,12 +60,14 @@ test("select lifecycle facts, preview protected draft, inspect evidence and swit
   await expect(
     preview.getByText(/未选择CVE评估，未评估/).first(),
   ).toBeVisible();
+  await page.getByRole("tab", { name: "来源依据", exact: true }).click();
   await page
     .getByRole("button", { name: `lifecycle 依据 ${assessment.id}` })
     .click();
   await expect(page.getByText("原始评估依据", { exact: true })).toBeVisible();
   await page.reload();
   await page.getByRole("button", { name: "报告中心" }).click();
+  await page.getByRole("button", { name: "← 生成与历史", exact: true }).click();
   await expect(page.getByRole("heading", { name: "报告历史" })).toBeVisible();
   await page.getByLabel("当前客户").selectOption("river");
   await expect(page.getByLabel(new RegExp(assessment.id))).toHaveCount(0);

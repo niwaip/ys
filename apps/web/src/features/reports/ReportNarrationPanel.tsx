@@ -69,7 +69,7 @@ export function ReportNarrationPanel({
     }
   }
   return (
-    <section>
+    <section className="report-ai">
       <h3>AI 受控叙述</h3>
       <p>
         基于当前明确修订组织固定摘要、解释和建议模板。保护事实由服务端插入；生成成功仍为待复核草稿。校验、工具或模型失败保留现有事实草稿。

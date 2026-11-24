@@ -410,6 +410,7 @@ test("Linux快照扫描分页、原始证据下载、历史回读及客户隔离
   await expect(
     preview.getByText("CVE-LINUX-119", { exact: true }),
   ).toBeVisible();
+  await page.getByRole("tab", { name: "来源依据", exact: true }).click();
   await page
     .getByRole("button", { name: `cve 依据 ${job.id}`, exact: true })
     .click();
@@ -423,10 +424,12 @@ test("Linux快照扫描分页、原始证据下载、历史回读及客户隔离
     .getByRole("button", { name: "下载原始扫描报告", exact: true })
     .click();
   expect((await originalDownload).suggestedFilename()).toContain(job.id);
+  await page.getByRole("tab", { name: "编辑与复核", exact: true }).click();
   await expect(
     page.getByRole("button", { name: "下载正式 HTML" }),
   ).toBeDisabled();
   await page.getByRole("button", { name: "提交复核", exact: true }).click();
+  await page.getByRole("tab", { name: "报告预览", exact: true }).click();
   await expect(
     preview.getByText("待复核草稿 · 不代表正式交付", { exact: true }),
   ).toBeVisible();

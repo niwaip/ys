@@ -107,6 +107,17 @@ test("按服务器生成报告并在刷新后打开固定覆盖草稿", async ({
   await page.getByRole("button", { name: "进入工作台" }).click();
   await page.getByLabel("报告服务器", { exact: true }).selectOption(asset.id);
   await page.getByLabel("报告名称", { exact: true }).fill(name);
+  const steps = await page
+    .getByLabel("报告生成步骤")
+    .locator("li")
+    .evaluateAll((items) =>
+      items.map((item) => item.getBoundingClientRect().y),
+    );
+  expect(new Set(steps).size).toBe(1);
+  await page.screenshot({
+    path: testInfo.outputPath("report-create-desktop.png"),
+    fullPage: true,
+  });
   for (let i = 0; i < 3; i++)
     await page.getByRole("button", { name: "下一步", exact: true }).click();
   await page.getByLabel("报告专题", { exact: true }).selectOption("lifecycle");
@@ -120,12 +131,22 @@ test("按服务器生成报告并在刷新后打开固定覆盖草稿", async ({
     preview.getByRole("heading", { name: "执行与覆盖说明" }),
   ).toBeVisible();
   await expect(preview.getByText(name, { exact: false }).first()).toBeVisible();
+  await page.screenshot({
+    path: testInfo.outputPath("report-preview-desktop.png"),
+    fullPage: true,
+  });
   await expect(
     preview.getByRole("heading", { name: "管理摘要" }),
   ).toBeVisible();
   await expect(
     preview.getByRole("heading", { name: "CVE 软件评估" }),
   ).toHaveCount(0);
+  await page.getByRole("tab", { name: "报告预览", exact: true }).focus();
+  await page.keyboard.press("ArrowRight");
+  await expect(
+    page.getByRole("tab", { name: "文件与交付", exact: true }),
+  ).toHaveAttribute("aria-selected", "true");
+  await page.getByRole("tab", { name: "文件与交付", exact: true }).click();
   const filesPanel = page.getByRole("region", { name: "报告文件与交付包" });
   await expect(
     filesPanel.getByRole("button", {
@@ -145,11 +166,13 @@ test("按服务器生成报告并在刷新后打开固定覆盖草稿", async ({
   expect(manifest.complete).toBe(true);
   expect(manifest.files).toHaveLength(4);
   expect(manifest.input.perHostIds).toEqual([asset.id]);
+  await page.getByRole("tab", { name: "编辑与复核", exact: true }).click();
   await page
     .getByLabel("修订报告专题", { exact: true })
     .selectOption("vulnerability");
   await page.getByLabel("修订管理摘要", { exact: true }).uncheck();
   await page.getByRole("button", { name: "保存为新草稿", exact: true }).click();
+  await page.getByRole("tab", { name: "报告预览", exact: true }).click();
   await expect(
     preview.getByRole("heading", { name: "CVE 软件评估" }),
   ).toBeVisible();
@@ -157,12 +180,14 @@ test("按服务器生成报告并在刷新后打开固定覆盖草稿", async ({
     0,
   );
   await page.reload();
+  await page.getByRole("button", { name: "← 生成与历史", exact: true }).click();
   await page
     .getByRole("button", { name: `查看报告 ${name}`, exact: true })
     .click();
   await expect(
     preview.getByRole("heading", { name: "执行与覆盖说明" }),
   ).toBeVisible();
+  await page.getByRole("button", { name: "创建报告", exact: true }).click();
   await page.getByLabel("报告范围", { exact: true }).selectOption("tenant");
   await page.getByLabel("报告名称", { exact: true }).fill(`${name}-tenant`);
   for (let i = 0; i < 4; i++)
@@ -210,6 +235,7 @@ test("移动端新评估、证据附件、可选 AI 失败与正式交付闭环"
   const preview = page.frameLocator('iframe[title="事实报告草稿"]');
   await expect(preview.getByText(/发现实例 120/).first()).toBeVisible();
   await expect(preview.getByText(/采集资料超过 7 天/).first()).toBeVisible();
+  await page.getByRole("tab", { name: "文件与交付", exact: true }).click();
   const draftFiles = page
     .getByRole("region", { name: "报告文件与交付包" })
     .locator("article")
@@ -222,6 +248,7 @@ test("移动端新评估、证据附件、可选 AI 失败与正式交付闭环"
     .getByRole("button", { name: "下载 PDF", exact: true })
     .click();
   await (await fullDownload).saveAs(testInfo.outputPath("full-report.pdf"));
+  await page.getByRole("tab", { name: "编辑与复核", exact: true }).click();
   await page
     .getByRole("button", { name: "生成 AI 受控叙述", exact: true })
     .click();
@@ -233,6 +260,7 @@ test("移动端新评估、证据附件、可选 AI 失败与正式交付闭环"
   await page
     .getByRole("button", { name: "正式交付该修订", exact: true })
     .click();
+  await page.getByRole("tab", { name: "文件与交付", exact: true }).click();
   await page
     .getByRole("button", { name: "生成正式报告包", exact: true })
     .click();
@@ -254,6 +282,11 @@ test("移动端新评估、证据附件、可选 AI 失败与正式交付闭环"
   const manifest = JSON.parse(strFromU8(files["manifest.json"]));
   expect(manifest.input.audience).toBe("official");
   expect(manifest.complete).toBe(true);
+  expect(
+    await page.evaluate(
+      () => document.documentElement.scrollWidth <= innerWidth,
+    ),
+  ).toBe(true);
   await page.screenshot({
     path: testInfo.outputPath("mobile-report.png"),
     fullPage: true,
@@ -369,6 +402,7 @@ test("多主机覆盖检查可明确选择主机及共享镜像历史结果并�
   await page
     .getByRole("button", { name: `${name}-baseline`, exact: true })
     .click();
+  await page.getByRole("button", { name: "创建报告", exact: true }).click();
   await page.getByLabel("报告范围", { exact: true }).selectOption("multiple");
   await page
     .getByLabel("报告服务器（多选）", { exact: true })
@@ -448,7 +482,7 @@ test("逐项重试只重放选中的失败服务器，保留成功与其他失�
     (item: { objectId: string }) => item.objectId === a.asset.id,
   ).assessmentId;
   const article = page
-    .getByRole("region", { name: "服务器报告中心" })
+    .getByRole("region", { name: "服务器报告任务" })
     .locator("article")
     .filter({ hasText: name });
   await article.getByText(/查看逐项进度/).click();

@@ -56,14 +56,16 @@ test("AI task progress and unavailable fallback preserve report draft and reload
   await page.locator("nav button").filter({ hasText: "资产台账" }).click();
   await page.getByRole("button", { name: "报告中心" }).click();
   await page.getByRole("button", { name: report.id, exact: true }).click();
+  await page.getByRole("tab", { name: "编辑与复核", exact: true }).click();
   await page.getByRole("button", { name: "生成 AI 受控叙述" }).click();
+  await page.getByRole("tab", { name: "编辑与复核", exact: true }).click();
   await expect(page.getByText(/AI叙述失败，固定事实草稿保留/)).toBeVisible();
   await expect(
     page.getByRole("button", { name: "修订 1 · draft" }),
   ).toBeVisible();
   await page.reload();
   await page.getByRole("button", { name: "报告中心" }).click();
-  await page.getByRole("button", { name: report.id, exact: true }).click();
+  await page.getByRole("tab", { name: "编辑与复核", exact: true }).click();
   await expect(page.getByText(/AI叙述失败，固定事实草稿保留/)).toBeVisible();
   await page.getByLabel("当前客户").selectOption("river");
   await expect(page.getByRole("heading", { name: "AI 受控叙述" })).toHaveCount(

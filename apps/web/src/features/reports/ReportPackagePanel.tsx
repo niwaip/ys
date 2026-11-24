@@ -1,3 +1,4 @@
+import { reportStatus, reportDate, reportBytes } from "./report-ui";
 import { useEffect, useRef, useState } from "react";
 import type { Report } from "../../../../../packages/contracts/reports";
 import type { ReportPackage } from "../../../../../packages/contracts/report-packages";
@@ -82,124 +83,152 @@ export function ReportPackagePanel({
     setTimeout(() => URL.revokeObjectURL(url), 1000);
   }
   return (
-    <section aria-label="报告文件与交付包">
-      <h3>报告文件与交付包</h3>
-      <p>
-        默认包含 PDF、离线 HTML、完整 XLSX
-        和校验清单。包完整性与扫描覆盖分别呈现；可用文件均来自当前固定修订。
-      </p>
-      <label>
-        PDF 明细模式
-        <select
-          aria-label="PDF 明细模式"
-          value={pdfMode}
-          onChange={(e) => setPdfMode(e.target.value as "summary" | "full")}
-        >
-          <option value="summary">摘要（每评估按严重程度前 20 条）</option>
-          <option value="full">完整漏洞明细</option>
-        </select>
-      </label>
-      <label>
-        <input
-          type="checkbox"
-          checked={perHost}
-          onChange={(e) => setPerHost(e.target.checked)}
-          disabled={!report.revision.facts.center}
-        />
-        逐台服务器 PDF 分报告
-      </label>
-      <label>
-        <input
-          type="checkbox"
-          checked={evidence}
-          onChange={(e) => setEvidence(e.target.checked)}
-        />
-        原始扫描证据（缺失或校验失败会单独披露）
-      </label>
-      <button disabled={busy} onClick={() => run(() => create("draft"))}>
-        生成草稿报告包
-      </button>
-      <button
-        disabled={busy || report.revision.status !== "delivered"}
-        onClick={() => run(() => create("official"))}
-      >
-        生成正式报告包
-      </button>
+    <section className="report-packages" aria-label="报告文件与交付包">
+      <div className="report-section-intro">
+        <h3>报告文件与交付包</h3>
+        <p>
+          默认包含 PDF、离线 HTML、完整 XLSX
+          和校验清单。包完整性与扫描覆盖分别呈现；可用文件均来自当前固定修订。
+        </p>
+      </div>
+      <div className="report-package-config">
+        <label>
+          PDF 明细模式
+          <select
+            aria-label="PDF 明细模式"
+            value={pdfMode}
+            onChange={(e) => setPdfMode(e.target.value as "summary" | "full")}
+          >
+            <option value="summary">摘要（每评估按严重程度前 20 条）</option>
+            <option value="full">完整漏洞明细</option>
+          </select>
+        </label>
+        <label>
+          <input
+            type="checkbox"
+            checked={perHost}
+            onChange={(e) => setPerHost(e.target.checked)}
+            disabled={!report.revision.facts.center}
+          />
+          逐台服务器 PDF 分报告
+        </label>
+        <label>
+          <input
+            type="checkbox"
+            checked={evidence}
+            onChange={(e) => setEvidence(e.target.checked)}
+          />
+          原始扫描证据（缺失或校验失败会单独披露）
+        </label>
+        <div className="report-actions">
+          <button
+            className="primary"
+            disabled={busy}
+            onClick={() => run(() => create("draft"))}
+          >
+            生成草稿报告包
+          </button>
+          <button
+            disabled={busy || report.revision.status !== "delivered"}
+            onClick={() => run(() => create("official"))}
+          >
+            生成正式报告包
+          </button>
+        </div>
+      </div>
       {error && (
         <p role="alert" className="error">
           {error}
         </p>
       )}
       {packages.map((bundle) => (
-        <article key={bundle.id}>
-          <h4>
-            {bundle.input.audience === "draft"
-              ? "草稿 · 未复核"
-              : "正式交付 · 已复核"}{" "}
-            ·{" "}
-            {bundle.status === "complete"
-              ? "报告包完整"
-              : bundle.status === "generating"
-                ? "文件生成中"
-                : "报告包不完整"}
-          </h4>
-          <p>
-            修订 {report.revision.number} · {bundle.createdAt} ·{" "}
-            {bundle.createdBy}
-          </p>
-          <button
-            disabled={busy || bundle.status !== "complete"}
-            onClick={() =>
-              run(() =>
-                download(
-                  `${base}/${bundle.id}/download`,
-                  `ys-${bundle.input.audience}-complete.zip`,
-                ),
-              )
-            }
-          >
-            下载完整 ZIP 报告包
-          </button>
-          {bundle.status === "partial" && (
+        <article key={bundle.id} className="report-bundle">
+          <div className="report-bundle-heading">
+            <div>
+              <h4>
+                {bundle.input.audience === "draft"
+                  ? "草稿 · 未复核"
+                  : "正式交付 · 已复核"}{" "}
+                ·{" "}
+                {bundle.status === "complete"
+                  ? "报告包完整"
+                  : bundle.status === "generating"
+                    ? "文件生成中"
+                    : "报告包不完整"}
+              </h4>
+              <p>
+                修订 {report.revision.number} · {reportDate(bundle.createdAt)} ·{" "}
+                {bundle.createdBy}
+              </p>
+            </div>
+            <span className="report-status" data-state={bundle.status}>
+              {reportStatus(bundle.status)}
+            </span>
+          </div>
+          <div className="report-actions">
             <button
-              disabled={busy}
+              className="primary"
+              disabled={busy || bundle.status !== "complete"}
               onClick={() =>
                 run(() =>
                   download(
-                    `${base}/${bundle.id}/download?partial=true`,
-                    "ys-INCOMPLETE.zip",
+                    `${base}/${bundle.id}/download`,
+                    `ys-${bundle.input.audience}-complete.zip`,
                   ),
                 )
               }
             >
-              下载可用部分（不完整）
+              下载完整 ZIP 报告包
             </button>
-          )}
-          {bundle.files.some((f) => f.status === "failed") && (
-            <button
-              disabled={busy}
-              onClick={() =>
-                run(async () => {
-                  await call(`${base}/${bundle.id}/retry`, {
-                    method: "POST",
-                    body: JSON.stringify({
-                      fileIds: bundle.files
-                        .filter((f) => f.status === "failed")
-                        .map((f) => f.id),
-                    }),
-                  });
-                  await refresh();
-                })
-              }
-            >
-              仅重试失败文件
-            </button>
-          )}
-          <ul>
+            {bundle.status === "partial" && (
+              <button
+                disabled={busy}
+                onClick={() =>
+                  run(() =>
+                    download(
+                      `${base}/${bundle.id}/download?partial=true`,
+                      "ys-INCOMPLETE.zip",
+                    ),
+                  )
+                }
+              >
+                下载可用部分（不完整）
+              </button>
+            )}
+            {bundle.files.some((f) => f.status === "failed") && (
+              <button
+                disabled={busy}
+                onClick={() =>
+                  run(async () => {
+                    await call(`${base}/${bundle.id}/retry`, {
+                      method: "POST",
+                      body: JSON.stringify({
+                        fileIds: bundle.files
+                          .filter((f) => f.status === "failed")
+                          .map((f) => f.id),
+                      }),
+                    });
+                    await refresh();
+                  })
+                }
+              >
+                仅重试失败文件
+              </button>
+            )}
+          </div>
+          <ul className="report-file-list">
             {bundle.files.map((file) => (
               <li key={file.id}>
-                {file.name} · {file.status}{" "}
-                {file.error && <span role="status">{file.error}</span>}{" "}
+                <span className="report-file-type" data-format={file.format}>
+                  {file.format.toUpperCase()}
+                </span>
+                <div className="report-file-info">
+                  <b>{file.name}</b>
+                  <span>
+                    {reportStatus(file.status)} {reportBytes(file.bytes)}
+                  </span>
+                  {file.error && <span role="status">{file.error}</span>}{" "}
+                </div>
                 {file.status === "failed" && (
                   <button
                     disabled={busy}

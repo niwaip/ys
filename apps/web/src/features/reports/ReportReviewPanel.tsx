@@ -101,7 +101,7 @@ export function ReportReviewPanel({
     setTimeout(() => URL.revokeObjectURL(url), 1000);
   }
   return (
-    <section>
+    <section className="report-review">
       <h3>内部复核与受控编辑</h3>
       <p>
         只编辑受控表述、结构和呈现，事实与判定保持保护。保存后产生新草稿，必须重新复核。当前修订{" "}
@@ -161,62 +161,69 @@ export function ReportReviewPanel({
           事实由服务器插入；这里只接受列出的有限句法，不验证任意自然语言语义。未知引用、额外事实或无证据建议会在保存时给出原因。补充覆盖资料需要先引用【coverage】覆盖缺口。
         </p>
       </details>
-      {narrative.blocks.map((block, index) => (
-        <div key={`${block.templateId}:${block.factRef ?? ""}`}>
-          <label>
-            {block.templateId} {block.factRef ?? ""} 措辞
-            <select
-              value={block.wording}
-              disabled={busy}
-              onChange={(e) =>
-                setNarrative({
-                  ...narrative,
-                  blocks: narrative.blocks.map((b, i) =>
-                    i === index
-                      ? {
-                          ...b,
-                          wording: e.target.value as "standard" | "concise",
-                        }
-                      : b,
-                  ),
-                })
-              }
+      <details className="report-advanced-editor">
+        <summary>编辑受控叙述与章节顺序</summary>
+        {narrative.blocks.map((block, index) => (
+          <div
+            className="report-text-block"
+            key={`${block.templateId}:${block.factRef ?? ""}`}
+          >
+            <label>
+              {block.templateId} {block.factRef ?? ""} 措辞
+              <select
+                value={block.wording}
+                disabled={busy}
+                onChange={(e) =>
+                  setNarrative({
+                    ...narrative,
+                    blocks: narrative.blocks.map((b, i) =>
+                      i === index
+                        ? {
+                            ...b,
+                            wording: e.target.value as "standard" | "concise",
+                          }
+                        : b,
+                    ),
+                  })
+                }
+              >
+                <option value="standard">标准表述</option>
+                <option value="concise">简洁表述</option>
+              </select>
+            </label>
+            <label>
+              {block.templateId} {block.factRef ?? ""} 叙述文字
+              <textarea
+                value={block.text ?? ""}
+                disabled={busy}
+                maxLength={4000}
+                onChange={(e) =>
+                  setNarrative({
+                    ...narrative,
+                    blocks: narrative.blocks.map((b, i) =>
+                      i === index ? { ...b, text: e.target.value } : b,
+                    ),
+                  })
+                }
+              />
+            </label>
+            <button
+              disabled={busy || index === 0}
+              onClick={() => move(index, -1)}
             >
-              <option value="standard">标准表述</option>
-              <option value="concise">简洁表述</option>
-            </select>
-          </label>
-          <label>
-            {block.templateId} {block.factRef ?? ""} 叙述文字
-            <textarea
-              value={block.text ?? ""}
-              disabled={busy}
-              maxLength={4000}
-              onChange={(e) =>
-                setNarrative({
-                  ...narrative,
-                  blocks: narrative.blocks.map((b, i) =>
-                    i === index ? { ...b, text: e.target.value } : b,
-                  ),
-                })
-              }
-            />
-          </label>
-          <button
-            disabled={busy || index === 0}
-            onClick={() => move(index, -1)}
-          >
-            上移 {block.templateId}
-          </button>
-          <button
-            disabled={busy || index === narrative.blocks.length - 1}
-            onClick={() => move(index, 1)}
-          >
-            下移 {block.templateId}
-          </button>
-        </div>
-      ))}
+              上移 {block.templateId}
+            </button>
+            <button
+              disabled={busy || index === narrative.blocks.length - 1}
+              onClick={() => move(index, 1)}
+            >
+              下移 {block.templateId}
+            </button>
+          </div>
+        ))}
+      </details>
       <button
+        className="primary"
         disabled={busy}
         onClick={() =>
           run(async () =>
@@ -234,7 +241,7 @@ export function ReportReviewPanel({
       >
         保存为新草稿
       </button>
-      <div>
+      <div className="report-review-actions">
         <button
           disabled={busy || report.revision.status !== "draft"}
           onClick={() => run(() => transition("submit-review"))}
@@ -260,34 +267,40 @@ export function ReportReviewPanel({
           下载正式 HTML
         </button>
       </div>
-      <h3>修订历史</h3>
-      {revisions.map((v) => (
-        <p key={v.id}>
-          <button
-            disabled={busy}
-            onClick={() =>
-              run(async () =>
-                onRevision(
-                  await call<ReportRevision>(`${base}/revisions/${v.id}`),
-                ),
-              )
-            }
-          >
-            修订 {v.number} · {v.status}
-          </button>{" "}
-          · {v.createdBy} · {v.createdAt}
-        </p>
-      ))}
-      <h3>操作审计</h3>
-      <p>
-        建档：{report.createdBy} · {report.createdAt}
-      </p>
-      {audit.map((event) => (
-        <p key={event.id}>
-          {event.action} · {event.actor.name} · {event.createdAt} · 修订{" "}
-          {event.revisionId}
-        </p>
-      ))}
+      <div className="report-review-trail">
+        <div>
+          <h3>修订历史</h3>
+          {revisions.map((v) => (
+            <p key={v.id}>
+              <button
+                disabled={busy}
+                onClick={() =>
+                  run(async () =>
+                    onRevision(
+                      await call<ReportRevision>(`${base}/revisions/${v.id}`),
+                    ),
+                  )
+                }
+              >
+                修订 {v.number} · {v.status}
+              </button>{" "}
+              · {v.createdBy} · {v.createdAt}
+            </p>
+          ))}
+        </div>
+        <details>
+          <summary>操作审计</summary>
+          <p>
+            建档：{report.createdBy} · {report.createdAt}
+          </p>
+          {audit.map((event) => (
+            <p key={event.id}>
+              {event.action} · {event.actor.name} · {event.createdAt} · 修订{" "}
+              {event.revisionId}
+            </p>
+          ))}
+        </details>
+      </div>
     </section>
   );
 }

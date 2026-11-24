@@ -52,6 +52,7 @@ test("fixed local Pi fixture creates an AI draft that still requires internal re
   await page.locator("nav button").filter({ hasText: "资产台账" }).click();
   await page.getByRole("button", { name: "报告中心" }).click();
   await page.getByRole("button", { name: report.id, exact: true }).click();
+  await page.getByRole("tab", { name: "编辑与复核", exact: true }).click();
   await page.getByRole("button", { name: "生成 AI 受控叙述" }).click();
   await expect(
     page.getByRole("button", { name: "打开 AI 草稿" }),
@@ -63,6 +64,7 @@ test("fixed local Pi fixture creates an AI draft that still requires internal re
   await expect(
     page.getByRole("button", { name: "下载正式 HTML" }),
   ).toBeDisabled();
+  await page.getByRole("tab", { name: "报告预览", exact: true }).click();
   await expect(
     page
       .frameLocator('iframe[title="事实报告草稿"]')
