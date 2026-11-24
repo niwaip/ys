@@ -141,6 +141,11 @@ test("混合批次自动提交等待外部校验时，另一请求固定的手�
     await http()
       .post(`${base}/collections/configuration-runs/${run.id}/result`)
       .set(auth)
+      .send({ content: "basic", snapshotId: snapshot.id })
+      .expect(409);
+    await http()
+      .post(`${base}/collections/configuration-runs/${run.id}/result`)
+      .set(auth)
       .send({ content: "software", snapshotId: snapshot.id })
       .expect(201);
     release();

@@ -229,6 +229,8 @@ export class CollectionConfigurationService {
       const method = run.configuration.items.find(
         (i) => i.content === content,
       )?.method;
+      if (method !== "manual" && method !== "script")
+        throw new ConflictException("自动采集项不能绑定人工或上传结果");
       if (
         (method === "manual" && snapshot.entry !== "manual") ||
         (method === "script" && snapshot.entry !== "upload")

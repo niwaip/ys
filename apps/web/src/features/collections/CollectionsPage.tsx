@@ -1591,7 +1591,7 @@ export function CollectionsPage({
                           <button
                             className="text-button"
                             onClick={() => {
-                              setScrollToResult(scroll);
+                              setScrollToResult(true);
                               setSelected(snapshot);
                               setRaw(undefined);
                             }}
