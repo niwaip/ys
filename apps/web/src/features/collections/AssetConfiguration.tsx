@@ -307,6 +307,74 @@ export function AssetConfiguration({
       if (!stop.current) setBusy(false);
     }
   }
+  const renderRun = (run: ConfigurationRun, latest = false) => (
+    <article key={run.id} className="configuration-run">
+      <strong>{new Date(run.createdAt).toLocaleString()}</strong>
+      {run.items.map((item) => (
+        <div key={item.content}>
+          <p>
+            {collectionContents[item.content]} ·{" "}
+            {states[item.status] ?? item.status}
+            {item.error ? `：${item.error}` : ""}
+          </p>
+          {item.snapshotId && (
+            <>
+              <label>
+                <input
+                  type="checkbox"
+                  checked={selected.includes(item.snapshotId)}
+                  onChange={(e) =>
+                    setSelected((s) =>
+                      e.target.checked
+                        ? [...new Set([...s, item.snapshotId!])]
+                        : s.filter((id) => id !== item.snapshotId),
+                    )
+                  }
+                />
+                选中此结果
+              </label>
+              <details open={latest}>
+                <summary>预览并逐项采纳或拒绝</summary>
+                <AssetBaseline
+                  {...props}
+                  key={`${item.snapshotId}:${revision}`}
+                  assetId={assetId!}
+                  snapshotId={item.snapshotId}
+                  observationOnly
+                  scope={
+                    item.content === "docker"
+                      ? "container-inventory"
+                      : undefined
+                  }
+                />
+              </details>
+            </>
+          )}
+          {item.status === "awaiting_input" && (
+            <button
+              type="button"
+              className="secondary"
+              onClick={() => {
+                awaiting.current = {
+                  runId: run.id,
+                  content: item.content,
+                  previous: submittedObservation?.eventId,
+                };
+                onContent(item.content);
+                onMethod(
+                  run.configuration.items.find(
+                    (i) => i.content === item.content,
+                  )!.method,
+                );
+              }}
+            >
+              录入{collectionContents[item.content]}
+            </button>
+          )}
+        </div>
+      ))}
+    </article>
+  );
   return (
     <section className="asset-configuration" aria-label="操作系统与配置">
       <header>
@@ -498,76 +566,23 @@ export function AssetConfiguration({
         </button>
       </div>
       {runs.length > 0 && (
-        <details open>
-          <summary>配置采集批次与分项结果</summary>
-          {runs.map((run) => (
-            <article key={run.id} className="configuration-run">
-              <strong>{new Date(run.createdAt).toLocaleString()}</strong>
-              {run.items.map((item) => (
-                <div key={item.content}>
-                  <p>
-                    {collectionContents[item.content]} ·{" "}
-                    {states[item.status] ?? item.status}
-                    {item.error ? `：${item.error}` : ""}
-                  </p>
-                  {item.snapshotId && (
-                    <>
-                      <label>
-                        <input
-                          type="checkbox"
-                          checked={selected.includes(item.snapshotId)}
-                          onChange={(e) =>
-                            setSelected((s) =>
-                              e.target.checked
-                                ? [...new Set([...s, item.snapshotId!])]
-                                : s.filter((id) => id !== item.snapshotId),
-                            )
-                          }
-                        />
-                        选中此结果
-                      </label>
-                      <details>
-                        <summary>预览并逐项采纳或拒绝</summary>
-                        <AssetBaseline
-                          {...props}
-                          key={`${item.snapshotId}:${revision}`}
-                          assetId={assetId!}
-                          snapshotId={item.snapshotId}
-                          observationOnly
-                          scope={
-                            item.content === "docker"
-                              ? "container-inventory"
-                              : undefined
-                          }
-                        />
-                      </details>
-                    </>
-                  )}
-                  {item.status === "awaiting_input" && (
-                    <button
-                      type="button"
-                      className="secondary"
-                      onClick={() => {
-                        awaiting.current = {
-                          runId: run.id,
-                          content: item.content,
-                          previous: submittedObservation?.eventId,
-                        };
-                        onContent(item.content);
-                        onMethod(
-                          run.configuration.items.find(
-                            (i) => i.content === item.content,
-                          )!.method,
-                        );
-                      }}
-                    >
-                      录入{collectionContents[item.content]}
-                    </button>
-                  )}
-                </div>
-              ))}
-            </article>
-          ))}
+        <>
+          <section
+            aria-label="最近一次采集结果"
+            className="configuration-latest"
+          >
+            <h3>最近一次采集结果</h3>
+            <p>
+              采集完成后请核对以下资料，再确认采纳；采集本身不会自动扫描风险。
+            </p>
+            {renderRun(runs[0], true)}
+          </section>
+          <details className="configuration-history">
+            <summary>
+              历史配置采集批次（{Math.max(0, runs.length - 1)}）
+            </summary>
+            {runs.slice(1).map((run) => renderRun(run))}
+          </details>
           <button
             type="button"
             className="primary"
@@ -576,7 +591,7 @@ export function AssetConfiguration({
           >
             采纳选中结果
           </button>
-        </details>
+        </>
       )}
     </section>
   );

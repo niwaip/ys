@@ -798,3 +798,33 @@
   border-top: 1px solid #e5ece6;
   font-size: 12px;
 }
+
+.configuration-run > div > label {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  margin: 8px 0;
+}
+.configuration-run > div > label input[type="checkbox"] {
+  width: 16px;
+  height: 16px;
+  margin: 0;
+}
+.configuration-latest {
+  margin: 20px 0;
+}
+.configuration-latest > h3 {
+  font-size: 20px;
+  margin-bottom: 6px;
+}
+.configuration-latest .configuration-run > div + div {
+  border-top: 1px solid #dfe8e1;
+  margin-top: 20px;
+  padding-top: 16px;
+}
+.configuration-history > summary,
+.collect-history > summary {
+  cursor: pointer;
+  padding: 16px 0;
+  font-weight: 600;
+}

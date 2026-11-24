@@ -71,6 +71,7 @@ test("Windows脚本上传在统一配置中预览，确认后用于评估并保�
     snapshot: { kbInventoryComplete: false, software: [{ version: null }] },
   });
   await page.reload();
+  await page.locator(".collect-history > summary").click();
   await page
     .getByRole("row")
     .filter({ hasText: name })

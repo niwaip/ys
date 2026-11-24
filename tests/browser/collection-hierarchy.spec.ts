@@ -98,6 +98,13 @@ test("分项配置刷新保留，手动软件结果归入批次并经选中采�
   await expect(
     config.getByText("软件清单与组件 · 采集完成", { exact: true }),
   ).toBeVisible();
+  await expect(
+    config.getByRole("region", { name: "最近一次采集结果", exact: true }),
+  ).toBeVisible();
+  await expect(config.getByText("待确认采纳", { exact: true })).toBeVisible();
+  await expect(
+    config.locator("details.configuration-history"),
+  ).not.toHaveAttribute("open", "");
   await config.getByLabel("选中此结果", { exact: true }).check();
   await config
     .getByRole("button", { name: "采纳选中结果", exact: true })
@@ -109,7 +116,6 @@ test("分项配置刷新保留，手动软件结果归入批次并经选中采�
   await expect(
     config.getByText("软件清单与组件 · 采集完成", { exact: true }),
   ).toBeVisible();
-  await config.getByText("预览并逐项采纳或拒绝", { exact: true }).click();
   await expect(config.getByText("已采纳", { exact: true })).toBeVisible();
 });
 
@@ -291,6 +297,7 @@ test("批次录入期间查看旧历史不绑定旧快照，只有本次成功�
   await config
     .getByRole("button", { name: "录入软件清单与组件", exact: true })
     .click();
+  await page.locator(".collect-history > summary").click();
   await page
     .getByRole("row")
     .filter({ hasText: `old-${asset.name}` })

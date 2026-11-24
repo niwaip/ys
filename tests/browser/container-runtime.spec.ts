@@ -132,6 +132,7 @@ test("redesigned collection tasks, capability gaps, immutable directory handoff,
   await page
     .getByRole("button", { name: "开始基础采集 →", exact: true })
     .click();
+  await page.locator(".collect-history > summary").click();
   const basic = page
     .locator(".collect-task-list details")
     .filter({ hasText: "基础采集" })
@@ -241,6 +242,7 @@ test("redesigned collection tasks, capability gaps, immutable directory handoff,
   await expect(page.getByRole("dialog", { name: "采集资料详情" })).toHaveCount(
     0,
   );
+  await page.locator(".collect-history > summary").click();
   await page.getByRole("button", { name: /采集记录/ }).click();
   await page.getByLabel("历史采集类型").selectOption("container-inventory");
   await expect(
@@ -257,6 +259,7 @@ test("redesigned collection tasks, capability gaps, immutable directory handoff,
     fullPage: true,
   });
   await page.getByLabel("当前客户").selectOption("river");
+  await page.locator(".collect-history > summary").click();
   await expect(page.getByText("还没有采集记录", { exact: true })).toBeVisible();
   expect(errors).toEqual([]);
 });
@@ -373,5 +376,48 @@ test("collection action keeps submission, completion and errors visible beside t
   await expect(page.getByRole("alert")).toBeInViewport();
   await expect(page.getByRole("alert")).toContainText(
     "fixture connection unavailable",
+  );
+});
+
+test("Docker批次结果直接显示容器镜像及确认入口，历史默认折叠", async ({
+  page,
+}) => {
+  await page.goto("/#collections");
+  await page.getByLabel("操作员访问令牌").fill("browser-test-secret-token");
+  await page.getByRole("button", { name: "进入工作台" }).click();
+  await page
+    .getByLabel("目标资产", { exact: true })
+    .selectOption({ label: "Docker测试主机" });
+  const config = page.getByRole("region", {
+    name: "操作系统与配置",
+    exact: true,
+  });
+  await config.getByLabel("选择基础资料", { exact: true }).uncheck();
+  await config.getByLabel("选择Docker容器", { exact: true }).check();
+  await config.getByLabel("Docker容器采集方式").selectOption("automatic");
+  await config.getByLabel("Docker容器授权连接").selectOption("docker-fixture");
+  await config
+    .getByRole("button", { name: "执行选中采集项", exact: true })
+    .click();
+  const result = config.getByRole("region", {
+    name: "最近一次采集结果",
+    exact: true,
+  });
+  await expect(
+    result.getByText("Docker容器 · 采集完成", { exact: true }),
+  ).toBeVisible();
+  await expect(result.getByText("待确认采纳", { exact: true })).toBeVisible();
+  await expect(result.getByText(/本次容器目录：/)).toBeVisible();
+  await expect(result.getByText(/本次镜像目录：/)).toBeVisible();
+  await expect(
+    result.getByRole("button", { name: "确认采纳容器资料", exact: true }),
+  ).toBeVisible();
+  await expect(config.locator(".configuration-history")).not.toHaveAttribute(
+    "open",
+    "",
+  );
+  await expect(page.locator(".collect-history")).not.toHaveAttribute(
+    "open",
+    "",
   );
 });

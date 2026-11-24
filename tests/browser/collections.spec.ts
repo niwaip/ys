@@ -63,6 +63,7 @@ test("网页保存人工基础快照，刷新回读来源与未评估状态，�
   await expect(page.getByLabel("主机连接").locator("option")).toHaveCount(1);
   await page.reload();
   await page.locator("nav button").filter({ hasText: "资产采集" }).click();
+  await page.locator(".collect-history > summary").click();
   await expect(page.getByRole("row").filter({ hasText: name })).toBeVisible();
   expect(failures).toEqual([]);
 });

@@ -379,6 +379,12 @@ function Layer({
       ) : list ? (
         <>
           <div className="baseline-list-controls">
+            {(name === "containers" || name === "images") && page && (
+              <strong>
+                {changesOnly ? "变化" : "本次"}
+                {labels[name]}：{page.total} 项
+              </strong>
+            )}
             <input
               aria-label={`搜索${labels[name]}`}
               placeholder={`搜索${labels[name]}`}

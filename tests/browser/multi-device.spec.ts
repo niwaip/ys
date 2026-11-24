@@ -36,6 +36,7 @@ test("网络设备在统一工作台手动录入、预览及拒绝，刷新保�
   await result.getByRole("button", { name: "拒绝采纳", exact: true }).click();
   await expect(result.getByText("已拒绝采纳", { exact: true })).toBeVisible();
   await page.reload();
+  await page.locator(".collect-history > summary").click();
   const row = page.getByRole("row").filter({ hasText: name }).first();
   await row.getByRole("button", { name: "查看资料 →" }).click();
   await expect(
@@ -77,13 +78,11 @@ test("配置旁新增资产后自动选中，切换目标清除当前结果及�
     .getByLabel("目标资产", { exact: true })
     .selectOption({ label: name });
   await page.getByRole("tab", { name: "上传脚本结果", exact: true }).click();
-  await page
-    .getByLabel("采集JSON文件")
-    .setInputFiles({
-      name: "invalid.json",
-      mimeType: "application/json",
-      buffer: Buffer.from("{"),
-    });
+  await page.getByLabel("采集JSON文件").setInputFiles({
+    name: "invalid.json",
+    mimeType: "application/json",
+    buffer: Buffer.from("{"),
+  });
   await page.getByLabel("目标资产", { exact: true }).selectOption(other.id);
   await page.getByRole("tab", { name: "上传脚本结果", exact: true }).click();
   await expect(

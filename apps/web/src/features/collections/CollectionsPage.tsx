@@ -1496,7 +1496,12 @@ export function CollectionsPage({
           </div>
         </section>
       )}
-      <section className="collect-card collect-history" aria-label="采集历史">
+      <details
+        className="collect-card collect-history"
+        role="region"
+        aria-label="采集历史"
+      >
+        <summary>采集历史</summary>
         <div className="collect-history-toolbar">
           <h2>采集历史</h2>
           <label>
@@ -1672,7 +1677,7 @@ export function CollectionsPage({
             <p>运行中的任务会自动更新进度。</p>
           </div>
         )}
-      </section>
+      </details>
       {editingConnection && asset && (
         <ConnectionEditor
           customerId={customerId}
